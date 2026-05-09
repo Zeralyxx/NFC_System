@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "NFC_System (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "NFC_System (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
