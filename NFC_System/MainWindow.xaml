@@ -49,8 +49,10 @@
               VerticalAlignment="Center"
               ColumnSpacing="28">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="360"/>
-                <ColumnDefinition Width="360"/>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="280"/>
             </Grid.ColumnDefinitions>
 
             <!-- Registration Card -->
@@ -58,7 +60,8 @@
                     Click="Registration_Click"
                     Padding="0"
                     BorderThickness="0"
-                    Background="Transparent">
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch">
                 <Border CornerRadius="28"
                         Padding="30"
                         MinHeight="260"
@@ -76,7 +79,7 @@
                         </Border>
 
                         <TextBlock Text="Registration"
-                                   FontSize="32"
+                                   FontSize="30"
                                    FontWeight="Bold"/>
 
                         <TextBlock Text="Register student information and link each NFC UID to a student record."
@@ -94,12 +97,57 @@
                 </Border>
             </Button>
 
-            <!-- Verification Card -->
+            <!-- Event Attendance Card -->
             <Button Grid.Column="1"
+                    Click="EventAttendance_Click"
+                    Padding="0"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch">
+                <Border CornerRadius="28"
+                        Padding="30"
+                        MinHeight="260"
+                        Background="#183A25"
+                        BorderBrush="#30FFFFFF"
+                        BorderThickness="1">
+                    <StackPanel Spacing="18" VerticalAlignment="Center">
+                        <Border Width="78"
+                                Height="78"
+                                CornerRadius="22"
+                                Background="#2234D399">
+                            <Viewbox Margin="16">
+                                <SymbolIcon Symbol="Calendar"/>
+                            </Viewbox>
+                        </Border>
+
+                        <TextBlock Text="Event Attendance"
+                                   FontSize="30"
+                                   FontWeight="Bold"
+                                   TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Open the event attendance workflow and validate students for a selected event."
+                                   FontSize="17"
+                                   Opacity="0.75"
+                                   TextWrapping="Wrap"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                            <FontIcon Glyph="&#xE8D4;" FontSize="16"/>
+                            <TextBlock Text="Event scan - attendance log"
+                                       FontSize="15"
+                                       TextWrapping="Wrap"
+                                       Opacity="0.8"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Button>
+
+            <!-- Verification Card -->
+            <Button Grid.Column="2"
                     Click="Verification_Click"
                     Padding="0"
                     BorderThickness="0"
-                    Background="Transparent">
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch">
                 <Border CornerRadius="28"
                         Padding="30"
                         MinHeight="260"
@@ -117,7 +165,7 @@
                         </Border>
 
                         <TextBlock Text="Verification"
-                                   FontSize="32"
+                                   FontSize="30"
                                    FontWeight="Bold"/>
 
                         <TextBlock Text="Scan NFC tags in real time to verify identity and display access results."
@@ -129,6 +177,50 @@
                             <FontIcon Glyph="&#xE73E;" FontSize="16"/>
                             <TextBlock Text="Live scan · access decision"
                                        FontSize="15"
+                                       Opacity="0.8"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Button>
+
+            <!-- Security Administration Card -->
+            <Button Grid.Column="3"
+                    Click="Settings_Click"
+                    Padding="0"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch">
+                <Border CornerRadius="28"
+                        Padding="30"
+                        MinHeight="260"
+                        Background="#23283A"
+                        BorderBrush="#30FFFFFF"
+                        BorderThickness="1">
+                    <StackPanel Spacing="18" VerticalAlignment="Center">
+                        <Border Width="78"
+                                Height="78"
+                                CornerRadius="22"
+                                Background="#22F75555">
+                            <Viewbox Margin="16">
+                                <SymbolIcon Symbol="Setting"/>
+                            </Viewbox>
+                        </Border>
+
+                        <TextBlock Text="Security Admin"
+                                   FontSize="30"
+                                   FontWeight="Bold"
+                                   TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Create events, approve attendees, reset PINs, and review alerts."
+                                   FontSize="17"
+                                   Opacity="0.75"
+                                   TextWrapping="Wrap"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                            <FontIcon Glyph="&#xE713;" FontSize="16"/>
+                            <TextBlock Text="Events - alerts - recovery"
+                                       FontSize="15"
+                                       TextWrapping="Wrap"
                                        Opacity="0.8"/>
                         </StackPanel>
                     </StackPanel>

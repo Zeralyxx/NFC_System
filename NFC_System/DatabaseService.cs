@@ -296,6 +296,34 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
+    public async Task<IReadOnlyList<EventRecord>> GetActiveEventsAsync(int limit = 50)
+    {
+        await EnsureSchemaAsync();
+
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            SELECT event_id, event_name, verification_mode, is_restricted, status, event_date
+            FROM events
+            WHERE status = 'Active'
+            ORDER BY
+                CASE WHEN event_date IS NULL THEN 1 ELSE 0 END,
+                event_date ASC,
+                created_at DESC
+            LIMIT @limit", connection);
+        command.Parameters.AddWithValue("@limit", limit);
+
+        var events = new List<EventRecord>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            events.Add(ReadEvent(reader));
+        }
+
+        return events;
+    }
+
     public async Task<bool> IsStudentAllowedForEventAsync(string eventId, string studentId)
     {
         if (string.IsNullOrWhiteSpace(eventId))
@@ -518,6 +546,19 @@ public sealed class DatabaseService
         };
     }
 
+    private static EventRecord ReadEvent(MySqlDataReader reader)
+    {
+        return new EventRecord
+        {
+            EventId = Value(reader["event_id"]),
+            EventName = Value(reader["event_name"]),
+            VerificationMode = FromStorageVerificationMode(Value(reader["verification_mode"])),
+            IsRestricted = bool.TryParse(Value(reader["is_restricted"]), out bool restricted) && restricted || Value(reader["is_restricted"]) == "1",
+            Status = string.IsNullOrWhiteSpace(Value(reader["status"])) ? "Active" : Value(reader["status"]),
+            EventDate = DateTime.TryParse(Value(reader["event_date"]), out DateTime eventDate) ? eventDate : null
+        };
+    }
+
     private static object NullIfEmpty(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
@@ -536,6 +577,16 @@ public sealed class DatabaseService
             VerificationMode.Standard => "Standard",
             VerificationMode.HighSecurity => "High-Security",
             _ => "Standard"
+        };
+    }
+
+    public static VerificationMode FromStorageVerificationMode(string mode)
+    {
+        return mode switch
+        {
+            "Fast" => VerificationMode.Fast,
+            "High-Security" => VerificationMode.HighSecurity,
+            _ => VerificationMode.Standard
         };
     }
 

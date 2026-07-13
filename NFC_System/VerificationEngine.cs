@@ -19,8 +19,10 @@ public sealed class VerificationEngine
 
         if (student == null)
         {
-            await _database.LogVerificationAsync(null, uid, transactionType, mode, false, "NFC_NOT_REGISTERED", "NOT_REGISTERED", "NFC UID is not linked to a student record.");
-            return Denied(uid, null, "ACCESS DENIED", "NFC UID is not registered", "NOT_REGISTERED", $"{scanTime} | UID {uid} | DENIED | NOT REGISTERED");
+            string error = "NOT_REGISTERED";
+            await _database.LogVerificationAsync(null, uid, transactionType, mode, false, "NFC_NOT_REGISTERED", error, "NFC UID is not linked to a student record.");
+            await _database.AddAlertAsync(null, error, $"Unregistered NFC UID attempted verification: {uid}.");
+            return Denied(uid, null, "UNAUTHORIZED", "NFC credential is not registered", "NOT_REGISTERED", $"{scanTime} | UID {uid} | DENIED | NOT REGISTERED");
         }
 
         if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
@@ -108,11 +110,10 @@ public sealed class VerificationEngine
 
             string error = locked ? "PIN_LOCKED" : "PIN_FAILURE";
             await _database.LogVerificationAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, error, $"Failed PIN attempt {failedAttempts}/3.");
-
-            if (locked)
-            {
-                await _database.AddAlertAsync(student.StudentId, error, $"{student.FullName} reached three failed PIN attempts and has been locked.");
-            }
+            string alertMessage = locked
+                ? $"{student.FullName} reached three failed PIN attempts and has been locked."
+                : $"{student.FullName} entered an incorrect PIN ({failedAttempts}/3).";
+            await _database.AddAlertAsync(student.StudentId, error, alertMessage);
 
             return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}");
         }
@@ -175,6 +176,8 @@ public sealed class VerificationEngine
         else if (session.TransactionType == TransactionType.EventAttendance)
         {
             await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
+            await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
+            student.EntryState = "INSIDE";
         }
 
         await _database.LogVerificationAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", "", remarks);

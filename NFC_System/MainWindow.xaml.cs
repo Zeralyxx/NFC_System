@@ -28,6 +28,13 @@ namespace NFC_System
             this.Close();
         }
 
+        private void EventAttendance_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new EventAttendanceWindow();
+            window.Activate();
+            this.Close();
+        }
+
         private void Settings_Click(object sender, RoutedEventArgs e)
         {
             var window = new SecurityDashboardWindow();

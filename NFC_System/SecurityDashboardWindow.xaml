@@ -24,10 +24,10 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="← Back" Padding="16,10" Click="BackButton_Click" CornerRadius="12"/>
+            <Button Grid.Column="0" Content="Back" Padding="16,10" Click="BackButton_Click" CornerRadius="12"/>
             <StackPanel Grid.Column="1" Margin="18,0,0,0" Spacing="4">
-                <TextBlock Text="Security Administration" FontSize="38" FontWeight="Bold"/>
-                <TextBlock Text="Configure risk modes, restricted events, PIN recovery, alerts, and audit logs" FontSize="16" Opacity="0.72"/>
+                <TextBlock Text="Security Administration" FontSize="34" FontWeight="Bold" TextWrapping="Wrap"/>
+                <TextBlock Text="Configure risk modes, restricted events, PIN recovery, alerts, and audit logs" FontSize="16" Opacity="0.72" TextWrapping="Wrap"/>
             </StackPanel>
             <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Padding="16,10" CornerRadius="12"/>
         </Grid>

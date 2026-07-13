@@ -321,10 +321,9 @@ namespace NFC_System
                     _serialPort = null;
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                // Optional: log if needed
-                // UidLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
+                // Serial cleanup should not block closing the window.
             }
         }
     }

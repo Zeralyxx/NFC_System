@@ -40,6 +40,25 @@ public sealed class StudentRecord
     public bool PinLocked { get; set; }
 }
 
+public sealed class EventRecord
+{
+    public string EventId { get; set; } = "";
+    public string EventName { get; set; } = "";
+    public VerificationMode VerificationMode { get; set; } = VerificationMode.Standard;
+    public bool IsRestricted { get; set; }
+    public string Status { get; set; } = "Active";
+    public DateTime? EventDate { get; set; }
+
+    public string DisplayName
+    {
+        get
+        {
+            string restriction = IsRestricted ? "Restricted" : "Open";
+            return $"{EventId} - {EventName} ({DatabaseService.ToStorageValue(VerificationMode)}, {restriction})";
+        }
+    }
+}
+
 public sealed class VerificationSession
 {
     public StudentRecord Student { get; init; } = new();
