@@ -1,28 +1,56 @@
 using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using MySqlConnector;
 using System;
 using System.IO.Ports;
-using Microsoft.UI.Windowing;
 using WinRT.Interop;
 
 namespace NFC_System
 {
     public sealed partial class VerificationWindow : Window
     {
+        private readonly DatabaseService _database = new();
+        private readonly VerificationEngine _engine;
         private SerialPort? _serialPort;
-
-        private readonly string _connectionString =
-            "Server=127.0.0.1;Port=3306;Database=nfc_system;User ID=root;Password=;";
+        private VerificationSession? _pendingSession;
 
         public VerificationWindow()
         {
             this.InitializeComponent();
+            _engine = new VerificationEngine(_database);
+
             MaximizeWindow();
             this.Closed += Window_Closed;
+
+            ProcessManualUidButton.Click += ProcessManualUidButton_Click;
+            SubmitPinButton.Click += SubmitPinButton_Click;
+            SubmitQrButton.Click += SubmitQrButton_Click;
+
+            _ = InitializeAsync();
             TryConnectSerial("COM3"); // CHANGE this to your actual Arduino COM port
+        }
+
+        private async System.Threading.Tasks.Task InitializeAsync()
+        {
+            try
+            {
+                await _database.EnsureSchemaAsync();
+                string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
+                SecurityModeComboBox.SelectedIndex = savedMode switch
+                {
+                    "Fast" => 0,
+                    "High-Security" => 2,
+                    _ => 1
+                };
+
+                VerificationLogListView.Items.Insert(0, "[INFO] Risk-based verification engine ready.");
+            }
+            catch (Exception ex)
+            {
+                VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+            }
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -72,49 +100,16 @@ namespace NFC_System
         {
             try
             {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
+                if (_serialPort == null || !_serialPort.IsOpen)
+                {
+                    return;
+                }
 
                 string line = _serialPort.ReadLine().Trim();
-
                 if (line.StartsWith("UID="))
                 {
                     string uid = line.Substring(4).Trim();
-
-                    bool invalidUid =
-                        uid == "00:00:00:00" ||
-                        uid == "00:00:00:00:00:00:00" ||
-                        uid.Contains(":00:00:00:00");
-
-                    await DispatcherQueue.TryEnqueueAsync(async () =>
-                    {
-                        if (invalidUid)
-                        {
-                            string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
-
-                            StudentNameTextBlock.Text = "-";
-                            StudentIdTextBlock.Text = "-";
-                            CourseTextBlock.Text = "-";
-                            YearLevelTextBlock.Text = "-";
-                            SectionTextBlock.Text = "-";
-                            StatusTextBlock.Text = "INVALID UID";
-                            UidTextBlock.Text = uid;
-                            ScanTimeTextBlock.Text = scanTime;
-
-                            StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
-                            StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-
-                            ResultTextBlock.Text = "SCAN AGAIN";
-                            ResultSubTextBlock.Text = "Invalid NFC read detected";
-                            ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
-
-                            VerificationLogListView.Items.Insert(0,
-                                $"{scanTime}  |  UID {uid}  |  INVALID READ");
-                        }
-                        else
-                        {
-                            await LoadStudentByUid(uid);
-                        }
-                    });
+                    await DispatcherQueue.TryEnqueueAsync(() => _ = ProcessUidAsync(uid));
                 }
             }
             catch (Exception ex)
@@ -126,107 +121,275 @@ namespace NFC_System
             }
         }
 
-        private async System.Threading.Tasks.Task LoadStudentByUid(string uid)
+        private async void ProcessManualUidButton_Click(object sender, RoutedEventArgs e)
         {
+            await ProcessUidAsync(ManualUidTextBox.Text.Trim());
+        }
+
+        private async void SubmitPinButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingSession == null)
+            {
+                return;
+            }
+
+            VerificationOutcome outcome = await _engine.SubmitPinAsync(_pendingSession, VerifyPinBox.Password.Trim());
+            ApplyOutcome(outcome);
+        }
+
+        private async void SubmitQrButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingSession == null)
+            {
+                return;
+            }
+
+            VerificationOutcome outcome = await _engine.SubmitQrAsync(_pendingSession, QrCredentialTextBox.Text.Trim());
+            ApplyOutcome(outcome);
+        }
+
+        private async System.Threading.Tasks.Task ProcessUidAsync(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid))
+            {
+                VerificationLogListView.Items.Insert(0, "[ERROR] NFC UID is required.");
+                return;
+            }
+
+            ClearPendingInputs();
+
+            if (IsInvalidUid(uid))
+            {
+                DisplayInvalidUid(uid);
+                return;
+            }
+
+            TransactionType transactionType = GetSelectedTransactionType();
+            string eventId = EventIdTextBox.Text.Trim();
+            if (transactionType == TransactionType.EventAttendance && string.IsNullOrWhiteSpace(eventId))
+            {
+                ResultTextBlock.Text = "EVENT ID REQUIRED";
+                ResultSubTextBlock.Text = "Enter the active event ID before attendance scanning";
+                ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
+                VerificationLogListView.Items.Insert(0, "[ERROR] Event Attendance requires an Event ID.");
+                return;
+            }
+
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
-                await connection.OpenAsync();
+                VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(
+                    uid,
+                    GetSelectedMode(),
+                    transactionType,
+                    eventId);
 
-                string query = @"
-                    SELECT student_id, full_name, course, year_level, section_name, status
-                    FROM students
-                    WHERE nfc_uid = @uid
-                    LIMIT 1";
-
-                using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@uid", uid);
-
-                using var reader = await command.ExecuteReaderAsync();
-
-                string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
-
-                if (await reader.ReadAsync())
-                {
-                    string studentId = reader["student_id"]?.ToString() ?? "-";
-                    string fullName = reader["full_name"]?.ToString() ?? "-";
-                    string course = reader["course"]?.ToString() ?? "-";
-                    string yearLevel = reader["year_level"]?.ToString() ?? "-";
-                    string section = reader["section_name"]?.ToString() ?? "-";
-                    string status = reader["status"]?.ToString() ?? "-";
-
-                    StudentNameTextBlock.Text = fullName;
-                    StudentIdTextBlock.Text = studentId;
-                    CourseTextBlock.Text = course;
-                    YearLevelTextBlock.Text = yearLevel;
-                    SectionTextBlock.Text = section;
-                    StatusTextBlock.Text = status.ToUpper();
-                    UidTextBlock.Text = uid;
-                    ScanTimeTextBlock.Text = scanTime;
-
-                    if (status.Equals("Active", StringComparison.OrdinalIgnoreCase))
-                    {
-                        StatusBadge.Background = new SolidColorBrush(Colors.ForestGreen);
-                        StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-
-                        ResultTextBlock.Text = "ACCESS GRANTED";
-                        ResultSubTextBlock.Text = "Student is active and authorized";
-                        ResultBorder.Background = new SolidColorBrush(Colors.ForestGreen);
-
-                        VerificationLogListView.Items.Insert(0,
-                            $"{scanTime}  |  {studentId}  |  {fullName}  |  GRANTED");
-                    }
-                    else if (status.Equals("Inactive", StringComparison.OrdinalIgnoreCase))
-                    {
-                        StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
-                        StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-
-                        ResultTextBlock.Text = "ACCESS DENIED";
-                        ResultSubTextBlock.Text = "Reason: student record is inactive";
-                        ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
-
-                        VerificationLogListView.Items.Insert(0,
-                            $"{scanTime}  |  {studentId}  |  {fullName}  |  DENIED (INACTIVE)");
-                    }
-                    else
-                    {
-                        StatusBadge.Background = new SolidColorBrush(Colors.Firebrick);
-                        StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-
-                        ResultTextBlock.Text = "ACCESS DENIED";
-                        ResultSubTextBlock.Text = $"Reason: {status}";
-                        ResultBorder.Background = new SolidColorBrush(Colors.Firebrick);
-
-                        VerificationLogListView.Items.Insert(0,
-                            $"{scanTime}  |  {studentId}  |  {fullName}  |  DENIED ({status.ToUpper()})");
-                    }
-                }
-                else
-                {
-                    StudentNameTextBlock.Text = "-";
-                    StudentIdTextBlock.Text = "-";
-                    CourseTextBlock.Text = "-";
-                    YearLevelTextBlock.Text = "-";
-                    SectionTextBlock.Text = "-";
-                    StatusTextBlock.Text = "NOT REGISTERED";
-                    UidTextBlock.Text = uid;
-                    ScanTimeTextBlock.Text = scanTime;
-
-                    StatusBadge.Background = new SolidColorBrush(Colors.Gray);
-                    StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-
-                    ResultTextBlock.Text = "ACCESS DENIED";
-                    ResultSubTextBlock.Text = "Reason: NFC UID is not registered";
-                    ResultBorder.Background = new SolidColorBrush(Colors.Firebrick);
-
-                    VerificationLogListView.Items.Insert(0,
-                        $"{scanTime}  |  UID {uid}  |  NOT REGISTERED");
-                }
+                ApplyOutcome(outcome);
             }
             catch (Exception ex)
             {
                 VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
             }
+        }
+
+        private void ApplyOutcome(VerificationOutcome outcome)
+        {
+            ResultTextBlock.Text = outcome.ResultTitle;
+            ResultSubTextBlock.Text = outcome.ResultMessage;
+            ResultBorder.Background = outcome.IsGranted
+                ? new SolidColorBrush(Colors.ForestGreen)
+                : OutcomeBrush(outcome);
+
+            ScanTimeTextBlock.Text = outcome.Timestamp.ToString("yyyy-MM-dd hh:mm:ss tt");
+
+            if (outcome.Student != null)
+            {
+                DisplayStudent(outcome.Student);
+            }
+            else
+            {
+                ClearStudentDetails();
+            }
+
+            if (!string.IsNullOrWhiteSpace(outcome.LogLine))
+            {
+                VerificationLogListView.Items.Insert(0, outcome.LogLine);
+            }
+
+            if (outcome.Step == VerificationStep.RequiresPin && outcome.Session != null)
+            {
+                _pendingSession = outcome.Session;
+                VerifyPinBox.IsEnabled = true;
+                SubmitPinButton.IsEnabled = true;
+                VerifyPinBox.Password = "";
+                VerifyPinBox.Focus(FocusState.Programmatic);
+                QrCredentialTextBox.IsEnabled = false;
+                SubmitQrButton.IsEnabled = false;
+            }
+            else if (outcome.Step == VerificationStep.RequiresQr && outcome.Session != null)
+            {
+                _pendingSession = outcome.Session;
+                VerifyPinBox.IsEnabled = false;
+                SubmitPinButton.IsEnabled = false;
+                QrCredentialTextBox.IsEnabled = true;
+                SubmitQrButton.IsEnabled = true;
+                QrCredentialTextBox.Text = "";
+                QrCredentialTextBox.Focus(FocusState.Programmatic);
+            }
+            else
+            {
+                ClearPendingInputs();
+            }
+        }
+
+        private void DisplayStudent(StudentRecord student)
+        {
+            StudentNameTextBlock.Text = student.FullName;
+            StudentIdTextBlock.Text = student.StudentId;
+            CourseTextBlock.Text = student.Course;
+            YearLevelTextBlock.Text = student.YearLevel;
+            SectionTextBlock.Text = student.SectionName;
+            StatusTextBlock.Text = student.Status.ToUpper();
+            EntryStateTextBlock.Text = student.EntryState;
+            UidTextBlock.Text = student.NfcUid;
+
+            if (student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            {
+                StatusBadge.Background = new SolidColorBrush(Colors.ForestGreen);
+            }
+            else if (student.Status.Equals("Inactive", StringComparison.OrdinalIgnoreCase))
+            {
+                StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
+            }
+            else
+            {
+                StatusBadge.Background = new SolidColorBrush(Colors.Firebrick);
+            }
+
+            StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
+        }
+
+        private void ClearStudentDetails()
+        {
+            StudentNameTextBlock.Text = "-";
+            StudentIdTextBlock.Text = "-";
+            CourseTextBlock.Text = "-";
+            YearLevelTextBlock.Text = "-";
+            SectionTextBlock.Text = "-";
+            StatusTextBlock.Text = "-";
+            EntryStateTextBlock.Text = "Unknown";
+            UidTextBlock.Text = "-";
+            StatusBadge.Background = new SolidColorBrush(Colors.Gray);
+            StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
+        }
+
+        private void ClearPendingInputs()
+        {
+            _pendingSession = null;
+            VerifyPinBox.Password = "";
+            VerifyPinBox.IsEnabled = false;
+            SubmitPinButton.IsEnabled = false;
+            QrCredentialTextBox.Text = "";
+            QrCredentialTextBox.IsEnabled = false;
+            SubmitQrButton.IsEnabled = false;
+        }
+
+        private void DisplayInvalidUid(string uid)
+        {
+            ClearStudentDetails();
+            UidTextBlock.Text = uid;
+            ScanTimeTextBlock.Text = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+            StatusTextBlock.Text = "INVALID UID";
+            StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
+            ResultTextBlock.Text = "SCAN AGAIN";
+            ResultSubTextBlock.Text = "Invalid NFC read detected";
+            ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
+            VerificationLogListView.Items.Insert(0, $"{ScanTimeTextBlock.Text} | UID {uid} | INVALID READ");
+        }
+
+        private VerificationMode GetSelectedMode()
+        {
+            return SecurityModeComboBox.SelectedIndex switch
+            {
+                0 => VerificationMode.Fast,
+                2 => VerificationMode.HighSecurity,
+                _ => VerificationMode.Standard
+            };
+        }
+
+        private TransactionType GetSelectedTransactionType()
+        {
+            return DirectionComboBox.SelectedIndex switch
+            {
+                1 => TransactionType.Exit,
+                2 => TransactionType.EventAttendance,
+                _ => TransactionType.Entry
+            };
+        }
+
+        private static Brush OutcomeBrush(VerificationOutcome outcome)
+        {
+            if (outcome.Step == VerificationStep.RequiresPin || outcome.Step == VerificationStep.RequiresQr)
+            {
+                return new SolidColorBrush(Colors.SteelBlue);
+            }
+
+            if (outcome.ErrorCategory.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
+                outcome.ErrorCategory.Contains("TAILGATING", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush(Colors.DarkOrange);
+            }
+
+            return new SolidColorBrush(Colors.Firebrick);
+        }
+
+        private static bool IsInvalidUid(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid))
+            {
+                return true;
+            }
+
+            string[] parts = uid.Split(':');
+            if (parts.Length != 4 && parts.Length != 7)
+            {
+                return true;
+            }
+
+            bool allZero = true;
+            foreach (string part in parts)
+            {
+                if (part != "00")
+                {
+                    allZero = false;
+                    break;
+                }
+            }
+
+            if (allZero)
+            {
+                return true;
+            }
+
+            if (parts.Length >= 4)
+            {
+                int start = parts.Length - 4;
+                bool trailingZeros = true;
+                for (int i = start; i < parts.Length; i++)
+                {
+                    if (parts[i] != "00")
+                    {
+                        trailingZeros = false;
+                        break;
+                    }
+                }
+
+                if (trailingZeros)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void CloseSerialPort()
@@ -245,12 +408,10 @@ namespace NFC_System
                     _serialPort = null;
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                // Optional: log if needed
-                // UidLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
+                // Closing the app should not be blocked by serial cleanup.
             }
         }
     }
-
 }

@@ -1,0 +1,63 @@
+using System;
+
+namespace NFC_System;
+
+public enum VerificationMode
+{
+    Fast,
+    Standard,
+    HighSecurity
+}
+
+public enum TransactionType
+{
+    Entry,
+    Exit,
+    EventAttendance
+}
+
+public enum VerificationStep
+{
+    Completed,
+    RequiresPin,
+    RequiresQr
+}
+
+public sealed class StudentRecord
+{
+    public string StudentId { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public string Course { get; set; } = "";
+    public string YearLevel { get; set; } = "";
+    public string SectionName { get; set; } = "";
+    public string Status { get; set; } = "Active";
+    public string NfcUid { get; set; } = "";
+    public string PinSalt { get; set; } = "";
+    public string PinHash { get; set; } = "";
+    public string QrCredential { get; set; } = "";
+    public string EntryState { get; set; } = "OUTSIDE";
+    public int FailedPinAttempts { get; set; }
+    public bool PinLocked { get; set; }
+}
+
+public sealed class VerificationSession
+{
+    public StudentRecord Student { get; init; } = new();
+    public string Uid { get; init; } = "";
+    public VerificationMode Mode { get; init; }
+    public TransactionType TransactionType { get; init; }
+    public string EventId { get; init; } = "";
+}
+
+public sealed class VerificationOutcome
+{
+    public VerificationStep Step { get; init; } = VerificationStep.Completed;
+    public bool IsGranted { get; init; }
+    public string ResultTitle { get; init; } = "";
+    public string ResultMessage { get; init; } = "";
+    public string ErrorCategory { get; init; } = "";
+    public string LogLine { get; init; } = "";
+    public StudentRecord? Student { get; init; }
+    public VerificationSession? Session { get; init; }
+    public DateTime Timestamp { get; init; } = DateTime.Now;
+}

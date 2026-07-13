@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
@@ -15,6 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Remove="RegistrationWindow.xaml" />
+    <None Remove="SecurityDashboardWindow.xaml" />
     <None Remove="VerificationWindow.xaml" />
   </ItemGroup>
 
@@ -49,6 +50,11 @@
   </ItemGroup>
   <ItemGroup>
     <Page Update="VerificationWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="SecurityDashboardWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>
