@@ -2,9 +2,9 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using MySqlConnector;
 using System;
 using System.IO.Ports;
+using System.Linq;
 using WinRT.Interop;
 
 namespace NFC_System
@@ -13,9 +13,7 @@ namespace NFC_System
     {
         private SerialPort? _serialPort;
         private bool _isScanning = false;
-
-        private readonly string _connectionString =
-            "Server=127.0.0.1;Port=3306;Database=nfc_system;User ID=root;Password=;";
+        private readonly DatabaseService _database = new();
 
         public RegistrationWindow()
         {
@@ -27,7 +25,21 @@ namespace NFC_System
             ClearButton.Click += ClearButton_Click;
             SaveButton.Click += SaveButton_Click;
 
+            _ = InitializeDatabaseAsync();
             TryConnectSerial("COM3"); // CHANGE to your actual port
+        }
+
+        private async System.Threading.Tasks.Task InitializeDatabaseAsync()
+        {
+            try
+            {
+                await _database.EnsureSchemaAsync();
+                UidLogListView.Items.Insert(0, "[INFO] Risk-based verification schema ready.");
+            }
+            catch (Exception ex)
+            {
+                UidLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+            }
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -159,7 +171,9 @@ namespace NFC_System
                                 $"Course: {CourseTextBox.Text}\n" +
                                 $"Year Level: {YearLevelTextBox.Text}\n" +
                                 $"Section: {SectionTextBox.Text}\n" +
-                                $"NFC UID: {uid}";
+                                $"NFC UID: {uid}\n" +
+                                $"QR Credential: {BuildQrCredential(StudentIdTextBox.Text.Trim(), uid)}";
+                            QrCredentialTextBox.Text = BuildQrCredential(StudentIdTextBox.Text.Trim(), uid);
                         }
                     });
 
@@ -197,6 +211,8 @@ namespace NFC_System
             string yearLevel = YearLevelTextBox.Text.Trim();
             string section = SectionTextBox.Text.Trim();
             string nfcUid = NfcUidTextBox.Text.Trim();
+            string pin = PinPasswordBox.Password.Trim();
+            string qrCredential = QrCredentialTextBox.Text.Trim();
 
             string status = "Active";
             if (StatusComboBox.SelectedItem is ComboBoxItem selectedItem)
@@ -211,57 +227,54 @@ namespace NFC_System
                 UidLogListView.Items.Insert(0, "[ERROR] Student ID, Full Name, and NFC UID are required.");
                 return;
             }
+
+            if (pin.Length != 4 || !pin.All(char.IsDigit))
+            {
+                UidLogListView.Items.Insert(0, "[ERROR] A 4-digit PIN is required for two-factor authentication.");
+                return;
+            }
+
             if (IsInvalidUid(nfcUid))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] Invalid NFC UID. Please scan again.");
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(qrCredential))
+            {
+                qrCredential = BuildQrCredential(studentId, nfcUid);
+                QrCredentialTextBox.Text = qrCredential;
+            }
+
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
-                await connection.OpenAsync();
-
-                string query = @"
-                    INSERT INTO students
-                    (student_id, full_name, course, year_level, section_name, status, nfc_uid)
-                    VALUES
-                    (@student_id, @full_name, @course, @year_level, @section_name, @status, @nfc_uid)";
-
-                using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@student_id", studentId);
-                command.Parameters.AddWithValue("@full_name", fullName);
-                command.Parameters.AddWithValue("@course", course);
-                command.Parameters.AddWithValue("@year_level", yearLevel);
-                command.Parameters.AddWithValue("@section_name", section);
-                command.Parameters.AddWithValue("@status", status);
-                command.Parameters.AddWithValue("@nfc_uid", nfcUid);
-
-                int rows = await command.ExecuteNonQueryAsync();
-
-                if (rows > 0)
+                var student = new StudentRecord
                 {
-                    UidLogListView.Items.Insert(0, $"[SUCCESS] Student saved: {fullName}");
+                    StudentId = studentId,
+                    FullName = fullName,
+                    Course = course,
+                    YearLevel = yearLevel,
+                    SectionName = section,
+                    Status = status,
+                    NfcUid = nfcUid,
+                    QrCredential = qrCredential
+                };
 
-                    PreviewTextBlock.Text =
-                        $"Student ID: {studentId}\n" +
-                        $"Full Name: {fullName}\n" +
-                        $"Course: {course}\n" +
-                        $"Year Level: {yearLevel}\n" +
-                        $"Section: {section}\n" +
-                        $"Status: {status}\n" +
-                        $"NFC UID: {nfcUid}";
+                await _database.SaveStudentAsync(student, pin);
+                UidLogListView.Items.Insert(0, $"[SUCCESS] Student saved with PIN + QR credential: {fullName}");
 
-                    ClearForm();
-                }
-                else
-                {
-                    UidLogListView.Items.Insert(0, "[ERROR] No data was saved.");
-                }
-            }
-            catch (MySqlException ex)
-            {
-                UidLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+                PreviewTextBlock.Text =
+                    $"Student ID: {studentId}\n" +
+                    $"Full Name: {fullName}\n" +
+                    $"Course: {course}\n" +
+                    $"Year Level: {yearLevel}\n" +
+                    $"Section: {section}\n" +
+                    $"Status: {status}\n" +
+                    $"NFC UID: {nfcUid}\n" +
+                    $"QR Credential: {qrCredential}\n" +
+                    $"PIN: Stored as secure hash";
+
+                ClearForm();
             }
             catch (Exception ex)
             {
@@ -277,7 +290,19 @@ namespace NFC_System
             YearLevelTextBox.Text = "";
             SectionTextBox.Text = "";
             NfcUidTextBox.Text = "";
+            PinPasswordBox.Password = "";
+            QrCredentialTextBox.Text = "";
             StatusComboBox.SelectedIndex = 0;
+        }
+
+        private static string BuildQrCredential(string studentId, string nfcUid)
+        {
+            if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(nfcUid))
+            {
+                return "";
+            }
+
+            return $"TCU|{studentId}|{nfcUid}";
         }
 
         private void CloseSerialPort()
@@ -296,10 +321,9 @@ namespace NFC_System
                     _serialPort = null;
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                // Optional: log if needed
-                // UidLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
+                // Serial cleanup should not block closing the window.
             }
         }
     }

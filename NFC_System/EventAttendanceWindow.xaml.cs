@@ -4,19 +4,20 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
+using System.Collections.Generic;
 using System.IO.Ports;
 using WinRT.Interop;
 
 namespace NFC_System
 {
-    public sealed partial class VerificationWindow : Window
+    public sealed partial class EventAttendanceWindow : Window
     {
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
         private SerialPort? _serialPort;
         private VerificationSession? _pendingSession;
 
-        public VerificationWindow()
+        public EventAttendanceWindow()
         {
             this.InitializeComponent();
             _engine = new VerificationEngine(_database);
@@ -25,7 +26,8 @@ namespace NFC_System
             this.Closed += Window_Closed;
 
             ProcessManualUidButton.Click += ProcessManualUidButton_Click;
-            SecurityModeComboBox.SelectionChanged += SecurityModeComboBox_SelectionChanged;
+            RefreshEventsButton.Click += RefreshEventsButton_Click;
+            ActiveEventComboBox.SelectionChanged += ActiveEventComboBox_SelectionChanged;
             SubmitPinButton.Click += SubmitPinButton_Click;
             SubmitQrButton.Click += SubmitQrButton_Click;
 
@@ -38,21 +40,65 @@ namespace NFC_System
             try
             {
                 await _database.EnsureSchemaAsync();
-                string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
-                SecurityModeComboBox.SelectedIndex = savedMode switch
-                {
-                    "Fast" => 0,
-                    "High-Security" => 2,
-                    _ => 1
-                };
-                UpdateRiskSummary();
-
-                VerificationLogListView.Items.Insert(0, "[INFO] Risk-based verification engine ready.");
+                await LoadActiveEventsAsync();
+                AttendanceLogListView.Items.Insert(0, "[INFO] Event attendance workflow ready.");
             }
             catch (Exception ex)
             {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+                AttendanceLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
             }
+        }
+
+        private async System.Threading.Tasks.Task LoadActiveEventsAsync()
+        {
+            IReadOnlyList<EventRecord> events = await _database.GetActiveEventsAsync();
+            ActiveEventComboBox.ItemsSource = events;
+
+            if (events.Count == 0)
+            {
+                SelectedEventTextBlock.Text = "No active event selected";
+                ResultTextBlock.Text = "NO ACTIVE EVENTS";
+                ResultSubTextBlock.Text = "Create or activate an event in Security Administration before scanning.";
+                ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
+                AttendanceLogListView.Items.Insert(0, "[INFO] No active events found.");
+                return;
+            }
+
+            ActiveEventComboBox.SelectedIndex = 0;
+            AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events.Count} active event(s).");
+        }
+
+        private async void RefreshEventsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await LoadActiveEventsAsync();
+            }
+            catch (Exception ex)
+            {
+                AttendanceLogListView.Items.Insert(0, $"[DB ERROR] Could not load events: {ex.Message}");
+            }
+        }
+
+        private void ActiveEventComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            EventRecord? selectedEvent = GetSelectedEvent();
+            if (selectedEvent == null)
+            {
+                SelectedEventTextBlock.Text = "-";
+                EventModeTextBox.Text = "-";
+                EventRiskModeTextBlock.Text = "-";
+                EventRequiredStepsTextBlock.Text = "-";
+                return;
+            }
+
+            SelectedEventTextBlock.Text = selectedEvent.DisplayName;
+            EventModeTextBox.Text = ModeDisplayName(selectedEvent.VerificationMode);
+            EventRiskModeTextBlock.Text = ModeDisplayName(selectedEvent.VerificationMode);
+            EventRequiredStepsTextBlock.Text = RequiredStepsDisplay(selectedEvent.VerificationMode);
+            ResultTextBlock.Text = "READY TO SCAN";
+            ResultSubTextBlock.Text = $"Active event: {selectedEvent.EventName} - {ModeDisplayName(selectedEvent.VerificationMode)}";
+            ResultBorder.Background = new SolidColorBrush(Colors.DimGray);
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -90,11 +136,11 @@ namespace NFC_System
                 _serialPort.DataReceived += SerialPort_DataReceived;
                 _serialPort.Open();
 
-                VerificationLogListView.Items.Insert(0, $"[INFO] Connected to {portName}");
+                AttendanceLogListView.Items.Insert(0, $"[INFO] Connected to {portName}");
             }
             catch (Exception ex)
             {
-                VerificationLogListView.Items.Insert(0, $"[ERROR] Could not connect: {ex.Message}");
+                AttendanceLogListView.Items.Insert(0, $"[ERROR] Could not connect: {ex.Message}");
             }
         }
 
@@ -118,7 +164,7 @@ namespace NFC_System
             {
                 await DispatcherQueue.TryEnqueueAsync(() =>
                 {
-                    VerificationLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
+                    AttendanceLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
                 });
             }
         }
@@ -152,36 +198,46 @@ namespace NFC_System
 
         private async System.Threading.Tasks.Task ProcessUidAsync(string uid)
         {
+            EventRecord? selectedEvent = GetSelectedEvent();
+            if (selectedEvent == null)
+            {
+                ResultTextBlock.Text = "EVENT REQUIRED";
+                ResultSubTextBlock.Text = "Select an active event before attendance scanning.";
+                ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
+                AttendanceLogListView.Items.Insert(0, "[ERROR] Event Attendance requires an active event selection.");
+                return;
+            }
+
+            string eventId = selectedEvent.EventId;
             if (string.IsNullOrWhiteSpace(uid))
             {
-                VerificationLogListView.Items.Insert(0, "[ERROR] NFC UID is required.");
+                AttendanceLogListView.Items.Insert(0, "[ERROR] NFC UID is required.");
                 return;
             }
 
             ClearPendingInputs();
+            SelectedEventTextBlock.Text = selectedEvent.DisplayName;
 
             if (IsInvalidUid(uid))
             {
-                await LogInvalidUidAsync(uid, GetSelectedTransactionType(), GetSelectedMode());
+                await LogInvalidUidAsync(uid, selectedEvent);
                 DisplayInvalidUid(uid);
                 return;
             }
-
-            TransactionType transactionType = GetSelectedTransactionType();
 
             try
             {
                 VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(
                     uid,
-                    GetSelectedMode(),
-                    transactionType,
-                    "");
+                    selectedEvent.VerificationMode,
+                    TransactionType.EventAttendance,
+                    eventId);
 
                 ApplyOutcome(outcome);
             }
             catch (Exception ex)
             {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+                AttendanceLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
             }
         }
 
@@ -207,7 +263,7 @@ namespace NFC_System
 
             if (!string.IsNullOrWhiteSpace(outcome.LogLine))
             {
-                VerificationLogListView.Items.Insert(0, outcome.LogLine);
+                AttendanceLogListView.Items.Insert(0, outcome.LogLine);
             }
 
             if (outcome.Step == VerificationStep.RequiresPin && outcome.Session != null)
@@ -241,10 +297,9 @@ namespace NFC_System
             StudentNameTextBlock.Text = student.FullName;
             StudentIdTextBlock.Text = student.StudentId;
             CourseTextBlock.Text = student.Course;
-            YearLevelTextBlock.Text = student.YearLevel;
-            SectionTextBlock.Text = student.SectionName;
+            YearSectionTextBlock.Text = $"{student.YearLevel} / {student.SectionName}";
             StatusTextBlock.Text = student.Status.ToUpper();
-            EntryStateTextBlock.Text = student.EntryState;
+            SelectedEventTextBlock.Text = GetSelectedEvent()?.DisplayName ?? "-";
             UidTextBlock.Text = student.NfcUid;
 
             if (student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
@@ -268,10 +323,8 @@ namespace NFC_System
             StudentNameTextBlock.Text = "-";
             StudentIdTextBlock.Text = "-";
             CourseTextBlock.Text = "-";
-            YearLevelTextBlock.Text = "-";
-            SectionTextBlock.Text = "-";
+            YearSectionTextBlock.Text = "-";
             StatusTextBlock.Text = "-";
-            EntryStateTextBlock.Text = "Unknown";
             UidTextBlock.Text = "-";
             StatusBadge.Background = new SolidColorBrush(Colors.Gray);
             StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
@@ -297,11 +350,12 @@ namespace NFC_System
                 return;
             }
 
-            string action = outcome.Session.TransactionType == TransactionType.Exit ? "Exit state updated" : "Entry state updated";
-            string state = outcome.Session.TransactionType == TransactionType.Exit ? "OUTSIDE" : "INSIDE";
+            EventRecord? selectedEvent = GetSelectedEvent();
+            string eventLabel = selectedEvent?.DisplayName ?? outcome.Session.EventId;
             SuccessSummaryTextBlock.Text =
-                $"{action}: {state}\n" +
-                $"Access log recorded at {outcome.Timestamp:yyyy-MM-dd hh:mm:ss tt}\n" +
+                $"Attendance recorded for {eventLabel}\n" +
+                $"Entry state updated: INSIDE\n" +
+                $"Attendance/access log recorded at {outcome.Timestamp:yyyy-MM-dd hh:mm:ss tt}\n" +
                 $"Mode used: {RequiredStepsDisplay(outcome.Session.Mode)}";
             SuccessSummaryBorder.Visibility = Visibility.Visible;
         }
@@ -312,48 +366,32 @@ namespace NFC_System
             SuccessSummaryBorder.Visibility = Visibility.Collapsed;
             SuccessSummaryTextBlock.Text = "-";
             UidTextBlock.Text = uid;
+            SelectedEventTextBlock.Text = GetSelectedEvent()?.DisplayName ?? "-";
             ScanTimeTextBlock.Text = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
             StatusTextBlock.Text = "INVALID UID";
             StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
             ResultTextBlock.Text = "SCAN AGAIN";
             ResultSubTextBlock.Text = "Invalid NFC read detected";
             ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
-            VerificationLogListView.Items.Insert(0, $"{ScanTimeTextBlock.Text} | UID {uid} | INVALID READ");
+            AttendanceLogListView.Items.Insert(0, $"{ScanTimeTextBlock.Text} | UID {uid} | INVALID READ");
         }
 
-        private async System.Threading.Tasks.Task LogInvalidUidAsync(string uid, TransactionType transactionType, VerificationMode mode)
+        private async System.Threading.Tasks.Task LogInvalidUidAsync(string uid, EventRecord selectedEvent)
         {
             try
             {
-                await _database.LogVerificationAsync(null, uid, transactionType, mode, false, "INVALID_NFC_READ", "INVALID_UID", "Invalid or corrupted NFC UID read was rejected before verification.");
-                await _database.AddAlertAsync(null, "INVALID_UID", $"Invalid NFC UID read rejected: {uid}.");
+                await _database.LogVerificationAsync(null, uid, TransactionType.EventAttendance, selectedEvent.VerificationMode, false, "INVALID_NFC_READ", "INVALID_UID", $"Invalid or corrupted NFC UID read was rejected for event {selectedEvent.EventId}.");
+                await _database.AddAlertAsync(null, "INVALID_UID", $"Invalid NFC UID read rejected for event {selectedEvent.EventId}: {uid}.");
             }
             catch (Exception ex)
             {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] Could not log invalid UID: {ex.Message}");
+                AttendanceLogListView.Items.Insert(0, $"[DB ERROR] Could not log invalid UID: {ex.Message}");
             }
         }
 
-        private void SecurityModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private EventRecord? GetSelectedEvent()
         {
-            UpdateRiskSummary();
-        }
-
-        private VerificationMode GetSelectedMode()
-        {
-            return SecurityModeComboBox.SelectedIndex switch
-            {
-                0 => VerificationMode.Fast,
-                2 => VerificationMode.HighSecurity,
-                _ => VerificationMode.Standard
-            };
-        }
-
-        private void UpdateRiskSummary()
-        {
-            VerificationMode mode = GetSelectedMode();
-            RiskModeTextBlock.Text = ModeDisplayName(mode);
-            RequiredStepsTextBlock.Text = RequiredStepsDisplay(mode);
+            return ActiveEventComboBox.SelectedItem as EventRecord;
         }
 
         private static string ModeDisplayName(VerificationMode mode)
@@ -376,15 +414,6 @@ namespace NFC_System
             };
         }
 
-        private TransactionType GetSelectedTransactionType()
-        {
-            return DirectionComboBox.SelectedIndex switch
-            {
-                1 => TransactionType.Exit,
-                _ => TransactionType.Entry
-            };
-        }
-
         private static Brush OutcomeBrush(VerificationOutcome outcome)
         {
             if (outcome.Step == VerificationStep.RequiresPin || outcome.Step == VerificationStep.RequiresQr)
@@ -393,7 +422,7 @@ namespace NFC_System
             }
 
             if (outcome.ErrorCategory.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
-                outcome.ErrorCategory.Contains("TAILGATING", StringComparison.OrdinalIgnoreCase))
+                outcome.ErrorCategory.Contains("EVENT", StringComparison.OrdinalIgnoreCase))
             {
                 return new SolidColorBrush(Colors.DarkOrange);
             }
