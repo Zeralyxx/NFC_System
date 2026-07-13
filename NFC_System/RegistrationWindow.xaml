@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Window
     x:Class="NFC_System.RegistrationWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -6,242 +7,533 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="RegistrationWindow">
+    Title="NFC Student Registration">
 
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
-
-    <Grid Padding="28" RowSpacing="20" ColumnSpacing="20">
+    <Grid Background="#0F0F17">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="52"/>
+            <!-- Header bar -->
             <RowDefinition Height="*"/>
+            <!-- Content -->
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid>
+        <!-- ── Header ── -->
+        <Grid Grid.Row="0" Background="#16161F" Padding="16,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <Button Grid.Column="0"
-                    Content="← Back to Dashboard"
-                    Padding="16,10"
+                    Content="← Back"
                     Click="BackButton_Click"
-                    CornerRadius="12"/>
+                    Background="#252532"
+                    Foreground="#9094A8"
+                    Padding="10,5"
+                    CornerRadius="5"
+                    FontSize="12"
+                    VerticalAlignment="Center"/>
 
-            <StackPanel Grid.Column="1" Margin="18,0,0,0" Spacing="4">
-                <TextBlock Text="NFC Student Registration"
-                           FontSize="38"
-                           FontWeight="Bold"/>
-                <TextBlock Text="Create a student record and bind it to an NFC UID"
-                           FontSize="16"
-                           Opacity="0.72"/>
-            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       Text="STUDENT REGISTRATION"
+                       FontSize="13" FontWeight="Bold"
+                       Foreground="#CDD6F4"
+                       CharacterSpacing="80"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"/>
         </Grid>
 
-        <!-- Content -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
+        <!-- ── Main content: 3 columns ── -->
+        <Grid Grid.Row="1" Padding="14,12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.8*"/>
-                <ColumnDefinition Width="2.2*"/>
+                <ColumnDefinition Width="300"/>
+                <!-- Left: student form -->
+                <ColumnDefinition Width="*"/>
+                <!-- Middle: NFC + preview -->
+                <ColumnDefinition Width="380"/>
+                <!-- Right: activity log -->
             </Grid.ColumnDefinitions>
 
-            <!-- Left: Form -->
-            <Border Grid.Column="0"
-                    Padding="24"
-                    CornerRadius="24"
-                    Background="#1F2A37"
-                    BorderBrush="#30FFFFFF"
-                    BorderThickness="1">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="16">
-                        <TextBlock Text="Student Information"
-                                   FontSize="28"
-                                   FontWeight="SemiBold"/>
+            <!-- ══ LEFT PANEL: Student Info Form ══ -->
+            <Grid Grid.Column="0" Margin="0,0,12,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
+                <!-- Student info fields -->
+                <Border Grid.Row="0"
+                        Background="#16161F"
+                        CornerRadius="10"
+                        Padding="14"
+                        Margin="0,0,0,10"
+                        BorderBrush="#2A2A3D"
+                        BorderThickness="1">
+                    <StackPanel Spacing="0">
+
+                        <TextBlock Text="STUDENT INFORMATION"
+                                   FontSize="10" FontWeight="Bold"
+                                   Foreground="#45475A"
+                                   CharacterSpacing="80"
+                                   Margin="0,0,0,12"/>
+
+                        <TextBlock Text="Student ID" Foreground="#6C7086" FontSize="11" Margin="0,0,0,4"/>
                         <TextBox x:Name="StudentIdTextBox"
-                                 Header="Student ID"
-                                 PlaceholderText="e.g. 26-00001"/>
+                                 PlaceholderText="e.g. 26-00001"
+                                 Background="#252532"
+                                 Foreground="White"
+                                 BorderBrush="#3D3D52"
+                                 CornerRadius="6"
+                                 FontSize="12"
+                                 Padding="8,6"
+                                 Margin="0,0,0,10"/>
 
+                        <TextBlock Text="Full Name" Foreground="#6C7086" FontSize="11" Margin="0,0,0,4"/>
                         <TextBox x:Name="FullNameTextBox"
-                                 Header="Full Name"
-                                 PlaceholderText="Enter complete name"/>
+                                 PlaceholderText="Enter complete name"
+                                 Background="#252532"
+                                 Foreground="White"
+                                 BorderBrush="#3D3D52"
+                                 CornerRadius="6"
+                                 FontSize="12"
+                                 Padding="8,6"
+                                 Margin="0,0,0,10"/>
 
+                        <TextBlock Text="Course" Foreground="#6C7086" FontSize="11" Margin="0,0,0,4"/>
                         <TextBox x:Name="CourseTextBox"
-                                 Header="Course"
-                                 PlaceholderText="e.g. BS Computer Science"/>
+                                 PlaceholderText="e.g. BS Computer Science"
+                                 Background="#252532"
+                                 Foreground="White"
+                                 BorderBrush="#3D3D52"
+                                 CornerRadius="6"
+                                 FontSize="12"
+                                 Padding="8,6"
+                                 Margin="0,0,0,10"/>
 
-                        <Grid ColumnSpacing="12">
+                        <Grid ColumnSpacing="8" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBox Grid.Column="0"
-                                     x:Name="YearLevelTextBox"
-                                     Header="Year Level"
-                                     PlaceholderText="e.g. 3"/>
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Text="Year Level" Foreground="#6C7086" FontSize="11"/>
+                                <TextBox x:Name="YearLevelTextBox"
+                                         PlaceholderText="e.g. 3"
+                                         Background="#252532"
+                                         Foreground="White"
+                                         BorderBrush="#3D3D52"
+                                         CornerRadius="6"
+                                         FontSize="12"
+                                         Padding="8,6"/>
+                            </StackPanel>
 
-                            <TextBox Grid.Column="1"
-                                     x:Name="SectionTextBox"
-                                     Header="Section"
-                                     PlaceholderText="e.g. 3A"/>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Text="Section" Foreground="#6C7086" FontSize="11"/>
+                                <TextBox x:Name="SectionTextBox"
+                                         PlaceholderText="e.g. 3A"
+                                         Background="#252532"
+                                         Foreground="White"
+                                         BorderBrush="#3D3D52"
+                                         CornerRadius="6"
+                                         FontSize="12"
+                                         Padding="8,6"/>
+                            </StackPanel>
                         </Grid>
 
+                        <TextBlock Text="Status" Foreground="#6C7086" FontSize="11" Margin="0,0,0,4"/>
                         <ComboBox x:Name="StatusComboBox"
-                                  Header="Status"
-                                  SelectedIndex="0">
+                                  SelectedIndex="0"
+                                  Background="#252532"
+                                  Foreground="White"
+                                  BorderBrush="#3D3D52"
+                                  CornerRadius="6"
+                                  FontSize="12"
+                                  HorizontalAlignment="Stretch"
+                                  Padding="8,4">
                             <ComboBoxItem Content="Active"/>
                             <ComboBoxItem Content="Inactive"/>
                             <ComboBoxItem Content="Expelled"/>
                         </ComboBox>
 
-                        <Border CornerRadius="16"
-                                Padding="16"
-                                Background="#182231"
-                                Margin="0,6,0,0">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="NFC Enrollment"
-                                           FontSize="20"
-                                           FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
 
-                                <TextBox x:Name="NfcUidTextBox"
-                                         Header="NFC UID"
-                                         IsReadOnly="True"
-                                         PlaceholderText="Tap NFC card to capture UID"/>
+                <!-- NFC Enrollment -->
+                <Border Grid.Row="1"
+                        Background="#16161F"
+                        CornerRadius="10"
+                        Padding="14"
+                        BorderBrush="#2A2A3D"
+                        BorderThickness="1">
+                    <StackPanel Spacing="0">
 
-                                <TextBlock Text="Use “Scan UID” and tap the NFC sticker to bind it to the student."
-                                           FontSize="14"
-                                           Opacity="0.68"
-                                           TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
+                        <TextBlock Text="NFC ENROLLMENT"
+                                   FontSize="10" FontWeight="Bold"
+                                   Foreground="#45475A"
+                                   CharacterSpacing="80"
+                                   Margin="0,0,0,12"/>
 
-                        <Grid Margin="0,10,0,0" ColumnSpacing="12">
+                        <TextBlock Text="NFC UID" Foreground="#6C7086" FontSize="11" Margin="0,0,0,4"/>
+                        <TextBox x:Name="NfcUidTextBox"
+                                 IsReadOnly="True"
+                                 PlaceholderText="Tap NFC card to capture UID"
+                                 Background="#252532"
+                                 Foreground="#A6E3A1"
+                                 BorderBrush="#3D3D52"
+                                 CornerRadius="6"
+                                 FontSize="12"
+                                 FontFamily="Consolas"
+                                 Padding="8,6"
+                                 Margin="0,0,0,6"/>
+
+                        <TextBlock Text="Press Scan UID then tap the NFC sticker to bind it."
+                                   Foreground="#3D3D52"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+
+                        <Button x:Name="ScanUidButton"
+                                Content="◉  Scan UID"
+                                Background="#89B4FA"
+                                Foreground="#0F0F17"
+                                FontWeight="Bold"
+                                FontSize="12"
+                                HorizontalAlignment="Stretch"
+                                Padding="10,8"
+                                CornerRadius="7"
+                                Margin="0,0,0,6"/>
+
+                        <Grid ColumnSpacing="6">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.2*"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="1.2*"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
                             <Button Grid.Column="0"
-                                    x:Name="ScanUidButton"
-                                    Content="Scan UID"
-                                    Height="46"
-                                    CornerRadius="14"/>
+                                    x:Name="SaveButton"
+                                    Content="💾  Save"
+                                    Background="#A6E3A1"
+                                    Foreground="#0F0F17"
+                                    FontWeight="Bold"
+                                    FontSize="12"
+                                    HorizontalAlignment="Stretch"
+                                    Padding="10,8"
+                                    CornerRadius="7"/>
 
                             <Button Grid.Column="1"
                                     x:Name="ClearButton"
-                                    Content="Clear"
-                                    Height="46"
-                                    CornerRadius="14"/>
-
-                            <Button Grid.Column="2"
-                                    x:Name="SaveButton"
-                                    Content="Save Student"
-                                    Height="46"
-                                    CornerRadius="14"/>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-
-            <!-- Right: Preview / Log -->
-            <Grid Grid.Column="1" RowSpacing="20">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="1.45*"/>
-                    <RowDefinition Height="1*"/>
-                </Grid.RowDefinitions>
-
-                <!-- Preview -->
-                <Border Grid.Row="0"
-                        Padding="24"
-                        CornerRadius="24"
-                        Background="#2B2352"
-                        BorderBrush="#30FFFFFF"
-                        BorderThickness="1">
-                    <Grid RowSpacing="16">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0"
-                                   Text="Registration Preview"
-                                   FontSize="28"
-                                   FontWeight="SemiBold"/>
-
-                        <Grid Grid.Row="1" ColumnSpacing="20">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.4*"/>
-                                <ColumnDefinition Width="1*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- Left: Student Info -->
-                            <Border Grid.Column="0"
-                                    CornerRadius="20"
-                                    Padding="18"
-                                    Background="#18000000">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                                    <TextBlock x:Name="PreviewTextBlock"
-                               Text="Student information will appear here."
-                               TextWrapping="Wrap"
-                               FontSize="20"
-                               LineHeight="30"/>
-                                </ScrollViewer>
-                            </Border>
-
-                            <!-- Right: Photo -->
-                            <Border Grid.Column="1"
-                                    CornerRadius="20"
-                                    Background="#18000000"
-                                    MinHeight="260"
-                                    MaxHeight="320">
-                                <Grid>
-                                    <Viewbox Stretch="Uniform">
-                                        <SymbolIcon Symbol="Contact"/>
-                                    </Viewbox>
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </Grid>
-                </Border>
-
-                <!-- Logs -->
-                <Border Grid.Row="1"
-                        Padding="24"
-                        CornerRadius="24"
-                        Background="#23283A"
-                        BorderBrush="#30FFFFFF"
-                        BorderThickness="1">
-                    <StackPanel Spacing="16">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Text="Recent UID Logs"
-                                       FontSize="26"
-                                       FontWeight="SemiBold"/>
-
-                            <Border Grid.Column="1"
-                                    Padding="10,4"
-                                    CornerRadius="999"
-                                    Background="#2246A3FF">
-                                <TextBlock Text="Live"
-                                           FontWeight="SemiBold"/>
-                            </Border>
+                                    Content="✕  Clear"
+                                    Background="#252532"
+                                    Foreground="#9094A8"
+                                    FontSize="12"
+                                    HorizontalAlignment="Stretch"
+                                    Padding="10,8"
+                                    CornerRadius="7"/>
                         </Grid>
 
-                        <ListView x:Name="UidLogListView"
-                                  Height="300"/>
                     </StackPanel>
                 </Border>
             </Grid>
+
+            <!-- ══ MIDDLE PANEL: Student ID Card Preview ══ -->
+            <!-- ══ MIDDLE PANEL: Student ID Card Preview ══ -->
+            <Grid Grid.Column="1" Margin="0,0,12,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+               Text="REGISTRATION PREVIEW"
+               FontSize="10" FontWeight="Bold"
+               Foreground="#45475A"
+               CharacterSpacing="80"
+               Margin="0,0,0,8"/>
+
+                <!-- Card -->
+                <Border Grid.Row="1"
+            Background="#16161F"
+            CornerRadius="10"
+            Padding="24"
+            BorderBrush="#2A2A3D"
+            BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="200"/>
+                            <!-- Photo column -->
+                            <ColumnDefinition Width="*"/>
+                            <!-- Details column -->
+                        </Grid.ColumnDefinitions>
+
+                        <!-- ── Left: Photo ── -->
+                        <Grid Grid.Column="0" Margin="0,0,24,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0"
+                           Text="Student Photo"
+                           FontSize="11"
+                           Foreground="#6C7086"
+                           Margin="0,0,0,10"/>
+
+                            <!-- Circular photo frame -->
+                            <Border Grid.Row="1"
+                        Width="160" Height="160"
+                        CornerRadius="80"
+                        Background="#252532"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Margin="0,0,0,14">
+                                <Grid>
+                                    <Image x:Name="StudentPhotoImage"
+                               Stretch="UniformToFill"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Stretch"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Photo buttons -->
+                            <StackPanel Grid.Row="2" Spacing="6">
+                                <Button x:Name="UploadPhotoButton"
+                            Content="📁  Upload Photo"
+                            Background="#89DCEB"
+                            Foreground="#0F0F17"
+                            FontWeight="Bold"
+                            FontSize="11"
+                            HorizontalAlignment="Stretch"
+                            Padding="10,8"
+                            CornerRadius="7"
+                            Click="UploadPhotoButton_Click"/>
+                                <Button x:Name="DeletePhotoButton"
+                            Content="🗑  Remove Photo"
+                            Background="#F38BA8"
+                            Foreground="#0F0F17"
+                            FontWeight="Bold"
+                            FontSize="11"
+                            HorizontalAlignment="Stretch"
+                            Padding="10,8"
+                            CornerRadius="7"
+                            Click="DeletePhotoButton_Click"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- ── Right: Student Details ── -->
+                        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="0" VerticalAlignment="Top">
+
+                                <TextBlock Text="Student Details"
+                               FontSize="20" FontWeight="SemiBold"
+                               Foreground="#CDD6F4"
+                               Margin="0,0,0,16"/>
+
+                                <!-- Full Name -->
+                                <TextBlock Text="Full Name"
+                               FontSize="11" Foreground="#6C7086"
+                               Margin="0,0,0,4"/>
+                                <TextBlock x:Name="PreviewFullNameTextBlock"
+                               Text="—"
+                               FontSize="22" FontWeight="Bold"
+                               Foreground="#CDD6F4"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+
+                                <!-- Student ID + Course -->
+                                <Grid ColumnSpacing="32" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="Student ID"
+                                       FontSize="11" Foreground="#6C7086"/>
+                                        <TextBlock x:Name="PreviewStudentIdTextBlock"
+                                       Text="—"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       Foreground="#CDD6F4"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock Text="Course"
+                                       FontSize="11" Foreground="#6C7086"/>
+                                        <TextBlock x:Name="PreviewCourseTextBlock"
+                                       Text="—"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       Foreground="#CDD6F4"
+                                       TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Year & Section + Status -->
+                                <Grid ColumnSpacing="32" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="Year &amp; Section"
+                                       FontSize="11" Foreground="#6C7086"/>
+                                        <TextBlock x:Name="PreviewYearSectionTextBlock"
+                                       Text="—"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       Foreground="#CDD6F4"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock Text="Enrollment Status"
+                                       FontSize="11" Foreground="#6C7086"/>
+                                        <Border x:Name="PreviewStatusBadge"
+                                    Background="#1A3A1A"
+                                    CornerRadius="999"
+                                    Padding="14,6"
+                                    HorizontalAlignment="Left">
+                                            <TextBlock x:Name="PreviewStatusTextBlock"
+                                           Text="—"
+                                           FontSize="12" FontWeight="Bold"
+                                           Foreground="#A6E3A1"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Registration Status Indicators -->
+                                <Border Background="#252532" 
+                            CornerRadius="8" 
+                            Padding="12" 
+                            Margin="0,0,0,12">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- NFC Status -->
+                                        <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                            <FontIcon Glyph="&#xE72E;" 
+                                         FontSize="16" 
+                                         Foreground="#89B4FA"/>
+                                            <TextBlock Text="NFC" 
+                                          FontSize="9" 
+                                          Foreground="#6C7086" 
+                                          HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="NfcStatusText" 
+                                          Text="Waiting" 
+                                          FontSize="11" 
+                                          Foreground="#F9E2AF" 
+                                          HorizontalAlignment="Center"/>
+                                        </StackPanel>
+
+                                        <!-- Photo Status -->
+                                        <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                            <FontIcon Glyph="&#xEB9F;" 
+                                         FontSize="16" 
+                                         Foreground="#89DCEB"/>
+                                            <TextBlock Text="Photo" 
+                                          FontSize="9" 
+                                          Foreground="#6C7086" 
+                                          HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="PhotoStatusText" 
+                                          Text="None" 
+                                          FontSize="11" 
+                                          Foreground="#F38BA8" 
+                                          HorizontalAlignment="Center"/>
+                                        </StackPanel>
+
+                                        <!-- Registration Status -->
+                                        <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                            <FontIcon Glyph="&#xE930;" 
+                                         FontSize="16" 
+                                         Foreground="#F9E2AF"/>
+                                            <TextBlock Text="Reg" 
+                                          FontSize="9" 
+                                          Foreground="#6C7086" 
+                                          HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="RegStatusText" 
+                                          Text="Pending" 
+                                          FontSize="11" 
+                                          Foreground="#F9E2AF" 
+                                          HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Divider -->
+                                <Border Height="1" Background="#2A2A3D" Margin="0,0,0,8"/>
+
+                                <!-- NFC UID row -->
+                                <Grid ColumnSpacing="12" Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                   Text="NFC UID"
+                                   FontSize="11" Foreground="#6C7086"
+                                   VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PreviewNfcUidTextBlock"
+                                   Grid.Column="1"
+                                   Text="—"
+                                   FontSize="12"
+                                   FontFamily="Consolas"
+                                   Foreground="#89B4FA"
+                                   VerticalAlignment="Center"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ══ RIGHT PANEL: Activity Log ══ -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Text="ACTIVITY LOG"
+                           FontSize="10" FontWeight="Bold"
+                           Foreground="#45475A"
+                           CharacterSpacing="80"
+                           Margin="0,0,0,8"/>
+
+                <Border Grid.Row="1"
+                        Background="#16161F"
+                        CornerRadius="10"
+                        Padding="6"
+                        BorderBrush="#2A2A3D"
+                        BorderThickness="1">
+                    <ListView x:Name="UidLogListView"
+                              Background="Transparent"
+                              Foreground="#6C7086"
+                              FontSize="11"
+                              FontFamily="Consolas">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="4,2"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}"
+                                           TextWrapping="Wrap"
+                                           FontSize="11"
+                                           FontFamily="Consolas"
+                                           Foreground="#6C7086"/>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Border>
+            </Grid>
+
         </Grid>
     </Grid>
 </Window>

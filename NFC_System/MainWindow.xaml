@@ -51,85 +51,127 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="360"/>
                 <ColumnDefinition Width="360"/>
+                <ColumnDefinition Width="360"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
             <!-- Registration Card -->
             <Button Grid.Column="0"
                     Click="Registration_Click"
                     Padding="0"
                     BorderThickness="0"
-                    Background="Transparent">
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    VerticalContentAlignment="Stretch">
                 <Border CornerRadius="28"
-                        Padding="30"
-                        MinHeight="260"
+                        Padding="36"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
                         Background="#1F2A37"
                         BorderBrush="#30FFFFFF"
                         BorderThickness="1">
-                    <StackPanel Spacing="18" VerticalAlignment="Center">
-                        <Border Width="78"
-                                Height="78"
-                                CornerRadius="22"
+                    <StackPanel Spacing="18">
+                        <Border Width="78" Height="78" CornerRadius="22"
+                                HorizontalAlignment="Left"
                                 Background="#2246A3FF">
-                            <Viewbox Margin="16">
-                                <SymbolIcon Symbol="Contact"/>
-                            </Viewbox>
+                            <Viewbox Margin="16"><SymbolIcon Symbol="Contact"/></Viewbox>
                         </Border>
 
                         <TextBlock Text="Registration"
-                                   FontSize="32"
-                                   FontWeight="Bold"/>
+                                   FontSize="32" FontWeight="Bold"
+                                   TextWrapping="Wrap"/>
 
                         <TextBlock Text="Register student information and link each NFC UID to a student record."
-                                   FontSize="17"
-                                   Opacity="0.75"
-                                   TextWrapping="Wrap"/>
+                                   FontSize="17" Opacity="0.75" TextWrapping="Wrap"/>
 
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
                             <FontIcon Glyph="&#xE72A;" FontSize="16"/>
                             <TextBlock Text="Student profiles · NFC enrollment"
-                                       FontSize="15"
-                                       Opacity="0.8"/>
+                                       FontSize="15" Opacity="0.8" TextWrapping="Wrap"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
             </Button>
 
-            <!-- Verification Card -->
+            <!-- Verification Management Card -->
             <Button Grid.Column="1"
-                    Click="Verification_Click"
+                    Click="VerificationManagement_Click"
                     Padding="0"
                     BorderThickness="0"
-                    Background="Transparent">
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    VerticalContentAlignment="Stretch">
                 <Border CornerRadius="28"
-                        Padding="30"
-                        MinHeight="260"
-                        Background="#2B2352"
+                        Padding="36"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Background="#251A36"
                         BorderBrush="#30FFFFFF"
                         BorderThickness="1">
-                    <StackPanel Spacing="18" VerticalAlignment="Center">
-                        <Border Width="78"
-                                Height="78"
-                                CornerRadius="22"
-                                Background="#22A855F7">
-                            <Viewbox Margin="16">
-                                <SymbolIcon Symbol="View"/>
-                            </Viewbox>
+                    <StackPanel Spacing="18">
+                        <Border Width="78" Height="78" CornerRadius="22"
+                                HorizontalAlignment="Left"
+                                Background="#22CBA6F7">
+                            <Viewbox Margin="16"><SymbolIcon Symbol="People"/></Viewbox>
                         </Border>
 
-                        <TextBlock Text="Verification"
-                                   FontSize="32"
-                                   FontWeight="Bold"/>
-
-                        <TextBlock Text="Scan NFC tags in real time to verify identity and display access results."
-                                   FontSize="17"
-                                   Opacity="0.75"
+                        <TextBlock Text="Verification Management"
+                                   FontSize="32" FontWeight="Bold"
                                    TextWrapping="Wrap"/>
 
+                        <TextBlock Text="Create daily sessions, track scan history, and view full logs per day."
+                                   FontSize="17" Opacity="0.75" TextWrapping="Wrap"/>
+
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
-                            <FontIcon Glyph="&#xE73E;" FontSize="16"/>
-                            <TextBlock Text="Live scan · access decision"
-                                       FontSize="15"
-                                       Opacity="0.8"/>
+                            <FontIcon Glyph="&#xE736;" FontSize="16"/>
+                            <TextBlock Text="Sessions · per-day logs · universal viewer"
+                                       FontSize="15" Opacity="0.8" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Button>
+
+            <!-- Event Attendance Card -->
+            <Button Grid.Column="2"
+                    Click="EventManagement_Click"
+                    Padding="0"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    VerticalContentAlignment="Stretch">
+                <Border CornerRadius="28"
+                        Padding="36"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Background="#1A2E22"
+                        BorderBrush="#30FFFFFF"
+                        BorderThickness="1">
+                    <StackPanel Spacing="18">
+                        <Border Width="78" Height="78" CornerRadius="22"
+                                HorizontalAlignment="Left"
+                                Background="#2234C759">
+                            <Viewbox Margin="16"><SymbolIcon Symbol="Calendar"/></Viewbox>
+                        </Border>
+
+                        <TextBlock Text="Event Attendance"
+                                   FontSize="32" FontWeight="Bold"
+                                   TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Create events, start attendance sessions, and track student participation."
+                                   FontSize="17" Opacity="0.75" TextWrapping="Wrap"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                            <FontIcon Glyph="&#xE787;" FontSize="16"/>
+                            <TextBlock Text="Events · attendance log"
+                                       FontSize="15" Opacity="0.8"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -137,10 +179,23 @@
         </Grid>
 
         <!-- Footer -->
-        <TextBlock Grid.Row="2"
-                   Text="Taguig City University • NFC Thesis Prototype"
-                   HorizontalAlignment="Center"
-                   Opacity="0.5"
-                   Margin="0,30,0,0"/>
+        <Grid Grid.Row="2" Margin="0,24,0,0">
+            <TextBlock Text="Taguig City University • NFC Thesis Prototype"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Opacity="0.5"/>
+            <Button Content="⚙ Settings"
+                    Click="Settings_Click"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderBrush="#30FFFFFF"
+                    BorderThickness="1"
+                    Foreground="White"
+                    Opacity="0.7"
+                    Padding="14,8"
+                    CornerRadius="8"
+                    FontSize="14"/>
+        </Grid>
     </Grid>
 </Window>

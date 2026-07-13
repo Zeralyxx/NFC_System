@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="NFC_System.AttendanceLogsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:NFC_System"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Attendance Logs">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid Padding="36" RowSpacing="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ── Header ── -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Width="56" Height="56"
+                    CornerRadius="16"
+                    Background="#2246A3FF"
+                    VerticalAlignment="Center"
+                    Margin="0,0,18,0">
+                <Viewbox Margin="14">
+                    <SymbolIcon Symbol="List"/>
+                </Viewbox>
+            </Border>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                <TextBlock x:Name="TitleTextBlock"
+                           Text="Attendance Logs"
+                           FontSize="30"
+                           FontWeight="Bold"/>
+                <TextBlock x:Name="SubtitleTextBlock"
+                           Text="Loading…"
+                           FontSize="14"
+                           Opacity="0.6"/>
+            </StackPanel>
+
+            <Button Grid.Column="2"
+                    Content="✕  Close"
+                    Click="CloseButton_Click"
+                    VerticalAlignment="Center"
+                    Padding="18,10"
+                    CornerRadius="12"
+                    Background="#30FFFFFF"
+                    BorderThickness="0"/>
+        </Grid>
+
+        <!-- ── Stats bar ── -->
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    CornerRadius="14" Padding="18,14"
+                    Background="#1A2E22">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Total Records" FontSize="12" Opacity="0.6"/>
+                    <TextBlock x:Name="StatTotalTextBlock"
+                               Text="—" FontSize="28" FontWeight="Bold"
+                               Foreground="#A6E3A1"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1"
+                    CornerRadius="14" Padding="18,14"
+                    Background="#1F2A37">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Present / Granted" FontSize="12" Opacity="0.6"/>
+                    <TextBlock x:Name="StatGrantedTextBlock"
+                               Text="—" FontSize="28" FontWeight="Bold"
+                               Foreground="#89B4FA"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2"
+                    CornerRadius="14" Padding="18,14"
+                    Background="#2A1A1A">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Denied" FontSize="12" Opacity="0.6"/>
+                    <TextBlock x:Name="StatDeniedTextBlock"
+                               Text="—" FontSize="28" FontWeight="Bold"
+                               Foreground="#F38BA8"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="3"
+                    CornerRadius="14" Padding="18,14"
+                    Background="#2B2352">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Unique Students" FontSize="12" Opacity="0.6"/>
+                    <TextBlock x:Name="StatUniqueTextBlock"
+                               Text="—" FontSize="28" FontWeight="Bold"
+                               Foreground="#CBA6F7"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ── Log table ── -->
+        <Border Grid.Row="2"
+                CornerRadius="20"
+                Background="#16161F"
+                BorderBrush="#30FFFFFF"
+                BorderThickness="1"
+                Padding="0">
+            <Grid RowSpacing="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Column headers -->
+                <Border Grid.Row="0"
+                        Background="#20FFFFFF"
+                        CornerRadius="20,20,0,0"
+                        Padding="16,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="120"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="200"/>
+                            <ColumnDefinition Width="100"/>
+                            <ColumnDefinition Width="120"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Tap Time" FontSize="12" FontWeight="SemiBold" Opacity="0.6"/>
+                        <TextBlock Grid.Column="1" Text="Student ID" FontSize="12" FontWeight="SemiBold" Opacity="0.6"/>
+                        <TextBlock Grid.Column="2" Text="Full Name" FontSize="12" FontWeight="SemiBold" Opacity="0.6"/>
+                        <TextBlock Grid.Column="3" Text="Course / Year / Section" FontSize="12" FontWeight="SemiBold" Opacity="0.6"/>
+                        <TextBlock Grid.Column="4" Text="Status" FontSize="12" FontWeight="SemiBold" Opacity="0.6"/>
+                        <TextBlock Grid.Column="5" Text="Remarks" FontSize="12" FontWeight="SemiBold" Opacity="0.6"/>
+                    </Grid>
+                </Border>
+
+                <!-- Rows -->
+                <ListView Grid.Row="1"
+                          x:Name="LogsListView"
+                          Background="Transparent"
+                          SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="16,10"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:LogRow">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180"/>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="200"/>
+                                    <ColumnDefinition Width="100"/>
+                                    <ColumnDefinition Width="120"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="{x:Bind TapTime}"
+                                           FontSize="12" FontFamily="Consolas"
+                                           Opacity="0.75"/>
+
+                                <TextBlock Grid.Column="1"
+                                           Text="{x:Bind StudentId}"
+                                           FontSize="13" FontWeight="SemiBold"/>
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind FullName}"
+                                           FontSize="13"
+                                           TextTrimming="CharacterEllipsis"/>
+
+                                <TextBlock Grid.Column="3"
+                                           Text="{x:Bind CourseYearSec}"
+                                           FontSize="12" Opacity="0.75"
+                                           TextTrimming="CharacterEllipsis"/>
+
+                                <Border Grid.Column="4"
+                                        CornerRadius="6"
+                                        Padding="8,3"
+                                        HorizontalAlignment="Left"
+                                        Background="{x:Bind StatusColor}">
+                                    <TextBlock Text="{x:Bind AttendanceStatus}"
+                                               FontSize="11" FontWeight="Bold"
+                                               Foreground="White"/>
+                                </Border>
+
+                                <TextBlock Grid.Column="5"
+                                           Text="{x:Bind Remarks}"
+                                           FontSize="11" Opacity="0.6"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <!-- ── Footer ── -->
+        <Grid Grid.Row="3">
+            <TextBlock x:Name="FooterTextBlock"
+                       Text=""
+                       FontSize="13"
+                       Opacity="0.5"
+                       VerticalAlignment="Center"/>
+            <Button Content="Export CSV  ↓"
+                    Click="ExportCsvButton_Click"
+                    HorizontalAlignment="Right"
+                    Padding="18,10"
+                    CornerRadius="10"
+                    Background="#313244"
+                    Foreground="White"
+                    FontSize="13"/>
+        </Grid>
+    </Grid>
+</Window>

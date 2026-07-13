@@ -58,6 +58,26 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
+  	<Page Update="EventAttendanceWindow.xaml">
+  		<Generator>MSBuild:Compile</Generator>
+  	</Page>
+  </ItemGroup>
+  <ItemGroup>
+  	<Page Update="AttendanceLogsWindow.xaml">
+  		<Generator>MSBuild:Compile</Generator>
+  	</Page>
+  </ItemGroup>
+  <ItemGroup>
+  	<Page Update="VerificationManagementWindow.xaml">
+  		<Generator>MSBuild:Compile</Generator>
+  	</Page>
+  </ItemGroup>
+  <ItemGroup>
+  	<Page Update="EventManagementWindow.xaml">
+  		<Generator>MSBuild:Compile</Generator>
+  	</Page>
+  </ItemGroup>
+  <ItemGroup>
     <Page Update="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -80,7 +100,6 @@
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
     <GenerateAppInstallerFile>True</GenerateAppInstallerFile>
     <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
-    <PackageCertificateThumbprint>48254B97EF821DE2D28BA4895EDE123239A34365</PackageCertificateThumbprint>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
     <AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
     <GenerateTestArtifacts>False</GenerateTestArtifacts>

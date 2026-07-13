@@ -21,14 +21,30 @@ namespace NFC_System
             this.Close();
         }
 
-        private void Verification_Click(object sender, RoutedEventArgs e)
+        private void VerificationManagement_Click(object sender, RoutedEventArgs e)
         {
-            var window = new VerificationWindow();
+            var window = new VerificationManagementWindow();
             window.Activate();
             this.Close();
         }
 
+        /// <summary>
+        /// Opens the Event Management window (admin creates events,
+        /// starts/ends attendance sessions, views attendance logs).
+        /// </summary>
+        private void EventManagement_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new EventManagementWindow();
+            window.Activate();
+            this.Close();
+        }
 
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new SettingsWindow();
+            window.Activate();
+            this.Close();
+        }
 
         private void MaximizeWindow()
         {
@@ -42,12 +58,18 @@ namespace NFC_System
             }
         }
 
-        
+
     }
+
+
+
+
 
     public static class DispatcherQueueExtensions
     {
-        public static System.Threading.Tasks.Task TryEnqueueAsync(this Microsoft.UI.Dispatching.DispatcherQueue dispatcherQueue, Action callback)
+        public static System.Threading.Tasks.Task TryEnqueueAsync(
+            this Microsoft.UI.Dispatching.DispatcherQueue dispatcherQueue,
+            Action callback)
         {
             var tcs = new System.Threading.Tasks.TaskCompletionSource<object?>();
             dispatcherQueue.TryEnqueue(() =>
@@ -65,5 +87,6 @@ namespace NFC_System
             return tcs.Task;
         }
     }
+
 
 }
