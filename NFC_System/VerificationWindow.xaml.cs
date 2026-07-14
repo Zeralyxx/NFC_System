@@ -225,7 +225,121 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+                VerificationLogListView.Items.Insert(0, $"[DB ERROR] Could not log invalid UID: {ex.Message}");
+            }
+        }
+
+        private void SecurityModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateRiskSummary();
+        }
+
+        private VerificationMode GetSelectedMode()
+        {
+            return SecurityModeComboBox.SelectedIndex switch
+            {
+                0 => VerificationMode.Fast,
+                2 => VerificationMode.HighSecurity,
+                _ => VerificationMode.Standard
+            };
+        }
+
+        private void UpdateRiskSummary()
+        {
+            VerificationMode mode = GetSelectedMode();
+            
+        }
+
+        private static string ModeDisplayName(VerificationMode mode)
+        {
+            return mode switch
+            {
+                VerificationMode.Fast => "Fast Mode",
+                VerificationMode.HighSecurity => "High-Security Mode",
+                _ => "Standard Mode"
+            };
+        }
+
+        private static string RequiredStepsDisplay(VerificationMode mode)
+        {
+            return mode switch
+            {
+                VerificationMode.Fast => "NFC only",
+                VerificationMode.HighSecurity => "NFC + PIN + QR",
+                _ => "NFC + PIN"
+            };
+        }
+
+        private TransactionType GetSelectedTransactionType()
+        {
+            return DirectionComboBox.SelectedIndex switch
+            {
+                1 => TransactionType.Exit,
+                _ => TransactionType.Entry
+            };
+        }
+
+        private static Brush OutcomeBrush(VerificationOutcome outcome)
+        {
+            if (outcome.Step == VerificationStep.RequiresPin || outcome.Step == VerificationStep.RequiresQr)
+            {
+                return new SolidColorBrush(Colors.SteelBlue);
+            }
+
+            if (outcome.ErrorCategory.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
+                outcome.ErrorCategory.Contains("TAILGATING", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush(Colors.DarkOrange);
+            }
+
+            return new SolidColorBrush(Colors.Firebrick);
+        }
+
+        private static bool IsInvalidUid(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid))
+            {
+                return true;
+            }
+
+            string[] parts = uid.Split(':');
+            if (parts.Length != 4 && parts.Length != 7)
+            {
+                return true;
+            }
+
+            bool allZero = true;
+            foreach (string part in parts)
+            {
+                if (part != "00")
+                {
+                    allZero = false;
+                    break;
+                }
+            }
+
+            if (allZero)
+            {
+                return true;
+            }
+
+            if (parts.Length >= 4)
+            {
+                int start = parts.Length - 4;
+                bool trailingZeros = true;
+                for (int i = start; i < parts.Length; i++)
+                {
+                    if (parts[i] != "00")
+                    {
+                        trailingZeros = false;
+                        break;
+                    }
+                }
+
+                if (trailingZeros)
+                {
+                    return true;
+                }
             }
         }
 
