@@ -352,8 +352,7 @@ namespace NFC_System
         private void UpdateRiskSummary()
         {
             VerificationMode mode = GetSelectedMode();
-            RiskModeTextBlock.Text = ModeDisplayName(mode);
-            RequiredStepsTextBlock.Text = RequiredStepsDisplay(mode);
+           
         }
 
         private static string ModeDisplayName(VerificationMode mode)
