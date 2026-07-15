@@ -32,7 +32,7 @@
                 <TextBlock Text="Configure risk modes, restricted events, PIN recovery, alerts, and audit logs" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
             </StackPanel>
 
-            <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Center"/>
+            <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Click="RefreshButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Center"/>
         </Grid>
 
         <!-- Main Content -->

@@ -169,6 +169,22 @@ namespace NFC_System
             }
         }
 
+        private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Retrieve dynamic active event name
+            string activeEvent = "No Event Selected";
+            if (ActiveEventComboBox.SelectedItem != null)
+            {
+                // Adjust this if your model differs, falls back to raw ComboBox selection
+                activeEvent = ActiveEventComboBox.SelectedItem.ToString();
+            }
+
+            // Launch the fullscreen kiosk configured for this event
+            var kiosk = new KioskModeWindow("Event", activeEvent);
+            kiosk.Activate();
+            this.Close(); // Safely teardown the configuration window
+        }
+
         private async void ProcessManualUidButton_Click(object sender, RoutedEventArgs e)
         {
             await ProcessUidAsync(ManualUidTextBox.Text.Trim());
@@ -402,6 +418,13 @@ namespace NFC_System
                 VerificationMode.HighSecurity => "High-Security Mode",
                 _ => "Standard Mode"
             };
+        }
+
+        private void TriggerQrScannerButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Launch the QR Camera Scanner modal
+            var qrScannerWin = new QrScannerWindow();
+            qrScannerWin.Activate();
         }
 
         private static string RequiredStepsDisplay(VerificationMode mode)

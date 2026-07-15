@@ -6,7 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="Event Attendance">
+    Title="Event Attendance Tracking">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -18,7 +18,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header & Event Selection -->
+        <!-- Header -->
         <Grid Margin="0,0,0,32">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -26,80 +26,97 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
-
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
+                <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+            </StackPanel>
+            
             <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Event Attendance" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Validate event eligibility and record attendance through NFC, PIN, and QR flow" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                <TextBlock Text="Event Attendance Tracking" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                <TextBlock Text="Validate event eligibility and independently record student attendance" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
             </StackPanel>
 
-            <!-- Active Event Controls -->
-            <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                    <ComboBox x:Name="ActiveEventComboBox" Header="Active Event" PlaceholderText="Select event..." Width="260" DisplayMemberPath="DisplayName"/>
-                    <Button x:Name="RefreshEventsButton" Content="Refresh" Height="32" Margin="0,20,0,0" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                    <TextBox x:Name="EventModeTextBox" Header="Event Risk Mode" Text="-" Width="180" IsReadOnly="True"/>
-                </StackPanel>
-            </Border>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                <ComboBox x:Name="ActiveEventComboBox" Header="Select Active Event" Width="240" PlaceholderText="Select an event">
+                    <!-- Data-bound from DB -->
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayName}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button x:Name="RefreshEventsButton" Content="Refresh Events" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Bottom"/>
+            </StackPanel>
         </Grid>
 
-        <!-- Main Content -->
+        <!-- Main Content Grid -->
         <Grid Grid.Row="1" ColumnSpacing="24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4.5*"/>
-                <ColumnDefinition Width="5.5*"/>
+                <ColumnDefinition Width="1.5*"/>
+                <ColumnDefinition Width="1.5*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Left Column: Decision & Details -->
-            <Grid Grid.Column="0" RowSpacing="16">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+            <!-- Left Column: Results & Selected Event / Student Details -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                <StackPanel Spacing="24">
 
-                <!-- Attendance Decision Engine -->
-                <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <StackPanel Spacing="16">
-                        <TextBlock Text="Attendance Decision" Style="{StaticResource CardTitleStyle}"/>
+                    <!-- Decision Engine Panel -->
+                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Automated Decision Engine" Style="{StaticResource CardTitleStyle}"/>
+                            <Border x:Name="ResultBorder" CornerRadius="16" Padding="32" Background="#FF444444">
+                                <StackPanel HorizontalAlignment="Center" Spacing="8">
+                                    <TextBlock x:Name="ResultTextBlock" Text="AWAITING NFC TAP" FontSize="28" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center"/>
+                                    <TextBlock x:Name="ResultSubTextBlock" Text="Select active event and scan NFC credential" FontSize="14" Foreground="White" Opacity="0.9" HorizontalAlignment="Center" TextAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
 
-                        <!-- Primary Decision Banner -->
-                        <Border x:Name="ResultBorder" CornerRadius="16" Padding="20" Background="{StaticResource WarningBrush}">
-                            <StackPanel HorizontalAlignment="Center" Spacing="4">
-                                <TextBlock x:Name="ResultTextBlock" Text="NO ACTIVE EVENTS" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center"/>
-                                <TextBlock x:Name="ResultSubTextBlock" Text="Create or activate an event before scanning." FontSize="14" Foreground="White" Opacity="0.9" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
+                    <!-- Success Summary Banner -->
+                    <Border x:Name="SuccessSummaryBorder" Visibility="Collapsed" Padding="20" CornerRadius="16" Background="#1A10B981" BorderBrush="#3010B981" BorderThickness="1">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="ATTENDANCE LOGGED" FontSize="14" FontWeight="Bold" Foreground="#10B981"/>
+                            <TextBlock x:Name="SuccessSummaryTextBlock" Text="-" Style="{StaticResource BodyTextStyle}" Foreground="White" FontSize="14"/>
+                        </StackPanel>
+                    </Border>
 
-                        <Border x:Name="SuccessSummaryBorder" CornerRadius="12" Padding="12" Background="#1A34D399" BorderBrush="#3034D399" BorderThickness="1" Visibility="Collapsed">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Success Summary" Style="{StaticResource DataValueStyle}" Foreground="#34D399"/>
-                                <TextBlock x:Name="SuccessSummaryTextBlock" Text="-" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
+                    <!-- Active Event Context Card -->
+                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Selected Event Status" Style="{StaticResource CardTitleStyle}"/>
+                            <Grid ColumnSpacing="16" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                        <!-- Manual Entry Fallback -->
-                        <Grid ColumnSpacing="12" Margin="0,4,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ManualUidTextBox" Grid.Column="0" Header="Manual NFC UID" PlaceholderText="Use when reader is offline"/>
-                            <Button x:Name="ProcessManualUidButton" Grid.Column="1" Content="Process UID" Height="44" Margin="0,28,0,0" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Event Name" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="SelectedEventTextBlock" Grid.Row="0" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
 
-                <!-- Student Attendance Details -->
-                <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Student Attendance Details" Style="{StaticResource CardTitleStyle}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Configured Mode" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="EventModeTextBox" Grid.Row="1" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <Grid ColumnSpacing="16" RowSpacing="10" Margin="0,4,0,0">
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Risk Context" Style="{StaticResource DataLabelStyle}"/>
+                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                                    <TextBlock x:Name="EventRiskModeTextBlock" Text="-" Style="{StaticResource DataValueStyle}" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                                    <TextBlock Text="•" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="EventRequiredStepsTextBlock" Text="-" Style="{StaticResource DataValueStyle}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Student Details Card -->
+                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Attendee Details" Style="{StaticResource CardTitleStyle}"/>
+                            <Grid ColumnSpacing="16" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="140"/>
                                     <ColumnDefinition Width="*"/>
@@ -112,119 +129,98 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Style="{StaticResource DataLabelStyle}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="StudentNameTextBlock" Grid.Row="0" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="22" TextWrapping="WrapWholeWords" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Full Name" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="StudentNameTextBlock" Grid.Row="0" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="20"/>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="StudentIdTextBlock" Grid.Row="1" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
+                                <TextBlock x:Name="StudentIdTextBlock" Grid.Row="1" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
 
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Course" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="CourseTextBlock" Grid.Row="2" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="CourseTextBlock" Grid.Row="2" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Year / Section" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="YearSectionTextBlock" Grid.Row="3" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
+                                <TextBlock x:Name="YearSectionTextBlock" Grid.Row="3" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
 
-                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Enrollment" Style="{StaticResource DataLabelStyle}" VerticalAlignment="Center"/>
-                                <Border x:Name="StatusBadge" Grid.Row="4" Grid.Column="1" Padding="12,4" CornerRadius="12" HorizontalAlignment="Left" Background="#1AFFFFFF">
-                                    <TextBlock x:Name="StatusTextBlock" Text="-" Style="{StaticResource DataValueStyle}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Status Badge" Style="{StaticResource DataLabelStyle}"/>
+                                <Border x:Name="StatusBadge" Grid.Row="4" Grid.Column="1" HorizontalAlignment="Left" Padding="12,4" CornerRadius="12" Background="Gray">
+                                    <TextBlock x:Name="StatusTextBlock" Text="-" FontSize="12" FontWeight="Bold" Foreground="White"/>
                                 </Border>
 
-                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Event ID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="SelectedEventTextBlock" Grid.Row="5" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
+                                <TextBlock Grid.Row="5" Grid.Column="0" Text="NFC UID" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="UidTextBlock" Grid.Row="5" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="15"/>
 
-                                <TextBlock Grid.Row="6" Grid.Column="0" Text="NFC UID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="UidTextBlock" Grid.Row="6" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="16"/>
-
-                                <TextBlock Grid.Row="7" Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="ScanTimeTextBlock" Grid.Row="7" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
+                                <TextBlock Grid.Row="6" Grid.Column="0" Text="Scan Timestamp" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="ScanTimeTextBlock" Grid.Row="6" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
                             </Grid>
-                        </ScrollViewer>
-                    </Grid>
-                </Border>
-            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
 
-            <!-- Right Column: Authentication Steps & Logs -->
+            <!-- Right Column: 2FA Inputs & Live Attendance Logs -->
             <Grid Grid.Column="1" RowSpacing="24">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="1.2*"/>
+                    <RowDefinition Height="0.8*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Authentication Steps -->
-                <Border Grid.Row="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <StackPanel Spacing="20">
-                        <TextBlock Text="Event Authentication Steps" Style="{StaticResource CardTitleStyle}"/>
+                <!-- Unified 2FA Panel -->
+                <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="20">
+                            <TextBlock Text="Secondary Authentication (2FA)" Style="{StaticResource CardTitleStyle}"/>
 
-                        <!-- Context Indicator -->
-                        <Border CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                            <Grid ColumnSpacing="20">
+                            <Grid ColumnSpacing="24">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Spacing="4">
-                                    <TextBlock Text="Active Risk Mode" Style="{StaticResource DataLabelStyle}"/>
-                                    <TextBlock x:Name="EventRiskModeTextBlock" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18" Foreground="{StaticResource PrimaryAccentBrush}"/>
+
+                                <!-- Left Side: PIN & Manual Input Fallback -->
+                                <StackPanel Grid.Column="0" Spacing="12">
+                                    <TextBlock Text="1. PIN Entry" Style="{StaticResource DataValueStyle}"/>
+                                    <PasswordBox x:Name="VerifyPinBox" FontSize="20" MaxLength="4" PlaceholderText="****" IsEnabled="False"/>
+                                    <Button x:Name="SubmitPinButton" Content="Submit PIN" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
+
+                                    <Grid ColumnSpacing="12" Margin="0,24,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="ManualUidTextBox" Header="Manual NFC UID" PlaceholderText="Use when offline" Grid.Column="0"/>
+                                        <Button x:Name="ProcessManualUidButton" Content="Process" Grid.Column="1" Height="40" Margin="0,28,0,0" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                                    </Grid>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="4">
-                                    <TextBlock Text="Required Steps" Style="{StaticResource DataLabelStyle}"/>
-                                    <TextBlock x:Name="EventRequiredStepsTextBlock" Text="-" Style="{StaticResource DataValueStyle}" FontSize="16" TextWrapping="Wrap"/>
+
+                                <!-- Right Side: QR Entry -->
+                                <StackPanel Grid.Column="1" Spacing="12">
+                                    <TextBlock Text="2. QR Validation" Style="{StaticResource DataValueStyle}"/>
+                                    <Button x:Name="TriggerQrScannerButton" Click="TriggerQrScannerButton_Click" Height="120" HorizontalAlignment="Stretch" Padding="0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                                        <Border CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
+                                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+                                                <FontIcon Glyph="&#xED14;" FontSize="32" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text="Camera QR Pending" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Button>
+                                    <TextBox x:Name="QrCredentialTextBox" PlaceholderText="Paste scanned QR payload" IsEnabled="False"/>
+                                    <Button x:Name="SubmitQrButton" Content="Validate QR" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
                                 </StackPanel>
                             </Grid>
-                        </Border>
-
-                        <!-- 2FA & QR Inputs -->
-                        <Grid ColumnSpacing="24" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- PIN -->
-                            <StackPanel Grid.Column="0" Spacing="12">
-                                <TextBlock Text="1. PIN Entry" Style="{StaticResource DataValueStyle}"/>
-                                <PasswordBox x:Name="VerifyPinBox" FontSize="20" MaxLength="4" PlaceholderText="****" IsEnabled="False"/>
-                                <Button x:Name="SubmitPinButton" Content="Submit PIN" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
-                            </StackPanel>
-
-                            <!-- QR -->
-                            <StackPanel Grid.Column="1" Spacing="12">
-                                <TextBlock Text="2. QR Credential" Style="{StaticResource DataValueStyle}"/>
-                                <Border Height="120" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                                        <FontIcon Glyph="&#xED14;" FontSize="32" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBlock Text="Camera QR Pending" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-                                <TextBox x:Name="QrCredentialTextBox" PlaceholderText="Paste scanned QR payload" IsEnabled="False"/>
-                                <Button x:Name="SubmitQrButton" Content="Validate QR" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Border>
 
-                <!-- Event Attendance Log -->
-                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <!-- Live Attendance Log (Replaces Security Alerts context here) -->
+                <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Event Attendance Log" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1A34D399" VerticalAlignment="Center">
-                                <TextBlock Text="Event Mode Active" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#34D399"/>
-                            </Border>
-                        </Grid>
-
+                        <TextBlock Grid.Row="0" Text="Live Attendance Logs" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,16"/>
                         <ListView Grid.Row="1" x:Name="AttendanceLogListView" Background="Transparent" Padding="0,0,16,0"/>
                     </Grid>
                 </Border>

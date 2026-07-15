@@ -17,7 +17,6 @@ namespace NFC_System
             this.InitializeComponent();
             MaximizeWindow();
 
-            RefreshButton.Click += RefreshButton_Click;
             SaveDefaultModeButton.Click += SaveDefaultModeButton_Click;
             ResetPinButton.Click += ResetPinButton_Click;
             SaveEventButton.Click += SaveEventButton_Click;
@@ -47,16 +46,35 @@ namespace NFC_System
             }
         }
 
+        // For testing purposes, this method opens the alert details window when the Refresh button is clicked. 
+        private void RefreshButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        {
+            // Launch the details modal instantly for testing
+            var alertWindow = new AlertDetailsWindow();
+            alertWindow.Activate();
+        }
+
+        // Only works if there are items in the AlertsListView. This is a placeholder for actual alert selection logic. 
+        private void AlertsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (AlertsListView.SelectedItem != null)
+            {
+                var alertWindow = new AlertDetailsWindow();
+                // Here you would normally pass the selected alert data into the window:
+                // alertWindow.LoadAlertData(selectedItem);
+
+                alertWindow.Activate();
+
+                // Deselect the item so it can be clicked again later
+                AlertsListView.SelectedItem = null;
+            }
+        }
+
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
-        }
-
-        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
-        {
-            await RefreshDashboardAsync();
         }
 
         private async void SaveDefaultModeButton_Click(object sender, RoutedEventArgs e)

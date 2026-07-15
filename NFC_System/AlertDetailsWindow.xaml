@@ -1,0 +1,117 @@
+<Window
+    x:Class="NFC_System.AlertDetailsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Alert Details">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid Padding="32" Background="{StaticResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="Incident Report" Style="{StaticResource PageTitleStyle}" FontSize="28"/>
+                <TextBlock Text="Review the flagged transaction details below." Style="{StaticResource BodyTextStyle}" Opacity="0.8"/>
+            </StackPanel>
+
+            <Border Grid.Column="1" Padding="16,8" CornerRadius="12" Background="#1AF87171" BorderBrush="#30F87171" BorderThickness="1" VerticalAlignment="Center">
+                <TextBlock x:Name="SeverityBadge" Text="CRITICAL ALERT" Style="{StaticResource BodyTextStyle}" FontWeight="Bold" Foreground="#F87171"/>
+            </Border>
+        </Grid>
+
+        <!-- Main Details Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="20">
+
+                <!-- Incident Summary Card -->
+                <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Alert Summary" Style="{StaticResource CardTitleStyle}" FontSize="20"/>
+
+                        <Grid ColumnSpacing="16" RowSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Incident ID" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="IncidentIdText" Grid.Row="0" Grid.Column="1" Text="ALT-8890" Style="{StaticResource DataValueStyle}"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="TimestampText" Grid.Row="1" Grid.Column="1" Text="2026-07-15 10:45 AM" Style="{StaticResource DataValueStyle}"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Location" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="LocationText" Grid.Row="2" Grid.Column="1" Text="Main Gate - Entry" Style="{StaticResource DataValueStyle}"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Trigger" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="TriggerText" Grid.Row="3" Grid.Column="1" Text="Multiple PIN Failures (Lockout)" Style="{StaticResource DataValueStyle}" Foreground="#F59E0B"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Subject/Student Details Card -->
+                <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Subject Information" Style="{StaticResource CardTitleStyle}" FontSize="20"/>
+
+                        <Grid ColumnSpacing="16" RowSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="StudentIdText" Grid.Row="0" Grid.Column="1" Text="26-00142" Style="{StaticResource DataValueStyle}"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Name" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="StudentNameText" Grid.Row="1" Grid.Column="1" Text="Unknown / Unregistered" Style="{StaticResource DataValueStyle}"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="NFC UID" Style="{StaticResource DataLabelStyle}"/>
+                            <TextBlock x:Name="NfcUidText" Grid.Row="2" Grid.Column="1" Text="04:A1:B2:C3:D4:E5:F6" Style="{StaticResource DataValueStyle}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Action Buttons Footer -->
+        <Grid Grid.Row="2" Margin="0,24,0,0" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="1.5*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="CloseButton" Grid.Column="0" Content="Close" Click="CloseButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="Transparent" BorderBrush="#30FFFFFF"/>
+            <Button x:Name="EscalateButton" Grid.Column="1" Content="Escalate / Block" Click="EscalateButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AF87171" Foreground="#F87171" BorderThickness="0"/>
+            <Button x:Name="ResolveButton" Grid.Column="2" Content="Mark as Resolved" Click="ResolveButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+        </Grid>
+    </Grid>
+</Window>

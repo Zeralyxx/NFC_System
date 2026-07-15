@@ -26,8 +26,11 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
-
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
+                <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+            </StackPanel>
+            
             <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                 <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
                 <TextBlock Text="System independently validates credentials and enforces tailgating rules based on risk mode" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
@@ -68,7 +71,8 @@
                     <StackPanel Spacing="16">
                         <TextBlock Text="Automated Decision Engine" Style="{StaticResource CardTitleStyle}"/>
 
-                        <Border x:Name="ResultBorder" CornerRadius="16" Padding="20" Background="#FF444444">
+                        <!-- Updated Background Color and Padding -->
+                        <Border x:Name="ResultBorder" CornerRadius="16" Padding="32" Background="#F59E0B">
                             <StackPanel HorizontalAlignment="Center" Spacing="4">
                                 <TextBlock x:Name="ResultTextBlock" Text="AWAITING NFC TAP" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center"/>
                                 <TextBlock x:Name="ResultSubTextBlock" Text="System Ready" FontSize="14" Foreground="White" Opacity="0.9" HorizontalAlignment="Center" TextAlignment="Center"/>
@@ -93,7 +97,6 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Student Details" Style="{StaticResource CardTitleStyle}"/>
 
-                        <!-- Fixed padding and RowSpacing to prevent squashing/scrolling -->
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <Grid ColumnSpacing="16" RowSpacing="10" Margin="0,4,0,0">
                                 <Grid.ColumnDefinitions>
@@ -132,7 +135,6 @@
                                     <TextBlock x:Name="StatusTextBlock" Text="-" Style="{StaticResource DataValueStyle}"/>
                                 </Border>
 
-                                <!-- Anti-Tailgating State -->
                                 <TextBlock Grid.Row="6" Grid.Column="0" Text="Current State" Style="{StaticResource DataLabelStyle}" VerticalAlignment="Center"/>
                                 <Border Grid.Row="6" Grid.Column="1" Padding="12,4" CornerRadius="12" HorizontalAlignment="Left" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1">
                                     <TextBlock x:Name="EntryStateTextBlock" Text="Unknown (Wait for scan)" Style="{StaticResource DataValueStyle}" Foreground="#60A5FA"/>
@@ -162,7 +164,6 @@
                         <StackPanel Spacing="0">
                             <TextBlock Text="Secondary Authentication (2FA)" Style="{StaticResource CardTitleStyle}"/>
 
-                            <!-- 2FA, QR, and Manual Inputs -->
                             <Grid ColumnSpacing="24" Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -171,12 +172,10 @@
 
                                 <!-- Left Column: PIN & Manual UID -->
                                 <StackPanel Grid.Column="0" Spacing="12">
-                                    <!-- PIN Entry -->
                                     <TextBlock Text="1. PIN Entry" Style="{StaticResource DataValueStyle}"/>
                                     <PasswordBox x:Name="VerifyPinBox" FontSize="20" MaxLength="4" PlaceholderText="****" IsEnabled="False"/>
                                     <Button x:Name="SubmitPinButton" Content="Submit PIN" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
 
-                                    <!-- Manual Entry Fallback -->
                                     <Grid ColumnSpacing="12" Margin="0,24,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -187,15 +186,20 @@
                                     </Grid>
                                 </StackPanel>
 
-                                <!-- Right Column: QR -->
+                                <!-- Right Column: QR Validation (Updated Stretch Alignment) -->
                                 <StackPanel Grid.Column="1" Spacing="12">
                                     <TextBlock Text="2. QR Validation" Style="{StaticResource DataValueStyle}"/>
-                                    <Border Height="120" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                                            <FontIcon Glyph="&#xED14;" FontSize="32" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                            <TextBlock Text="Camera QR Pending" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
+
+                                    <!-- Added HorizontalContentAlignment & VerticalContentAlignment -->
+                                    <Button x:Name="TriggerQrScannerButton" Click="TriggerQrScannerButton_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Padding="0" BorderThickness="0" Background="Transparent">
+                                        <Border Height="120" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
+                                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+                                                <FontIcon Glyph="&#xED14;" FontSize="32" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text="Camera QR Pending" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Button>
+
                                     <TextBox x:Name="QrCredentialTextBox" PlaceholderText="Paste scanned QR payload" IsEnabled="False"/>
                                     <Button x:Name="SubmitQrButton" Content="Validate QR" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
                                 </StackPanel>
@@ -203,8 +207,8 @@
                         </StackPanel>
                     </ScrollViewer>
                 </Border>
-                
-                <!-- Audit Logs (Alerts go here) -->
+
+                <!-- Audit Logs -->
                 <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>

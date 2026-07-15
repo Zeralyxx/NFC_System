@@ -35,6 +35,26 @@ namespace NFC_System
             this.Close();
         }
 
+        private void StudentDirectory_Click(object sender, RoutedEventArgs e)
+        {
+            var directoryWin = new StudentManagementWindow();
+            directoryWin.Activate();
+            this.Close();
+        }
+
+        private void EventManagement_Click(object sender, RoutedEventArgs e)
+        {
+            var reportsWin = new EventManagementWindow();
+            reportsWin.Activate();
+            this.Close();
+        }
+
+        private void DashboardSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsWin = new SettingsWindow();
+            settingsWin.Activate();
+        }
+
         private void Settings_Click(object sender, RoutedEventArgs e)
         {
             var window = new SecurityDashboardWindow();

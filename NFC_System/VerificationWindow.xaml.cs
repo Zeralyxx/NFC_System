@@ -81,6 +81,18 @@ namespace NFC_System
             CloseSerialPort();
         }
 
+        private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Retrieve currently selected security rules to pass to the Kiosk
+            var mode = (SecurityModeComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Standard";
+            var type = (DirectionComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Entry";
+
+            // Launch the fullscreen kiosk, passing current configurations
+            var kiosk = new KioskModeWindow("Gate", $"{type} ({mode})");
+            kiosk.Activate();
+            this.Close(); // Safely teardown the configuration window
+        }
+
         private void TryConnectSerial(string portName)
         {
             try
@@ -398,6 +410,12 @@ namespace NFC_System
             }
 
             return new SolidColorBrush(Colors.Firebrick);
+        }
+
+        private void TriggerQrScannerButton_Click(object sender, RoutedEventArgs e)
+        {
+            var qrWindow = new QrScannerWindow();
+            qrWindow.Activate();
         }
 
         private static bool IsInvalidUid(string uid)

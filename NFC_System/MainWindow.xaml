@@ -12,171 +12,256 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+    <Grid Padding="24,32,24,24" Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <StackPanel HorizontalAlignment="Center" Spacing="12" Margin="0,20,0,48">
-            <Border Width="80" Height="80" CornerRadius="20" Background="#1AFFFFFF" HorizontalAlignment="Center">
-                <Viewbox Margin="20">
-                    <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                </Viewbox>
-            </Border>
-
-            <!-- Updated Title to match the matrix of revisions -->
-            <TextBlock Text="Risk-Based Verification System"
-                       Style="{StaticResource PageTitleStyle}"
-                       FontSize="42"
-                       HorizontalAlignment="Center"
-                       Margin="0"/>
-
-            <!-- Updated Subtitle -->
-            <TextBlock Text="Two-Factor Student Verification and Event Attendance Management"
-                       Style="{StaticResource BodyTextStyle}"
-                       FontSize="18"
-                       HorizontalAlignment="Center"
-                       TextAlignment="Center"/>
-        </StackPanel>
-
-        <!-- Main Cards Container: Star sizing ensures uniform width -->
-        <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" ColumnSpacing="24" MaxWidth="1200">
+        <!-- Dynamic Header Layer -->
+        <!-- Dynamic Header Layer -->
+        <Grid Grid.Row="0" Margin="0,0,0,24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="280"/>
+                <!-- Spacer for symmetry -->
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="280"/>
+                <!-- Settings Button Area -->
             </Grid.ColumnDefinitions>
 
-            <!-- 1. Registration Card -->
-            <Button Grid.Column="0" Click="Registration_Click" Padding="0" BorderThickness="0"
-                Background="Transparent"
-                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <Border Grid.Row="0" Width="64" Height="64" CornerRadius="16" Background="#1A46A3FF" HorizontalAlignment="Left" Margin="0,0,0,20">
-                            <FontIcon Glyph="&#xE77B;" FontSize="24" Foreground="#60A5FA"/>
-                        </Border>
-
-                        <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                            <TextBlock Text="Registration" Style="{StaticResource CardTitleStyle}"/>
-                            <TextBlock Text="Register student profiles and configure 2FA credentials (NFC, PIN, and QR)." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,32,0,0" VerticalAlignment="Bottom">
-                            <FontIcon Glyph="&#xE72A;" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBlock Text="Profiles &amp; 2FA Setup" Style="{StaticResource BodyTextStyle}" FontSize="13"/>
-                        </StackPanel>
-                    </Grid>
+            <!-- 1. Central Title and Logo -->
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="8">
+                <Border Width="64" Height="64" CornerRadius="16" Background="#1AFFFFFF" HorizontalAlignment="Center">
+                    <Viewbox Margin="16">
+                        <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                    </Viewbox>
                 </Border>
-            </Button>
 
-            <!-- 2. Event Attendance Card -->
-            <Button Grid.Column="1" Click="EventAttendance_Click" Padding="0" BorderThickness="0"
-                    Background="Transparent"
-                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                <TextBlock Text="Risk-Based Verification System"
+                           Style="{StaticResource PageTitleStyle}"
+                           FontSize="36"
+                           HorizontalAlignment="Center"
+                           Margin="0"/>
 
-                        <Border Grid.Row="0" Width="64" Height="64" CornerRadius="16" Background="#1A34D399" HorizontalAlignment="Left" Margin="0,0,0,20">
-                            <FontIcon Glyph="&#xE787;" FontSize="24" Foreground="#34D399"/>
-                        </Border>
+                <TextBlock Text="Two-Factor Student Verification and Event Attendance Management"
+                           Style="{StaticResource BodyTextStyle}"
+                           FontSize="16"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"/>
+            </StackPanel>
 
-                        <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                            <TextBlock Text="Event Attendance" Style="{StaticResource CardTitleStyle}"/>
-                            <TextBlock Text="Validate restricted event eligibility and securely record attendance using risk-based modes." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,32,0,0" VerticalAlignment="Bottom">
-                            <FontIcon Glyph="&#xE8D4;" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBlock Text="Attendance Tracking" Style="{StaticResource BodyTextStyle}" FontSize="13"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-            </Button>
-
-            <!-- 3. Verification Card -->
-            <Button Grid.Column="2" Click="Verification_Click" Padding="0" BorderThickness="0"
-                Background="Transparent"
-                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <Border Grid.Row="0" Width="64" Height="64" CornerRadius="16" Background="#1AA855F7" HorizontalAlignment="Left" Margin="0,0,0,20">
-                            <FontIcon Glyph="&#xE73E;" FontSize="24" Foreground="#A855F7"/>
-                        </Border>
-
-                        <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                            <TextBlock Text="Verification" Style="{StaticResource CardTitleStyle}"/>
-                            <TextBlock Text="Scan credentials at campus entry points. The system automatically enforces tailgating rules." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,32,0,0" VerticalAlignment="Bottom">
-                            <FontIcon Glyph="&#xED35;" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBlock Text="Automated Gate" Style="{StaticResource BodyTextStyle}" FontSize="13"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-            </Button>
-
-            <!-- 4. Security Administration Card -->
-            <Button Grid.Column="3" Click="Settings_Click" Padding="0" BorderThickness="0"
-                    Background="Transparent"
-                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <Border Grid.Row="0" Width="64" Height="64" CornerRadius="16" Background="#1AF75555" HorizontalAlignment="Left" Margin="0,0,0,20">
-                            <FontIcon Glyph="&#xE713;" FontSize="24" Foreground="#F87171"/>
-                        </Border>
-
-                        <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                            <TextBlock Text="Security Admin" Style="{StaticResource CardTitleStyle}"/>
-                            <TextBlock Text="Configure risk modes, manage restricted lists, review real-time alerts, and handle lockouts." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,32,0,0" VerticalAlignment="Bottom">
-                            <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBlock Text="Control &amp; Monitoring" Style="{StaticResource BodyTextStyle}" FontSize="13"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
+            <!-- 2. Settings Trigger Button -->
+            <Button Grid.Column="2" x:Name="DashboardSettingsButton" Click="DashboardSettingsButton_Click" 
+                    Width="48" Height="48" CornerRadius="12" Background="#1AFFFFFF" BorderThickness="0" 
+                    VerticalAlignment="Top" HorizontalAlignment="Right" ToolTipService.ToolTip="Application Settings">
+                <FontIcon Glyph="&#xE713;" FontSize="20" Foreground="{StaticResource TextSecondaryBrush}"/>
             </Button>
         </Grid>
+
+        <!-- Scrollable Main Container -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,12">
+            <!-- Main Cards Container: 3x2 Grid Layout -->
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center" ColumnSpacing="24" RowSpacing="24" Margin="0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="300"/>
+                    <ColumnDefinition Width="300"/>
+                    <ColumnDefinition Width="300"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- ROW 1 -->
+                <!-- 1. Registration Card -->
+                <Button Grid.Row="0" Grid.Column="0" Click="Registration_Click" Padding="0" BorderThickness="0"
+                    Background="Transparent" Height="240"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                    <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="14" Background="#1A46A3FF" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                <FontIcon Glyph="&#xE77B;" FontSize="22" Foreground="#60A5FA"/>
+                            </Border>
+
+                            <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                                <TextBlock Text="Registration" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                <TextBlock Text="Register student profiles and configure 2FA credentials (NFC, PIN, and QR)." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
+                                <FontIcon Glyph="&#xE72A;" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Profiles &amp; 2FA Setup" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Button>
+
+                <!-- 2. Event Attendance Card -->
+                <Button Grid.Row="0" Grid.Column="1" Click="EventAttendance_Click" Padding="0" BorderThickness="0"
+                        Background="Transparent" Height="240"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                    <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="14" Background="#1A34D399" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                <FontIcon Glyph="&#xE787;" FontSize="22" Foreground="#34D399"/>
+                            </Border>
+
+                            <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                                <TextBlock Text="Event Attendance" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                <TextBlock Text="Validate restricted event eligibility and securely record attendance using risk-based modes." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
+                                <FontIcon Glyph="&#xE8D4;" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Attendance Tracking" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Button>
+
+                <!-- 3. Verification Card -->
+                <Button Grid.Row="0" Grid.Column="2" Click="Verification_Click" Padding="0" BorderThickness="0"
+                    Background="Transparent" Height="240"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                    <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="14" Background="#1AA855F7" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                <FontIcon Glyph="&#xE73E;" FontSize="22" Foreground="#A855F7"/>
+                            </Border>
+
+                            <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                                <TextBlock Text="Verification" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                <TextBlock Text="Scan credentials at campus entry points. The system automatically enforces tailgating rules." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
+                                <FontIcon Glyph="&#xED35;" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Automated Gate" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Button>
+
+                <!-- ROW 2 -->
+                <!-- 4. Student Directory Card -->
+                <Button Grid.Row="1" Grid.Column="0" Click="StudentDirectory_Click" Padding="0" BorderThickness="0"
+                    Background="Transparent" Height="240"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                    <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="14" Background="#1AF59E0B" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                <FontIcon Glyph="&#xE822;" FontSize="22" Foreground="#F59E0B"/>
+                            </Border>
+
+                            <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                                <TextBlock Text="Directory" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                <TextBlock Text="Search student profiles, inspect 2FA authentication states, and manage PIN lockouts." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
+                                <FontIcon Glyph="&#xE721;" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Search &amp; Lockouts" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Button>
+
+                <!-- 5. Security Administration Card -->
+                <Button Grid.Row="1" Grid.Column="1" Click="Settings_Click" Padding="0" BorderThickness="0"
+                        Background="Transparent" Height="240"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                    <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="14" Background="#1AF75555" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                <FontIcon Glyph="&#xE713;" FontSize="22" Foreground="#F87171"/>
+                            </Border>
+
+                            <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                                <TextBlock Text="Security Admin" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                <TextBlock Text="Configure risk modes, manage restricted lists, review real-time alerts, and handle configurations." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
+                                <FontIcon Glyph="&#xE774;" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Control &amp; Monitoring" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Button>
+
+                <!-- 6. Event Reports Card -->
+                <Button Grid.Row="1" Grid.Column="2" Click="EventManagement_Click" Padding="0" BorderThickness="0"
+                        Background="Transparent" Height="240"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                    <Border CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="14" Background="#1A0EA5E9" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                <FontIcon Glyph="&#xE8A5;" FontSize="22" Foreground="#0EA5E9"/>
+                            </Border>
+
+                            <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                                <TextBlock Text="Event Reports" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                <TextBlock Text="Review event history, manage restricted attendee rosters, and export audit logs." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
+                                <FontIcon Glyph="&#xE7DD;" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Audits &amp; Exports" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Button>
+            </Grid>
+        </ScrollViewer>
 
         <!-- Footer -->
         <TextBlock Grid.Row="2"
                    Text="Taguig City University • Risk-Based Authentication Prototype"
                    Style="{StaticResource BodyTextStyle}"
                    HorizontalAlignment="Center"
-                   Margin="0,48,0,0"/>
+                   Margin="0,12,0,0"/>
     </Grid>
 </Window>

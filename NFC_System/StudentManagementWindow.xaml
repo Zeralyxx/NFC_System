@@ -1,0 +1,178 @@
+<Window
+    x:Class="NFC_System.StudentManagementWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:NFC_System"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Student Search &amp; Management">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Margin="0,0,0,32">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="BackButton" Grid.Column="0" Content="Back to Dashboard" Click="BackButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
+
+            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                <TextBlock Text="Student Directory &amp; Security State" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                <TextBlock Text="Search records, manage enrollment status, and review PIN lockout security flags." Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="6*"/>
+                <ColumnDefinition Width="4*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Column: Search & Data Grid -->
+            <Border Grid.Column="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Search and Filter Toolbar -->
+                    <Grid Grid.Row="0" Margin="0,0,0,24" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox x:Name="SearchBox" Grid.Column="0" PlaceholderText="Search by Student ID, Name, or NFC UID..." Height="40" TextChanged="SearchBox_TextChanged"/>
+
+                        <ComboBox x:Name="FilterComboBox" Grid.Column="1" Header="Filter Status" SelectedIndex="0" Width="180" SelectionChanged="FilterComboBox_SelectionChanged">
+                            <ComboBoxItem Content="All Students"/>
+                            <ComboBoxItem Content="Active Only"/>
+                            <ComboBoxItem Content="Locked Out"/>
+                            <ComboBoxItem Content="Inactive"/>
+                        </ComboBox>
+                    </Grid>
+
+                    <!-- Pseudo-DataGrid Header -->
+                    <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.5*"/>
+                                <ColumnDefinition Width="2.5*"/>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="1.5*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="1" Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="2" Text="Course" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Native DataGrid (ListView) -->
+                    <ListView x:Name="StudentListView" Grid.Row="2" SelectionChanged="StudentListView_SelectionChanged" Background="Transparent" CornerRadius="8">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="2.5*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+
+                                    <!-- Dynamic Badge (Handled via Converters or Code-Behind later, text for now) -->
+                                    <TextBlock Grid.Column="3" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <!-- Right Column: Edit Panel -->
+            <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="24">
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Configuration Panel" Style="{StaticResource CardTitleStyle}"/>
+                            <TextBlock Text="Select a student from the directory to edit their profile and security access." Style="{StaticResource BodyTextStyle}"/>
+                        </StackPanel>
+
+                        <!-- Selected Profile Overview -->
+                        <Border Padding="20" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
+                            <Grid ColumnSpacing="16" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="EditNameText" Grid.Row="0" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="EditIdText" Grid.Row="1" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="NFC UID" Style="{StaticResource DataLabelStyle}"/>
+                                <TextBlock x:Name="EditUidText" Grid.Row="2" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Edit Controls -->
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Security &amp; Enrollment" Style="{StaticResource DataValueStyle}"/>
+
+                            <ComboBox x:Name="EditStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch" IsEnabled="False">
+                                <ComboBoxItem Content="Active"/>
+                                <ComboBoxItem Content="Inactive"/>
+                                <ComboBoxItem Content="Expelled"/>
+                            </ComboBox>
+
+                            <Border Padding="16" CornerRadius="12" Background="#1AFFFFFF" Margin="0,8,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock Text="2FA Lockout State" Style="{StaticResource DataValueStyle}"/>
+                                        <TextBlock x:Name="LockoutStatusText" Text="Select a student" Style="{StaticResource BodyTextStyle}"/>
+                                    </StackPanel>
+                                    <Button x:Name="UnlockAccountButton" Grid.Column="1" Content="Unlock Account" Click="UnlockAccountButton_Click" IsEnabled="False" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                                </Grid>
+                            </Border>
+
+                            <PasswordBox x:Name="ResetPinBox" Header="Administrative PIN Reset" PlaceholderText="Enter new 4-digit PIN" MaxLength="4" IsEnabled="False"/>
+                        </StackPanel>
+
+                        <!-- Save Actions -->
+                        <Button x:Name="SaveChangesButton" Content="Save Security Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Margin="0,16,0,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

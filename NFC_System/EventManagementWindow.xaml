@@ -1,0 +1,173 @@
+<Window
+    x:Class="NFC_System.EventManagementWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:NFC_System"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Reports &amp; Event Management">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Margin="0,0,0,32">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="BackButton" Grid.Column="0" Content="Back to Dashboard" Click="BackButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
+
+            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                <TextBlock Text="Reports &amp; Event Management" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                <TextBlock Text="Review event history, manage restricted attendee rosters, and export audit logs." Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="5*"/>
+                <ColumnDefinition Width="5*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Column: Event Directory -->
+            <Border Grid.Column="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Event Directory" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" x:Name="ExportEventsButton" Click="ExportEventsButton_Click" Content="Export Events (CSV)" Height="36" CornerRadius="{StaticResource ButtonCornerRadius}" Background="Transparent" BorderBrush="#30FFFFFF"/>
+                    </Grid>
+
+                    <!-- Events Table Header -->
+                    <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.5*"/>
+                                <ColumnDefinition Width="3*"/>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="1.5*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Event ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="1" Text="Event Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="2" Text="Date" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="3" Text="Security" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Events ListView -->
+                    <ListView x:Name="EventsListView" Grid.Row="2" SelectionChanged="EventsListView_SelectionChanged" Background="Transparent" CornerRadius="8">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="3*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="{Binding EventId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding EventName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding EventDate}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Mode}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <!-- Events Pagination -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Margin="0,16,0,0">
+                        <Button Content="&lt;" Width="40" CornerRadius="{StaticResource ButtonCornerRadius}" Background="Transparent"/>
+                        <TextBlock Text="Page 1 of 4" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+                        <Button Content="&gt;" Width="40" CornerRadius="{StaticResource ButtonCornerRadius}" Background="Transparent"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Right Column: Approved Attendees / Roster -->
+            <Border Grid.Column="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="Approved Attendees" Style="{StaticResource CardTitleStyle}"/>
+                            <TextBlock x:Name="SelectedEventLabel" Text="Select an event from the directory..." Style="{StaticResource BodyTextStyle}"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" x:Name="ExportRosterButton" Click="ExportRosterButton_Click" Content="Export Roster (CSV)" IsEnabled="False" Height="36" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" VerticalAlignment="Top"/>
+                    </Grid>
+
+                    <!-- Attendees Table Header -->
+                    <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="3*"/>
+                                <ColumnDefinition Width="2.5*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="1" Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="2" Text="Clearance" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Attendees ListView -->
+                    <ListView x:Name="AttendeesListView" Grid.Row="2" Background="Transparent" CornerRadius="8">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="3*"/>
+                                        <ColumnDefinition Width="2.5*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding ClearanceStatus}" Style="{StaticResource BodyTextStyle}" Foreground="#34D399" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <!-- Attendees Pagination -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Margin="0,16,0,0">
+                        <Button Content="&lt;" Width="40" CornerRadius="{StaticResource ButtonCornerRadius}" Background="Transparent" IsEnabled="False"/>
+                        <TextBlock Text="Page 1 of 1" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+                        <Button Content="&gt;" Width="40" CornerRadius="{StaticResource ButtonCornerRadius}" Background="Transparent" IsEnabled="False"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

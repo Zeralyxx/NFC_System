@@ -1,0 +1,99 @@
+<Window
+    x:Class="NFC_System.KioskModeWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:NFC_System"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Guard Kiosk Mode">
+
+    <!-- Deep dark background to make the colored status cards pop -->
+    <Grid Background="#0A0A0A" Padding="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Minimal Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,32">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xEA18;" FontSize="24" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock x:Name="KioskHeaderSubtitle" Text="NFC VERIFICATION TERMINAL" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" CharacterSpacing="150" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <Button Grid.Column="1" Click="ExitKiosk_Click" Padding="16,10" CornerRadius="8" Background="#1AFFFFFF" BorderThickness="0">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE711;" FontSize="14"/>
+                    <TextBlock Text="Exit Kiosk" FontWeight="SemiBold" FontSize="13"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Massive Full-Screen Content (Height-protected Grid columns) -->
+        <Grid Grid.Row="1" ColumnSpacing="32" VerticalAlignment="Stretch">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.2*"/>
+                <ColumnDefinition Width="0.8*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Giant Pass/Fail Status -->
+            <Border x:Name="StatusBackgroundBorder" Grid.Column="0" CornerRadius="24" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="2" Padding="32">
+                <Grid VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Sized icon downward for height safety -->
+                    <Viewbox Grid.Row="0" MaxHeight="200" Margin="0,0,0,32">
+                        <FontIcon x:Name="StatusIcon" Glyph="&#xE72A;" Foreground="#3B82F6"/>
+                    </Viewbox>
+
+                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="12">
+                        <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
+                        <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- RIGHT: Student Photo & Details (Height-optimised) -->
+            <Border x:Name="ProfileBorder" Grid.Column="1" CornerRadius="24" Background="#10FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="2" Padding="32" Opacity="0.3">
+                <Grid VerticalAlignment="Center">
+                    <StackPanel Spacing="16">
+
+                        <!-- Scaled from 280px to 200px to guarantee no vertical cropping -->
+                        <Border Width="200" Height="200" CornerRadius="100" Background="#1AFFFFFF" HorizontalAlignment="Center" BorderBrush="#30FFFFFF" BorderThickness="4">
+                            <FontIcon Glyph="&#xE77B;" FontSize="90" Foreground="#60FFFFFF"/>
+                        </Border>
+
+                        <StackPanel Spacing="6" Margin="0,12,0,0">
+                            <TextBlock Text="STUDENT NAME" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" CharacterSpacing="100"/>
+                            <TextBlock x:Name="StudentNameText" Text="---" FontSize="36" FontWeight="Bold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <Rectangle Height="1" Fill="#15FFFFFF" Margin="32,4"/>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="STUDENT ID" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" CharacterSpacing="100"/>
+                            <TextBlock x:Name="StudentIdText" Text="---" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#A0A0A0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Temporary Debug Panel (Shifted bottom margin for better fit) -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Margin="0,24,0,0" Opacity="0.2">
+            <Button Content="Simulate Idle" Click="SimulateIdle_Click" Width="120"/>
+            <Button Content="Simulate Pass" Click="SimulatePass_Click" Width="120"/>
+            <Button Content="Simulate Fail" Click="SimulateFail_Click" Width="120"/>
+        </StackPanel>
+    </Grid>
+</Window>

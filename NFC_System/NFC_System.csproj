@@ -15,9 +15,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <None Remove="AlertDetailsWindow.xaml" />
     <None Remove="EventAttendanceWindow.xaml" />
+    <None Remove="EventManagementWindow.xaml" />
+    <None Remove="KioskModeWindow.xaml" />
+    <None Remove="QrScannerWindow.xaml" />
     <None Remove="RegistrationWindow.xaml" />
     <None Remove="SecurityDashboardWindow.xaml" />
+    <None Remove="SettingsWindow.xaml" />
+    <None Remove="StudentManagementWindow.xaml" />
     <None Remove="VerificationWindow.xaml" />
   </ItemGroup>
 
@@ -49,6 +55,36 @@
     <PackageReference Include="MySql.Data" Version="9.6.0" />
     <PackageReference Include="MySqlConnector" Version="2.5.0" />
     <PackageReference Include="System.IO.Ports" Version="10.0.6" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="KioskModeWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="SettingsWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="EventManagementWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="StudentManagementWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="AlertDetailsWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="QrScannerWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Page Update="EventAttendanceWindow.xaml">
