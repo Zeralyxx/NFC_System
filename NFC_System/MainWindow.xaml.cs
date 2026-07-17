@@ -74,28 +74,5 @@ namespace NFC_System
             }
         }
 
-        
     }
-
-    public static class DispatcherQueueExtensions
-    {
-        public static System.Threading.Tasks.Task TryEnqueueAsync(this Microsoft.UI.Dispatching.DispatcherQueue dispatcherQueue, Action callback)
-        {
-            var tcs = new System.Threading.Tasks.TaskCompletionSource<object?>();
-            dispatcherQueue.TryEnqueue(() =>
-            {
-                try
-                {
-                    callback();
-                    tcs.SetResult(null);
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            });
-            return tcs.Task;
-        }
-    }
-
 }

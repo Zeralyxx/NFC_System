@@ -36,39 +36,122 @@
             </Button>
         </Grid>
 
-        <!-- Massive Full-Screen Content (Height-protected Grid columns) -->
+        <!-- Massive Full-Screen Content -->
         <Grid Grid.Row="1" ColumnSpacing="32" VerticalAlignment="Stretch">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.2*"/>
                 <ColumnDefinition Width="0.8*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- LEFT: Giant Pass/Fail Status -->
+            <!-- LEFT: Dynamic Authentication Stage (Status, PIN, or QR) -->
             <Border x:Name="StatusBackgroundBorder" Grid.Column="0" CornerRadius="24" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="2" Padding="32">
-                <Grid VerticalAlignment="Center">
+                <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Sized icon downward for height safety -->
-                    <Viewbox Grid.Row="0" MaxHeight="200" Margin="0,0,0,32">
-                        <FontIcon x:Name="StatusIcon" Glyph="&#xE72A;" Foreground="#3B82F6"/>
-                    </Viewbox>
+                    <!-- Authentication Progress Indicator -->
+                    <StackPanel x:Name="ProgressIndicatorPanel" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,24">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <FontIcon x:Name="ProgNfcIcon" Glyph="&#xECCA;" FontSize="16" Foreground="#60A5FA"/>
+                            <TextBlock x:Name="ProgNfcText" Text="NFC" FontWeight="Bold" Foreground="#60A5FA"/>
+                        </StackPanel>
 
-                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="12">
-                        <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
-                        <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
+                        <Rectangle x:Name="ProgLine1" Width="40" Height="2" Fill="#30FFFFFF" Margin="8,0" VerticalAlignment="Center"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <FontIcon x:Name="ProgPinIcon" Glyph="&#xECA7;" FontSize="16" Foreground="#505050"/>
+                            <TextBlock x:Name="ProgPinText" Text="PIN" FontWeight="Bold" Foreground="#505050"/>
+                        </StackPanel>
+
+                        <Rectangle x:Name="ProgLine2" Width="40" Height="2" Fill="#30FFFFFF" Margin="8,0" VerticalAlignment="Center"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <FontIcon x:Name="ProgQrIcon" Glyph="&#xED14;" FontSize="16" Foreground="#505050"/>
+                            <TextBlock x:Name="ProgQrText" Text="QR" FontWeight="Bold" Foreground="#505050"/>
+                        </StackPanel>
                     </StackPanel>
+
+                    <!-- Main Dynamic Content Area -->
+                    <Grid Grid.Row="1" VerticalAlignment="Center">
+
+                        <!-- PANEL 1: Standard Status (Idle, Transitions, Granted, Denied) -->
+                        <Grid x:Name="StatusPanel" Visibility="Visible">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Viewbox Grid.Row="0" MaxHeight="200" Margin="0,0,0,32">
+                                <FontIcon x:Name="StatusIcon" Glyph="&#xE72A;" Foreground="#3B82F6"/>
+                            </Viewbox>
+
+                            <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="12">
+                                <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
+                                <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- PANEL 2: Hardware PIN Entry (No touch controls) -->
+                        <StackPanel x:Name="PinPanel" Visibility="Collapsed" HorizontalAlignment="Center" Spacing="32">
+                            <TextBlock Text="ENTER SECURITY PIN" FontSize="32" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" CharacterSpacing="100"/>
+
+                            <!-- Masked PIN Dots -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="24" Margin="0,16">
+                                <FontIcon x:Name="PinDot1" Glyph="&#xEA3A;" FontSize="40" Foreground="#505050"/>
+                                <FontIcon x:Name="PinDot2" Glyph="&#xEA3A;" FontSize="40" Foreground="#505050"/>
+                                <FontIcon x:Name="PinDot3" Glyph="&#xEA3A;" FontSize="40" Foreground="#505050"/>
+                                <FontIcon x:Name="PinDot4" Glyph="&#xEA3A;" FontSize="40" Foreground="#505050"/>
+                            </StackPanel>
+
+                            <TextBlock x:Name="PinErrorText" Text="Incorrect PIN. Attempts remaining: 2" FontSize="20" FontWeight="SemiBold" Foreground="#F87171" HorizontalAlignment="Center" Visibility="Collapsed"/>
+
+                            <StackPanel Spacing="8" Margin="0,24,0,0" Opacity="0.6">
+                                <TextBlock Text="Use the terminal keypad to continue." FontSize="18" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                                <TextBlock Text="ENTER = Confirm" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                                <TextBlock Text="CLEAR = Delete" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                                <TextBlock Text="CANCEL = Abort" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- PANEL 3: QR Camera Viewport -->
+                        <Grid x:Name="QrPanel" Visibility="Collapsed">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="QR VERIFICATION" FontSize="32" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" CharacterSpacing="100" Margin="0,0,0,24"/>
+
+                            <!-- Camera Viewport Base -->
+                            <Border Grid.Row="1" CornerRadius="16" Background="Black" BorderBrush="#30FFFFFF" BorderThickness="2" MaxWidth="500" MaxHeight="500" HorizontalAlignment="Center">
+                                <Grid>
+                                    <!-- Live Camera Feed (Plug in your SoftwareBitmapSource here) -->
+                                    <Image x:Name="KioskCameraPreview" Stretch="UniformToFill"/>
+
+                                    <!-- Dimmed Overlay -->
+                                    <Border Background="#66000000"/>
+
+                                    <!-- Center Targeting Box (Transparent cutout effect) -->
+                                    <Border Width="250" Height="250" BorderBrush="#3B82F6" BorderThickness="4" CornerRadius="16" Background="Transparent" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Border Height="2" Background="#3B82F6" VerticalAlignment="Center" Opacity="0.6"/>
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <TextBlock Grid.Row="2" Text="Align your QR code inside the frame." FontSize="20" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" Margin="0,24,0,0"/>
+                        </Grid>
+
+                    </Grid>
                 </Grid>
             </Border>
 
-            <!-- RIGHT: Student Photo & Details (Height-optimised) -->
+            <!-- RIGHT: Student Photo & Details -->
             <Border x:Name="ProfileBorder" Grid.Column="1" CornerRadius="24" Background="#10FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="2" Padding="32" Opacity="0.3">
                 <Grid VerticalAlignment="Center">
                     <StackPanel Spacing="16">
-
-                        <!-- Scaled from 280px to 200px to guarantee no vertical cropping -->
                         <Border Width="200" Height="200" CornerRadius="100" Background="#1AFFFFFF" HorizontalAlignment="Center" BorderBrush="#30FFFFFF" BorderThickness="4">
                             <FontIcon Glyph="&#xE77B;" FontSize="90" Foreground="#60FFFFFF"/>
                         </Border>
@@ -89,11 +172,17 @@
             </Border>
         </Grid>
 
-        <!-- Temporary Debug Panel (Shifted bottom margin for better fit) -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Margin="0,24,0,0" Opacity="0.2">
-            <Button Content="Simulate Idle" Click="SimulateIdle_Click" Width="120"/>
-            <Button Content="Simulate Pass" Click="SimulatePass_Click" Width="120"/>
-            <Button Content="Simulate Fail" Click="SimulateFail_Click" Width="120"/>
+        <!-- Temporary Debug Panel -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,24,0,0" Opacity="0.4">
+            <ComboBox x:Name="DebugSecurityLevel" SelectedIndex="2" Width="120" SelectionChanged="DebugSecurityLevel_SelectionChanged">
+                <ComboBoxItem Content="Fast"/>
+                <ComboBoxItem Content="Standard"/>
+                <ComboBoxItem Content="High"/>
+            </ComboBox>
+            <Button Content="Simulate NFC" Click="SimulateNfc_Click"/>
+            <Button Content="Simulate PIN (1234)" Click="SimulatePin_Click"/>
+            <Button Content="Simulate QR" Click="SimulateQr_Click"/>
+            <Button Content="Simulate Fail" Click="SimulateFail_Click"/>
         </StackPanel>
     </Grid>
 </Window>

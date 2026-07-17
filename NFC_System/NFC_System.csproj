@@ -55,6 +55,7 @@
     <PackageReference Include="MySql.Data" Version="9.6.0" />
     <PackageReference Include="MySqlConnector" Version="2.5.0" />
     <PackageReference Include="System.IO.Ports" Version="10.0.6" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
   </ItemGroup>
   <ItemGroup>
     <Page Update="KioskModeWindow.xaml">

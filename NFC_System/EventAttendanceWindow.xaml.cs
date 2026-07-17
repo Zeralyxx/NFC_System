@@ -157,7 +157,7 @@ namespace NFC_System
                 if (line.StartsWith("UID="))
                 {
                     string uid = line.Substring(4).Trim();
-                    await DispatcherQueue.TryEnqueueAsync(() => _ = ProcessUidAsync(uid));
+                    await DispatcherQueue.TryEnqueueAsync(() => ProcessUidAsync(uid));
                 }
             }
             catch (Exception ex)
@@ -422,8 +422,18 @@ namespace NFC_System
 
         private void TriggerQrScannerButton_Click(object sender, RoutedEventArgs e)
         {
-            // Launch the QR Camera Scanner modal
             var qrScannerWin = new QrScannerWindow();
+            qrScannerWin.QrCodeScanned += async (_, payload) =>
+            {
+                QrCredentialTextBox.Text = payload;
+                AttendanceLogListView.Items.Insert(0, "[INFO] QR credential captured from camera.");
+
+                if (_pendingSession != null && SubmitQrButton.IsEnabled)
+                {
+                    VerificationOutcome outcome = await _engine.SubmitQrAsync(_pendingSession, payload);
+                    ApplyOutcome(outcome);
+                }
+            };
             qrScannerWin.Activate();
         }
 

@@ -28,8 +28,16 @@
         <!-- Camera Viewport & Bounding Box -->
         <Border Grid.Row="1" CornerRadius="{StaticResource CardCornerRadius}" Background="Black" BorderBrush="#15FFFFFF" BorderThickness="1">
             <Grid>
-                <!-- Live Camera Feed Container -->
-                <MediaPlayerElement x:Name="CameraPreview" AutoPlay="True" Stretch="UniformToFill" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                <!-- Camera frame preview -->
+                <Image x:Name="CameraPreviewImage" Stretch="UniformToFill" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+                <TextBlock x:Name="CameraPlaceholderText"
+                           Text="Starting camera..."
+                           Foreground="#AAFFFFFF"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
 
                 <!-- Darkened Overlay Grid (Dims everything outside the bounding box) -->
                 <Grid>
