@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using System;
 using System.IO.Ports;
 using WinRT.Interop;
+using System.Media;
 
 namespace NFC_System
 {
@@ -14,7 +15,6 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
         private SerialPort? _serialPort;
-        private VerificationSession? _pendingSession;
 
         public VerificationWindow()
         {
@@ -23,11 +23,6 @@ namespace NFC_System
 
             MaximizeWindow();
             this.Closed += Window_Closed;
-
-            ProcessManualUidButton.Click += ProcessManualUidButton_Click;
-            SecurityModeComboBox.SelectionChanged += SecurityModeComboBox_SelectionChanged;
-            SubmitPinButton.Click += SubmitPinButton_Click;
-            SubmitQrButton.Click += SubmitQrButton_Click;
 
             _ = InitializeAsync();
             TryConnectSerial("COM3"); // CHANGE this to your actual Arduino COM port
@@ -38,6 +33,11 @@ namespace NFC_System
             try
             {
                 await _database.EnsureSchemaAsync();
+
+                // 1. Sync the dropdown with the global memory to prevent it reverting to Entry
+                DirectionComboBox.SelectedIndex = KioskStateController.CurrentType == TransactionType.Entry ? 0 : 1;
+
+                // 2. Sync the Security Mode
                 string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
                 SecurityModeComboBox.SelectedIndex = savedMode switch
                 {
@@ -45,7 +45,6 @@ namespace NFC_System
                     "High-Security" => 2,
                     _ => 1
                 };
-                UpdateRiskSummary();
 
                 VerificationLogListView.Items.Insert(0, "[INFO] Risk-based verification engine ready.");
             }
@@ -83,14 +82,44 @@ namespace NFC_System
 
         private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
         {
-            // Retrieve currently selected security rules to pass to the Kiosk
+            // 1. RELEASE THE HARDWARE PORT FIRST
+            CloseSerialPort();
+
+            // 2. Retrieve currently selected security rules to pass to the Kiosk
             var mode = (SecurityModeComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Standard";
             var type = (DirectionComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Entry";
 
-            // Launch the fullscreen kiosk, passing current configurations
+            // 3. Launch the fullscreen kiosk, passing current configurations
             var kiosk = new KioskModeWindow("Gate", $"{type} ({mode})");
             kiosk.Activate();
-            this.Close(); // Safely teardown the configuration window
+
+            // 4. Close the Guard Window so they don't fight over the COM port
+            this.Close();
+        }
+
+        // Resets the attempts of the student
+        private async void UnlockAccountButton_Click(object sender, RoutedEventArgs e)
+        {
+            string studentId = OverrideStudentIdBox.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(studentId))
+            {
+                VerificationLogListView.Items.Insert(0, "[ERROR] Valid Student ID required to unlock.");
+                return;
+            }
+
+            try
+            {
+                // Resets their failed attempts to 0 and unlocks the account
+                await _database.UpdatePinFailureAsync(studentId, 0, false);
+
+                VerificationLogListView.Items.Insert(0, $"[SECURITY OVERRIDE] Guard cleared 2FA lockout for {studentId}.");
+                OverrideStudentIdBox.Text = ""; // Clear box
+            }
+            catch (Exception ex)
+            {
+                VerificationLogListView.Items.Insert(0, $"[DB ERROR] Could not unlock account: {ex.Message}");
+            }
         }
 
         private void TryConnectSerial(string portName)
@@ -135,33 +164,6 @@ namespace NFC_System
             }
         }
 
-        private async void ProcessManualUidButton_Click(object sender, RoutedEventArgs e)
-        {
-            await ProcessUidAsync(ManualUidTextBox.Text.Trim());
-        }
-
-        private async void SubmitPinButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_pendingSession == null)
-            {
-                return;
-            }
-
-            VerificationOutcome outcome = await _engine.SubmitPinAsync(_pendingSession, VerifyPinBox.Password.Trim());
-            ApplyOutcome(outcome);
-        }
-
-        private async void SubmitQrButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_pendingSession == null)
-            {
-                return;
-            }
-
-            VerificationOutcome outcome = await _engine.SubmitQrAsync(_pendingSession, QrCredentialTextBox.Text.Trim());
-            ApplyOutcome(outcome);
-        }
-
         private async System.Threading.Tasks.Task ProcessUidAsync(string uid)
         {
             if (string.IsNullOrWhiteSpace(uid))
@@ -169,8 +171,6 @@ namespace NFC_System
                 VerificationLogListView.Items.Insert(0, "[ERROR] NFC UID is required.");
                 return;
             }
-
-            ClearPendingInputs();
 
             if (IsInvalidUid(uid))
             {
@@ -199,22 +199,14 @@ namespace NFC_System
 
         private void ApplyOutcome(VerificationOutcome outcome)
         {
-            ResultTextBlock.Text = outcome.ResultTitle;
-            ResultSubTextBlock.Text = outcome.ResultMessage;
-            ResultBorder.Background = outcome.IsGranted
-                ? new SolidColorBrush(Colors.ForestGreen)
-                : OutcomeBrush(outcome);
-            UpdateSuccessSummary(outcome);
-
-            ScanTimeTextBlock.Text = outcome.Timestamp.ToString("yyyy-MM-dd hh:mm:ss tt");
-
             if (outcome.Student != null)
             {
-                DisplayStudent(outcome.Student);
+                // Auto-fill the Guard Override box so they don't have to type it!
+                OverrideStudentIdBox.Text = outcome.Student.StudentId;
             }
             else
             {
-                ClearStudentDetails();
+                OverrideStudentIdBox.Text = ""; // Clear it if no valid student was found
             }
 
             if (!string.IsNullOrWhiteSpace(outcome.LogLine))
@@ -222,115 +214,18 @@ namespace NFC_System
                 VerificationLogListView.Items.Insert(0, outcome.LogLine);
             }
 
-            if (outcome.Step == VerificationStep.RequiresPin && outcome.Session != null)
+            // Play a loud system alarm if the student locks themselves out
+            if (outcome.ErrorCategory == "PIN_LOCKED")
             {
-                _pendingSession = outcome.Session;
-                VerifyPinBox.IsEnabled = true;
-                SubmitPinButton.IsEnabled = true;
-                VerifyPinBox.Password = "";
-                VerifyPinBox.Focus(FocusState.Programmatic);
-                QrCredentialTextBox.IsEnabled = false;
-                SubmitQrButton.IsEnabled = false;
+                SystemSounds.Exclamation.Play();
             }
-            else if (outcome.Step == VerificationStep.RequiresQr && outcome.Session != null)
-            {
-                _pendingSession = outcome.Session;
-                VerifyPinBox.IsEnabled = false;
-                SubmitPinButton.IsEnabled = false;
-                QrCredentialTextBox.IsEnabled = true;
-                SubmitQrButton.IsEnabled = true;
-                QrCredentialTextBox.Text = "";
-                QrCredentialTextBox.Focus(FocusState.Programmatic);
-            }
-            else
-            {
-                ClearPendingInputs();
-            }
-        }
-
-        private void DisplayStudent(StudentRecord student)
-        {
-            StudentNameTextBlock.Text = student.FullName;
-            StudentIdTextBlock.Text = student.StudentId;
-            CourseTextBlock.Text = student.Course;
-            YearLevelTextBlock.Text = student.YearLevel;
-            SectionTextBlock.Text = student.SectionName;
-            StatusTextBlock.Text = student.Status.ToUpper();
-            EntryStateTextBlock.Text = student.EntryState;
-            UidTextBlock.Text = student.NfcUid;
-
-            if (student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
-            {
-                StatusBadge.Background = new SolidColorBrush(Colors.ForestGreen);
-            }
-            else if (student.Status.Equals("Inactive", StringComparison.OrdinalIgnoreCase))
-            {
-                StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
-            }
-            else
-            {
-                StatusBadge.Background = new SolidColorBrush(Colors.Firebrick);
-            }
-
-            StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-        }
-
-        private void ClearStudentDetails()
-        {
-            StudentNameTextBlock.Text = "-";
-            StudentIdTextBlock.Text = "-";
-            CourseTextBlock.Text = "-";
-            YearLevelTextBlock.Text = "-";
-            SectionTextBlock.Text = "-";
-            StatusTextBlock.Text = "-";
-            EntryStateTextBlock.Text = "Unknown";
-            UidTextBlock.Text = "-";
-            StatusBadge.Background = new SolidColorBrush(Colors.Gray);
-            StatusTextBlock.Foreground = new SolidColorBrush(Colors.White);
-        }
-
-        private void ClearPendingInputs()
-        {
-            _pendingSession = null;
-            VerifyPinBox.Password = "";
-            VerifyPinBox.IsEnabled = false;
-            SubmitPinButton.IsEnabled = false;
-            QrCredentialTextBox.Text = "";
-            QrCredentialTextBox.IsEnabled = false;
-            SubmitQrButton.IsEnabled = false;
-        }
-
-        private void UpdateSuccessSummary(VerificationOutcome outcome)
-        {
-            if (!outcome.IsGranted || outcome.Session == null || outcome.Student == null)
-            {
-                SuccessSummaryBorder.Visibility = Visibility.Collapsed;
-                SuccessSummaryTextBlock.Text = "-";
-                return;
-            }
-
-            string action = outcome.Session.TransactionType == TransactionType.Exit ? "Exit state updated" : "Entry state updated";
-            string state = outcome.Session.TransactionType == TransactionType.Exit ? "OUTSIDE" : "INSIDE";
-            SuccessSummaryTextBlock.Text =
-                $"{action}: {state}\n" +
-                $"Access log recorded at {outcome.Timestamp:yyyy-MM-dd hh:mm:ss tt}\n" +
-                $"Mode used: {RequiredStepsDisplay(outcome.Session.Mode)}";
-            SuccessSummaryBorder.Visibility = Visibility.Visible;
         }
 
         private void DisplayInvalidUid(string uid)
         {
-            ClearStudentDetails();
-            SuccessSummaryBorder.Visibility = Visibility.Collapsed;
-            SuccessSummaryTextBlock.Text = "-";
-            UidTextBlock.Text = uid;
-            ScanTimeTextBlock.Text = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
-            StatusTextBlock.Text = "INVALID UID";
-            StatusBadge.Background = new SolidColorBrush(Colors.DarkOrange);
-            ResultTextBlock.Text = "SCAN AGAIN";
-            ResultSubTextBlock.Text = "Invalid NFC read detected";
-            ResultBorder.Background = new SolidColorBrush(Colors.DarkOrange);
-            VerificationLogListView.Items.Insert(0, $"{ScanTimeTextBlock.Text} | UID {uid} | INVALID READ");
+            OverrideStudentIdBox.Text = "";
+            string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+            VerificationLogListView.Items.Insert(0, $"{logTime} | UID {uid} | INVALID READ");
         }
 
         private async System.Threading.Tasks.Task LogInvalidUidAsync(string uid, TransactionType transactionType, VerificationMode mode)
@@ -346,13 +241,32 @@ namespace NFC_System
             }
         }
 
-        private void SecurityModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void SecurityModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            UpdateRiskSummary();
+            if (SecurityModeComboBox == null || DirectionComboBox == null) return;
+
+            KioskStateController.BroadcastModeChange(GetSelectedMode(), GetSelectedTransactionType());
+
+            string modeString = GetSelectedMode() switch
+            {
+                VerificationMode.Fast => "Fast",
+                VerificationMode.HighSecurity => "High-Security",
+                _ => "Standard"
+            };
+
+            try { await _database.SetSettingAsync("verification_mode", modeString); } catch { }
+        }
+
+        private void DirectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (SecurityModeComboBox == null || DirectionComboBox == null) return;
+            KioskStateController.BroadcastModeChange(GetSelectedMode(), GetSelectedTransactionType());
         }
 
         private VerificationMode GetSelectedMode()
         {
+            if (SecurityModeComboBox == null) return VerificationMode.Standard;
+
             return SecurityModeComboBox.SelectedIndex switch
             {
                 0 => VerificationMode.Fast,
@@ -361,72 +275,15 @@ namespace NFC_System
             };
         }
 
-        private void UpdateRiskSummary()
-        {
-            VerificationMode mode = GetSelectedMode();
-           
-        }
-
-        private static string ModeDisplayName(VerificationMode mode)
-        {
-            return mode switch
-            {
-                VerificationMode.Fast => "Fast Mode",
-                VerificationMode.HighSecurity => "High-Security Mode",
-                _ => "Standard Mode"
-            };
-        }
-
-        private static string RequiredStepsDisplay(VerificationMode mode)
-        {
-            return mode switch
-            {
-                VerificationMode.Fast => "NFC only",
-                VerificationMode.HighSecurity => "NFC + PIN + QR",
-                _ => "NFC + PIN"
-            };
-        }
-
         private TransactionType GetSelectedTransactionType()
         {
+            if (DirectionComboBox == null) return TransactionType.Entry;
+
             return DirectionComboBox.SelectedIndex switch
             {
                 1 => TransactionType.Exit,
                 _ => TransactionType.Entry
             };
-        }
-
-        private static Brush OutcomeBrush(VerificationOutcome outcome)
-        {
-            if (outcome.Step == VerificationStep.RequiresPin || outcome.Step == VerificationStep.RequiresQr)
-            {
-                return new SolidColorBrush(Colors.SteelBlue);
-            }
-
-            if (outcome.ErrorCategory.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
-                outcome.ErrorCategory.Contains("TAILGATING", StringComparison.OrdinalIgnoreCase))
-            {
-                return new SolidColorBrush(Colors.DarkOrange);
-            }
-
-            return new SolidColorBrush(Colors.Firebrick);
-        }
-
-        private void TriggerQrScannerButton_Click(object sender, RoutedEventArgs e)
-        {
-            var qrWindow = new QrScannerWindow();
-            qrWindow.QrCodeScanned += async (_, payload) =>
-            {
-                QrCredentialTextBox.Text = payload;
-                VerificationLogListView.Items.Insert(0, "[INFO] QR credential captured from camera.");
-
-                if (_pendingSession != null && SubmitQrButton.IsEnabled)
-                {
-                    VerificationOutcome outcome = await _engine.SubmitQrAsync(_pendingSession, payload);
-                    ApplyOutcome(outcome);
-                }
-            };
-            qrWindow.Activate();
         }
 
         private static bool IsInvalidUid(string uid)

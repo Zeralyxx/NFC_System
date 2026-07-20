@@ -127,27 +127,19 @@
                                 </ScrollViewer>
                             </Border>
 
-                            <!-- Photo & QR Placeholders -->
-                            <Grid Grid.Column="1" RowSpacing="16">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-
-                                <Border Grid.Row="0" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                                    <Viewbox Stretch="Uniform" Margin="24">
-                                        <FontIcon Glyph="&#xE77B;" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                    </Viewbox>
-                                </Border>
-
-                                <Border Grid.Row="1" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                                        <!-- Swapped to the correct QRCode glyph (ED14) -->
-                                        <FontIcon Glyph="&#xED14;" FontSize="40" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBlock Text="QR Pending" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
+                            <!-- Dynamic QR Code Display -->
+                            <Border Grid.Column="1" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="24">
+                                <Grid>
+                                    <!-- Pending State -->
+                                    <StackPanel x:Name="QrPlaceholderPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+                                        <FontIcon Glyph="&#xED14;" FontSize="72" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Text="Waiting for Scan..." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
                                     </StackPanel>
-                                </Border>
-                            </Grid>
+
+                                    <!-- Generated QR Image (Hidden until ready) -->
+                                    <Image x:Name="QrCodeImage" Stretch="Uniform" Visibility="Collapsed"/>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Grid>
                 </Border>

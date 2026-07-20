@@ -38,6 +38,9 @@ public sealed class StudentRecord
     public string EntryState { get; set; } = "OUTSIDE";
     public int FailedPinAttempts { get; set; }
     public bool PinLocked { get; set; }
+
+    // NEW: Added for the 2-minute gate throttle (Anti-Passback)
+    public DateTime? LastScanTimestamp { get; set; }
 }
 
 public sealed class EventRecord
@@ -57,6 +60,9 @@ public sealed class EventRecord
             return $"{EventId} - {EventName} ({DatabaseService.ToStorageValue(VerificationMode)}, {restriction})";
         }
     }
+
+    // ADD THIS LINE SO THE UI LIST SHOWS THE STATUS
+    public string IsRestrictedText => IsRestricted ? "Restricted" : "Open";
 }
 
 public sealed class VerificationSession
@@ -65,7 +71,9 @@ public sealed class VerificationSession
     public string Uid { get; init; } = "";
     public VerificationMode Mode { get; init; }
     public TransactionType TransactionType { get; init; }
-    public string EventId { get; init; } = "";
+
+    // NEW: Made nullable (?) so main gate entries don't throw null reference errors
+    public string? EventId { get; init; }
 }
 
 public sealed class VerificationOutcome

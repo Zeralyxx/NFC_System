@@ -194,6 +194,48 @@ public sealed class VerificationEngine
         };
     }
 
+    public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId)
+    {
+        // 1. Validate the signature format (Expected: TCU|StudentId|NfcUid)
+        string[] parts = qrPayload.Split('|');
+        if (parts.Length < 3 || parts[0] != "TCU")
+        {
+            return new VerificationOutcome
+            {
+                IsGranted = false,
+                Step = VerificationStep.Completed,
+                ResultTitle = "INVALID CREDENTIAL",
+                ResultMessage = "Unrecognized digital signature format."
+            };
+        }
+
+        string extractedUid = parts[2];
+
+        // 2. Feed the extracted UID into the existing security pipeline
+        VerificationOutcome outcome = await BeginNfcVerificationAsync(extractedUid, mode, transactionType, eventId);
+
+        // 3. If the account is expelled, locked, or triggers anti-tailgating, reject immediately
+        if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
+        {
+            return outcome;
+        }
+
+        // 4. THE SECURITY OVERRIDE: Because a QR code can be easily copied, 
+        // we MUST revoke "Fast Mode" instant-entry and strictly enforce a PIN check.
+        return new VerificationOutcome
+        {
+            IsGranted = false,
+            Step = VerificationStep.RequiresPin,
+            ResultTitle = "QR ACCEPTED",
+            ResultMessage = "Please enter your PIN to verify identity",
+            Student = outcome.Student,    // Carry over the student data
+            Session = outcome.Session,    // Carry over the session data
+            Timestamp = outcome.Timestamp
+        };
+
+        return outcome;
+    }
+
     private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)
     {
         return new VerificationOutcome

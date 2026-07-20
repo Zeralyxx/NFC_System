@@ -90,6 +90,8 @@
                             <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="12">
                                 <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
                                 <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
+                                <!-- NEW: Fallback Trigger Button -->
+                                <Button x:Name="ForgotIdButton" Content="Forgot ID? Use Digital QR" Click="ForgotIdButton_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF" Foreground="White" CornerRadius="8" Padding="16,10" Margin="0,24,0,0" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
 

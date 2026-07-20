@@ -9,141 +9,79 @@ public sealed class DatabaseService
 {
     public const string ConnectionString = "Server=127.0.0.1;Port=3306;Database=nfc_system;User ID=root;Password=;";
 
-    public async Task EnsureSchemaAsync()
+    public Task EnsureSchemaAsync()
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS students (
-                student_id VARCHAR(50) PRIMARY KEY,
-                full_name VARCHAR(150) NOT NULL,
-                course VARCHAR(100) NULL,
-                year_level VARCHAR(20) NULL,
-                section_name VARCHAR(50) NULL,
-                status VARCHAR(30) NOT NULL DEFAULT 'Active',
-                nfc_uid VARCHAR(80) NOT NULL,
-                pin_salt VARCHAR(128) NULL,
-                pin_hash VARCHAR(256) NULL,
-                qr_credential VARCHAR(255) NULL,
-                entry_state VARCHAR(20) NOT NULL DEFAULT 'OUTSIDE',
-                failed_pin_attempts INT NOT NULL DEFAULT 0,
-                pin_locked BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )");
-
-        await EnsureColumnAsync(connection, "students", "pin_salt", "VARCHAR(128) NULL");
-        await EnsureColumnAsync(connection, "students", "pin_hash", "VARCHAR(256) NULL");
-        await EnsureColumnAsync(connection, "students", "qr_credential", "VARCHAR(255) NULL");
-        await EnsureColumnAsync(connection, "students", "entry_state", "VARCHAR(20) NOT NULL DEFAULT 'OUTSIDE'");
-        await EnsureColumnAsync(connection, "students", "failed_pin_attempts", "INT NOT NULL DEFAULT 0");
-        await EnsureColumnAsync(connection, "students", "pin_locked", "BOOLEAN NOT NULL DEFAULT FALSE");
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS app_settings (
-                setting_key VARCHAR(80) PRIMARY KEY,
-                setting_value VARCHAR(255) NOT NULL
-            )");
-
-        await ExecuteAsync(connection, @"
-            INSERT INTO app_settings (setting_key, setting_value)
-            VALUES ('verification_mode', 'Standard')
-            ON DUPLICATE KEY UPDATE setting_value = setting_value");
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS verification_logs (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                student_id VARCHAR(50) NULL,
-                nfc_uid VARCHAR(80) NULL,
-                transaction_type VARCHAR(40) NOT NULL,
-                verification_mode VARCHAR(40) NOT NULL,
-                access_result VARCHAR(40) NOT NULL,
-                verification_status VARCHAR(60) NOT NULL,
-                error_category VARCHAR(80) NULL,
-                remarks TEXT NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )");
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS security_alerts (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                student_id VARCHAR(50) NULL,
-                alert_type VARCHAR(80) NOT NULL,
-                message TEXT NOT NULL,
-                is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )");
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS events (
-                event_id VARCHAR(50) PRIMARY KEY,
-                event_name VARCHAR(150) NOT NULL,
-                verification_mode VARCHAR(40) NOT NULL DEFAULT 'Standard',
-                is_restricted BOOLEAN NOT NULL DEFAULT FALSE,
-                status VARCHAR(30) NOT NULL DEFAULT 'Active',
-                event_date DATETIME NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )");
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS event_attendee_list (
-                event_id VARCHAR(50) NOT NULL,
-                student_id VARCHAR(50) NOT NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (event_id, student_id)
-            )");
-
-        await ExecuteAsync(connection, @"
-            CREATE TABLE IF NOT EXISTS attendance (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                event_id VARCHAR(50) NOT NULL,
-                student_id VARCHAR(50) NOT NULL,
-                verification_mode VARCHAR(40) NOT NULL,
-                status VARCHAR(40) NOT NULL,
-                remarks TEXT NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )");
+        // Table structures are safely maintained inside phpMyAdmin to prevent runtime structural lag.
+        return Task.CompletedTask;
     }
 
-    public async Task SaveStudentAsync(StudentRecord student, string pin)
-    {
-        await EnsureSchemaAsync();
+    /* =========================================================================
+     * ENROLLMENT & ACCOUNT MANAGEMENT OPERATIONS
+     * ========================================================================= */
 
+    public async Task SaveStudentAsync(StudentRecord student, string? pin)
+    {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, student.StudentId))
-        {
             throw new InvalidOperationException("NFC UID is already linked to another student.");
+
+        string? salt = null;
+        string? hash = null;
+
+        // Only generate a new secure hash if the guard actually typed a new PIN
+        if (!string.IsNullOrWhiteSpace(pin))
+        {
+            var hashedResult = PinHasher.HashPin(pin);
+            salt = hashedResult.Salt;
+            hash = hashedResult.Hash;
         }
 
-        var (salt, hash) = PinHasher.HashPin(pin);
-        string existsSql = "SELECT COUNT(*) FROM students WHERE student_id = @student_id";
-        using var existsCommand = new MySqlCommand(existsSql, connection);
-        existsCommand.Parameters.AddWithValue("@student_id", student.StudentId);
-        bool exists = Convert.ToInt32(await existsCommand.ExecuteScalarAsync()) > 0;
+        // 1. Check if the student already exists in the database
+        bool exists = false;
+        using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
+        {
+            checkCmd.Parameters.AddWithValue("@id", student.StudentId);
+            exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+        }
 
-        string sql = exists
-            ? @"
-                UPDATE students
-                SET full_name = @full_name,
-                    course = @course,
-                    year_level = @year_level,
-                    section_name = @section_name,
-                    status = @status,
-                    nfc_uid = @nfc_uid,
-                    pin_salt = @pin_salt,
-                    pin_hash = @pin_hash,
-                    qr_credential = @qr_credential,
-                    pin_locked = FALSE,
-                    failed_pin_attempts = 0
-                WHERE student_id = @student_id"
-            : @"
-                INSERT INTO students
-                (student_id, full_name, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
-                VALUES
-                (@student_id, @full_name, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE)";
+        string sql;
+
+        // 2. Dynamically build the correct SQL query
+        if (exists)
+        {
+            // If they exist AND provided a new PIN, update everything including the PIN
+            if (salt != null && hash != null)
+            {
+                sql = @"
+                UPDATE students 
+                SET full_name = @full_name, course = @course, year_level = @year_level, 
+                    section_name = @section_name, status = @status, nfc_uid = @nfc_uid, 
+                    qr_credential = @qr_credential, pin_salt = @pin_salt, pin_hash = @pin_hash, 
+                    pin_locked = FALSE, failed_pin_attempts = 0
+                WHERE student_id = @student_id;";
+            }
+            else
+            {
+                // If they left the PIN blank, update everything EXCEPT the PIN
+                sql = @"
+                UPDATE students 
+                SET full_name = @full_name, course = @course, year_level = @year_level, 
+                    section_name = @section_name, status = @status, nfc_uid = @nfc_uid, 
+                    qr_credential = @qr_credential
+                WHERE student_id = @student_id;";
+            }
+        }
+        else
+        {
+            // If it's a brand new student, run a standard INSERT
+            sql = @"
+            INSERT INTO students
+            (student_id, full_name, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
+            VALUES
+            (@student_id, @full_name, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE);";
+        }
 
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
@@ -152,14 +90,12 @@ public sealed class DatabaseService
 
     public async Task<StudentRecord?> GetStudentByUidAsync(string uid)
     {
-        await EnsureSchemaAsync();
-
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         string sql = @"
             SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
             FROM students
             WHERE nfc_uid = @uid
             LIMIT 1";
@@ -176,40 +112,160 @@ public sealed class DatabaseService
         return ReadStudent(reader);
     }
 
-    public async Task<string> GetSettingAsync(string key, string fallback)
-    {
-        await EnsureSchemaAsync();
+    /* =========================================================================
+     * STUDENT DIRECTORY: SEARCH, FILTERING & PAGING
+     * ========================================================================= */
 
+    public async Task<(IReadOnlyList<StudentRecord> Students, int TotalCount)> SearchStudentsAsync(
+        string? searchTerm,
+        string? statusFilter,
+        string? courseFilter,
+        string? yearFilter,
+        int pageNumber,
+        int pageSize)
+    {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand("SELECT setting_value FROM app_settings WHERE setting_key = @key LIMIT 1", connection);
-        command.Parameters.AddWithValue("@key", key);
+        var whereClauses = new List<string>();
+        var parameterValues = new List<(string Name, object Value)>();
 
-        object? value = await command.ExecuteScalarAsync();
-        return value?.ToString() ?? fallback;
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            whereClauses.Add("(full_name LIKE @search OR student_id LIKE @search OR nfc_uid LIKE @search)");
+            parameterValues.Add(("@search", $"%{searchTerm.Trim()}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusFilter) && statusFilter != "All Students")
+        {
+            if (statusFilter == "Locked Out")
+            {
+                whereClauses.Add("pin_locked = 1");
+            }
+            else if (statusFilter == "Active Only")
+            {
+                whereClauses.Add("status = @status");
+                parameterValues.Add(("@status", "Active"));
+            }
+            else
+            {
+                whereClauses.Add("status = @status");
+                parameterValues.Add(("@status", statusFilter));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(courseFilter) && courseFilter != "All Courses")
+        {
+            whereClauses.Add("course = @course");
+            parameterValues.Add(("@course", courseFilter));
+        }
+
+        if (!string.IsNullOrWhiteSpace(yearFilter) && yearFilter != "All Years")
+        {
+            if (yearFilter == "Year 5+")
+            {
+                whereClauses.Add("year_level >= 5");
+            }
+            else
+            {
+                string yearNumber = yearFilter.Replace("Year ", "").Trim();
+                whereClauses.Add("year_level = @year");
+                parameterValues.Add(("@year", yearNumber));
+            }
+        }
+
+        string whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
+
+        int totalCount;
+        using (var countCommand = new MySqlCommand($"SELECT COUNT(*) FROM students {whereSql}", connection))
+        {
+            foreach (var (name, value) in parameterValues)
+            {
+                countCommand.Parameters.AddWithValue(name, value);
+            }
+            totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync());
+        }
+
+        int safePageSize = pageSize <= 0 ? 12 : pageSize;
+        int safePageNumber = pageNumber <= 0 ? 1 : pageNumber;
+        int offset = (safePageNumber - 1) * safePageSize;
+
+        string sql = $@"
+            SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+            FROM students
+            {whereSql}
+            ORDER BY full_name ASC
+            LIMIT @pageSize OFFSET @offset";
+
+        using var command = new MySqlCommand(sql, connection);
+        foreach (var (name, value) in parameterValues)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+        command.Parameters.AddWithValue("@pageSize", safePageSize);
+        command.Parameters.AddWithValue("@offset", offset);
+
+        var students = new List<StudentRecord>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            students.Add(ReadStudent(reader));
+        }
+
+        return (students, totalCount);
     }
 
-    public async Task SetSettingAsync(string key, string value)
+    public async Task<IReadOnlyList<string>> GetDistinctCoursesAsync()
     {
-        await EnsureSchemaAsync();
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
 
+        using var command = new MySqlCommand(
+            "SELECT DISTINCT course FROM students WHERE course IS NOT NULL AND course <> '' ORDER BY course ASC",
+            connection);
+
+        var courses = new List<string>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            courses.Add(Value(reader["course"]));
+        }
+        return courses;
+    }
+
+    public async Task UpdateStudentStatusAsync(string studentId, string status)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(
+            "UPDATE students SET status = @status WHERE student_id = @student_id", connection);
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@student_id", studentId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task UnlockAccountAsync(string studentId)
+    {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            INSERT INTO app_settings (setting_key, setting_value)
-            VALUES (@key, @value)
-            ON DUPLICATE KEY UPDATE setting_value = @value", connection);
-        command.Parameters.AddWithValue("@key", key);
-        command.Parameters.AddWithValue("@value", value);
+            UPDATE students
+            SET pin_locked = FALSE,
+                failed_pin_attempts = 0
+            WHERE student_id = @student_id", connection);
+        command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
     }
 
+    /* =========================================================================
+     * AUTOMATED GATE & TRANSITION STATE OPERATIONS
+     * ========================================================================= */
+
     public async Task UpdateEntryStateAsync(string studentId, string state)
     {
-        await EnsureSchemaAsync();
-
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -219,10 +275,19 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
+    public async Task UpdateLastScanTimestampAsync(string studentId, DateTime timestamp)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("UPDATE students SET last_scan_timestamp = @time WHERE student_id = @student_id", connection);
+        command.Parameters.AddWithValue("@time", timestamp);
+        command.Parameters.AddWithValue("@student_id", studentId);
+        await command.ExecuteNonQueryAsync();
+    }
+
     public async Task UpdatePinFailureAsync(string studentId, int failedAttempts, bool locked)
     {
-        await EnsureSchemaAsync();
-
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -232,14 +297,13 @@ public sealed class DatabaseService
                 pin_locked = @locked
             WHERE student_id = @student_id", connection);
         command.Parameters.AddWithValue("@attempts", failedAttempts);
-        command.Parameters.AddWithValue("@locked", locked);
+        command.Parameters.AddWithValue("@locked", locked ? 1 : 0);
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
     }
 
     public async Task ResetPinAsync(string studentId, string pin)
     {
-        await EnsureSchemaAsync();
         var (salt, hash) = PinHasher.HashPin(pin);
 
         using var connection = new MySqlConnection(ConnectionString);
@@ -258,59 +322,243 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task SaveEventAsync(string eventId, string eventName, VerificationMode mode, bool isRestricted)
-    {
-        await EnsureSchemaAsync();
+    /* =========================================================================
+     * LIVE DASHBOARD LOGGING & SYSTEM AUDITING
+     * ========================================================================= */
 
+    public async Task<string> GetSettingAsync(string key, string fallback)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("SELECT setting_value FROM app_settings WHERE setting_key = @key LIMIT 1", connection);
+        command.Parameters.AddWithValue("@key", key);
+
+        object? value = await command.ExecuteScalarAsync();
+        return value?.ToString() ?? fallback;
+    }
+
+    public async Task SetSettingAsync(string key, string value)
+    {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            INSERT INTO events (event_id, event_name, verification_mode, is_restricted, status)
-            VALUES (@event_id, @event_name, @mode, @restricted, 'Active')
-            ON DUPLICATE KEY UPDATE
-                event_name = @event_name,
-                verification_mode = @mode,
-                is_restricted = @restricted,
-                status = 'Active'", connection);
-        command.Parameters.AddWithValue("@event_id", eventId);
-        command.Parameters.AddWithValue("@event_name", eventName);
-        command.Parameters.AddWithValue("@mode", ToStorageValue(mode));
-        command.Parameters.AddWithValue("@restricted", isRestricted);
+            INSERT INTO app_settings (setting_key, setting_value)
+            VALUES (@key, @value)
+            ON DUPLICATE KEY UPDATE setting_value = @value", connection);
+        command.Parameters.AddWithValue("@key", key);
+        command.Parameters.AddWithValue("@value", value);
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task AddEventAttendeeAsync(string eventId, string studentId)
+    public async Task<IReadOnlyList<string>> GetRecentLogsAsync(int limit = 25)
     {
-        await EnsureSchemaAsync();
-
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            INSERT INTO event_attendee_list (event_id, student_id)
-            VALUES (@event_id, @student_id)
-            ON DUPLICATE KEY UPDATE student_id = student_id", connection);
+            SELECT timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks
+            FROM verification_logs
+            ORDER BY timestamp DESC
+            LIMIT @limit", connection);
+        command.Parameters.AddWithValue("@limit", limit);
+
+        var logs = new List<string>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string time = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd hh:mm:ss tt");
+            string subject = Value(reader["student_id"]);
+            if (string.IsNullOrWhiteSpace(subject))
+            {
+                subject = $"UID {Value(reader["nfc_uid"])}";
+            }
+            string result = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true" ? "GRANTED" : "DENIED";
+
+            logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {result} | {Value(reader["error_code"])} {Value(reader["remarks"])}".Trim());
+        }
+        return logs;
+    }
+
+    public async Task<IReadOnlyList<string>> GetRecentAlertsAsync(int limit = 25)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            SELECT timestamp, student_id, alert_type, message
+            FROM alerts
+            ORDER BY timestamp DESC
+            LIMIT @limit", connection);
+        command.Parameters.AddWithValue("@limit", limit);
+
+        var alerts = new List<string>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string time = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd hh:mm:ss tt");
+            alerts.Add($"{time} | {Value(reader["alert_type"])} | {Value(reader["student_id"])} | {Value(reader["message"])}");
+        }
+        return alerts;
+    }
+
+    public async Task LogVerificationAsync(StudentRecord? student, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            INSERT INTO verification_logs
+            (student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks)
+            VALUES
+            (@student_id, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks)", connection);
+        command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
+        command.Parameters.AddWithValue("@nfc_uid", NullIfEmpty(uid));
+        command.Parameters.AddWithValue("@transaction_type", ToStorageValue(transactionType));
+        command.Parameters.AddWithValue("@verification_mode", ToStorageValue(mode));
+        command.Parameters.AddWithValue("@is_granted", granted ? 1 : 0);
+        command.Parameters.AddWithValue("@error_category", NullIfEmpty(errorCategory));
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task AddAlertAsync(string? studentId, string alertType, string message)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            INSERT INTO alerts (student_id, alert_type, message)
+            VALUES (@student_id, @alert_type, @message)", connection);
+        command.Parameters.AddWithValue("@student_id", NullIfEmpty(studentId));
+        command.Parameters.AddWithValue("@alert_type", alertType);
+        command.Parameters.AddWithValue("@message", message);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /* =========================================================================
+     * ACADEMIC TRACKS & RESTRICTED EVENT CHECKPOINTS
+     * ========================================================================= */
+
+    public async Task SaveEventAsync(string eventId, string eventName, VerificationMode mode, bool isRestricted)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            INSERT INTO events (event_id, event_name, event_date, verification_mode, is_restricted)
+            VALUES (@event_id, @event_name, NOW(), @mode, @is_restricted)
+            ON DUPLICATE KEY UPDATE event_name = @event_name, verification_mode = @mode, is_restricted = @is_restricted, event_date = NOW()", connection);
+        command.Parameters.AddWithValue("@event_id", eventId);
+        command.Parameters.AddWithValue("@event_name", eventName);
+        command.Parameters.AddWithValue("@mode", ToStorageValue(mode));
+        command.Parameters.AddWithValue("@is_restricted", isRestricted ? 1 : 0);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    
+
+    public async Task RemoveEventAttendeeAsync(string eventId, string studentId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("DELETE FROM event_approved_students WHERE event_id = @event_id AND student_id = @student_id", connection);
         command.Parameters.AddWithValue("@event_id", eventId);
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<IReadOnlyList<EventRecord>> GetActiveEventsAsync(int limit = 50)
+    public async Task AddBatchToEventAsync(string eventId, string? courseName, string? yearLevel)
     {
-        await EnsureSchemaAsync();
-
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
+        // Dynamically build the WHERE clause based on what the user selected
+        var whereClauses = new List<string>();
+        if (!string.IsNullOrWhiteSpace(courseName)) whereClauses.Add("course = @course");
+        if (!string.IsNullOrWhiteSpace(yearLevel)) whereClauses.Add("year_level = @year");
+
+        string whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
+
+        string sql = $@"
+        INSERT IGNORE INTO event_approved_students (event_id, student_id)
+        SELECT @event_id, student_id FROM students {whereSql}";
+
+        using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@event_id", eventId);
+
+        if (!string.IsNullOrWhiteSpace(courseName))
+            command.Parameters.AddWithValue("@course", courseName);
+
+        if (!string.IsNullOrWhiteSpace(yearLevel))
+            command.Parameters.AddWithValue("@year", yearLevel.Replace("Year ", "").Trim()); // Handles "Year 1" -> "1"
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task AddEventAttendeeAsync(string eventId, string studentId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // FIX: Changed to INSERT IGNORE for consistency
         using var command = new MySqlCommand(@"
-            SELECT event_id, event_name, verification_mode, is_restricted, status, event_date
+            INSERT IGNORE INTO event_approved_students (event_id, student_id)
+            VALUES (@event_id, @student_id)", connection);
+        command.Parameters.AddWithValue("@event_id", eventId);
+        command.Parameters.AddWithValue("@student_id", studentId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<StudentRecord>> GetEventAttendeesAsync(string eventId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // FIX: Switched to a LEFT JOIN and selected 'eas.student_id' directly. 
+        // Now, even if a student isn't formally registered in the main system yet, 
+        // their ID will still show up on the Event list!
+        using var command = new MySqlCommand(@"
+            SELECT eas.student_id, s.full_name, s.course, s.year_level, s.section_name, s.status, s.nfc_uid, 
+                   s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp
+            FROM event_approved_students eas
+            LEFT JOIN students s ON eas.student_id = s.student_id
+            WHERE eas.event_id = @event_id
+            ORDER BY s.full_name ASC", connection);
+        command.Parameters.AddWithValue("@event_id", eventId);
+
+        var attendees = new List<StudentRecord>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var student = ReadStudent(reader);
+
+            // If the student ID was added but they have no name in the database yet, 
+            // give them a placeholder so the UI doesn't look blank.
+            if (string.IsNullOrWhiteSpace(student.FullName))
+            {
+                student.FullName = "Unregistered Student";
+            }
+
+            attendees.Add(student);
+        }
+        return attendees;
+    }
+
+
+
+    public async Task<IReadOnlyList<EventRecord>> GetActiveEventsAsync(int limit = 50)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // UPDATED: Now fetches verification_mode and is_restricted
+        using var command = new MySqlCommand(@"
+            SELECT event_id, event_name, event_date, verification_mode, is_restricted
             FROM events
-            WHERE status = 'Active'
-            ORDER BY
-                CASE WHEN event_date IS NULL THEN 1 ELSE 0 END,
-                event_date ASC,
-                created_at DESC
             LIMIT @limit", connection);
         command.Parameters.AddWithValue("@limit", limit);
 
@@ -318,41 +566,31 @@ public sealed class DatabaseService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            events.Add(ReadEvent(reader));
+            events.Add(new EventRecord
+            {
+                EventId = Value(reader["event_id"]),
+                EventName = Value(reader["event_name"]),
+                // UPDATED: Dynamically parses the stored enum, falls back to Standard if undefined
+                VerificationMode = Enum.TryParse<VerificationMode>(Value(reader["verification_mode"]), out var vMode) ? vMode : VerificationMode.Standard,
+                // UPDATED: Correctly maps the TINYINT(1) from MySQL to the boolean property
+                IsRestricted = reader["is_restricted"] != DBNull.Value && Convert.ToBoolean(reader["is_restricted"]),
+                Status = "Active",
+                EventDate = reader["event_date"] != DBNull.Value ? Convert.ToDateTime(reader["event_date"]) : null
+            });
         }
-
         return events;
     }
 
     public async Task<bool> IsStudentAllowedForEventAsync(string eventId, string studentId)
     {
-        if (string.IsNullOrWhiteSpace(eventId))
-        {
-            return true;
-        }
-
-        await EnsureSchemaAsync();
+        if (string.IsNullOrWhiteSpace(eventId)) return true;
 
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var eventCommand = new MySqlCommand("SELECT is_restricted FROM events WHERE event_id = @event_id LIMIT 1", connection);
-        eventCommand.Parameters.AddWithValue("@event_id", eventId);
-        object? restrictedValue = await eventCommand.ExecuteScalarAsync();
-        if (restrictedValue == null)
-        {
-            return false;
-        }
-
-        bool isRestricted = Convert.ToBoolean(restrictedValue);
-        if (!isRestricted)
-        {
-            return true;
-        }
-
         using var attendeeCommand = new MySqlCommand(@"
             SELECT COUNT(*)
-            FROM event_attendee_list
+            FROM event_approved_students
             WHERE event_id = @event_id AND student_id = @student_id", connection);
         attendeeCommand.Parameters.AddWithValue("@event_id", eventId);
         attendeeCommand.Parameters.AddWithValue("@student_id", studentId);
@@ -361,18 +599,13 @@ public sealed class DatabaseService
 
     public async Task RecordAttendanceAsync(string eventId, string studentId, VerificationMode mode, string status, string remarks)
     {
-        if (string.IsNullOrWhiteSpace(eventId))
-        {
-            return;
-        }
-
-        await EnsureSchemaAsync();
+        if (string.IsNullOrWhiteSpace(eventId)) return;
 
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            INSERT INTO attendance (event_id, student_id, verification_mode, status, remarks)
+            INSERT INTO event_attendance (event_id, student_id, verification_mode, status, remarks)
             VALUES (@event_id, @student_id, @mode, @status, @remarks)", connection);
         command.Parameters.AddWithValue("@event_id", eventId);
         command.Parameters.AddWithValue("@student_id", studentId);
@@ -382,124 +615,9 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task LogVerificationAsync(StudentRecord? student, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks)
-    {
-        await EnsureSchemaAsync();
-
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            INSERT INTO verification_logs
-            (student_id, nfc_uid, transaction_type, verification_mode, access_result, verification_status, error_category, remarks)
-            VALUES
-            (@student_id, @nfc_uid, @transaction_type, @verification_mode, @access_result, @verification_status, @error_category, @remarks)", connection);
-        command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
-        command.Parameters.AddWithValue("@nfc_uid", NullIfEmpty(uid));
-        command.Parameters.AddWithValue("@transaction_type", ToStorageValue(transactionType));
-        command.Parameters.AddWithValue("@verification_mode", ToStorageValue(mode));
-        command.Parameters.AddWithValue("@access_result", granted ? "GRANTED" : "DENIED");
-        command.Parameters.AddWithValue("@verification_status", status);
-        command.Parameters.AddWithValue("@error_category", NullIfEmpty(errorCategory));
-        command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task AddAlertAsync(string? studentId, string alertType, string message)
-    {
-        await EnsureSchemaAsync();
-
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            INSERT INTO security_alerts (student_id, alert_type, message)
-            VALUES (@student_id, @alert_type, @message)", connection);
-        command.Parameters.AddWithValue("@student_id", NullIfEmpty(studentId));
-        command.Parameters.AddWithValue("@alert_type", alertType);
-        command.Parameters.AddWithValue("@message", message);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task<IReadOnlyList<string>> GetRecentLogsAsync(int limit = 25)
-    {
-        await EnsureSchemaAsync();
-
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            SELECT created_at, student_id, nfc_uid, transaction_type, verification_mode, access_result, error_category, remarks
-            FROM verification_logs
-            ORDER BY created_at DESC
-            LIMIT @limit", connection);
-        command.Parameters.AddWithValue("@limit", limit);
-
-        var logs = new List<string>();
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            string time = Convert.ToDateTime(reader["created_at"]).ToString("yyyy-MM-dd hh:mm:ss tt");
-            string subject = Value(reader["student_id"]);
-            if (string.IsNullOrWhiteSpace(subject))
-            {
-                subject = $"UID {Value(reader["nfc_uid"])}";
-            }
-
-            logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {Value(reader["access_result"])} | {Value(reader["error_category"])} {Value(reader["remarks"])}".Trim());
-        }
-
-        return logs;
-    }
-
-    public async Task<IReadOnlyList<string>> GetRecentAlertsAsync(int limit = 25)
-    {
-        await EnsureSchemaAsync();
-
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            SELECT created_at, student_id, alert_type, message
-            FROM security_alerts
-            ORDER BY created_at DESC
-            LIMIT @limit", connection);
-        command.Parameters.AddWithValue("@limit", limit);
-
-        var alerts = new List<string>();
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            string time = Convert.ToDateTime(reader["created_at"]).ToString("yyyy-MM-dd hh:mm:ss tt");
-            alerts.Add($"{time} | {Value(reader["alert_type"])} | {Value(reader["student_id"])} | {Value(reader["message"])}");
-        }
-
-        return alerts;
-    }
-
-    private static async Task ExecuteAsync(MySqlConnection connection, string sql)
-    {
-        using var command = new MySqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private static async Task EnsureColumnAsync(MySqlConnection connection, string tableName, string columnName, string definition)
-    {
-        using var checkCommand = new MySqlCommand(@"
-            SELECT COUNT(*)
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = @table
-              AND COLUMN_NAME = @column", connection);
-        checkCommand.Parameters.AddWithValue("@table", tableName);
-        checkCommand.Parameters.AddWithValue("@column", columnName);
-
-        bool exists = Convert.ToInt32(await checkCommand.ExecuteScalarAsync()) > 0;
-        if (!exists)
-        {
-            await ExecuteAsync(connection, $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition}");
-        }
-    }
+    /* =========================================================================
+     * STRUCTURAL MAPPING INTERNALS
+     * ========================================================================= */
 
     private static async Task<bool> NfcUidBelongsToAnotherStudentAsync(MySqlConnection connection, string uid, string studentId)
     {
@@ -512,18 +630,24 @@ public sealed class DatabaseService
         return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
     }
 
-    private static void AddStudentParameters(MySqlCommand command, StudentRecord student, string salt, string hash)
+    private static void AddStudentParameters(MySqlCommand command, StudentRecord student, string? salt, string? hash)
     {
         command.Parameters.AddWithValue("@student_id", student.StudentId);
         command.Parameters.AddWithValue("@full_name", student.FullName);
-        command.Parameters.AddWithValue("@course", student.Course);
-        command.Parameters.AddWithValue("@year_level", student.YearLevel);
-        command.Parameters.AddWithValue("@section_name", student.SectionName);
+        command.Parameters.AddWithValue("@course", NullIfEmpty(student.Course));
+
+        if (int.TryParse(student.YearLevel, out int year))
+            command.Parameters.AddWithValue("@year_level", year);
+        else
+            command.Parameters.AddWithValue("@year_level", DBNull.Value);
+
+        command.Parameters.AddWithValue("@section_name", NullIfEmpty(student.SectionName));
         command.Parameters.AddWithValue("@status", student.Status);
         command.Parameters.AddWithValue("@nfc_uid", student.NfcUid);
-        command.Parameters.AddWithValue("@pin_salt", salt);
-        command.Parameters.AddWithValue("@pin_hash", hash);
         command.Parameters.AddWithValue("@qr_credential", student.QrCredential);
+
+        command.Parameters.AddWithValue("@pin_salt", salt != null ? salt : DBNull.Value);
+        command.Parameters.AddWithValue("@pin_hash", hash != null ? hash : DBNull.Value);
     }
 
     private static StudentRecord ReadStudent(MySqlDataReader reader)
@@ -542,62 +666,48 @@ public sealed class DatabaseService
             QrCredential = Value(reader["qr_credential"]),
             EntryState = string.IsNullOrWhiteSpace(Value(reader["entry_state"])) ? "OUTSIDE" : Value(reader["entry_state"]),
             FailedPinAttempts = int.TryParse(Value(reader["failed_pin_attempts"]), out int attempts) ? attempts : 0,
-            PinLocked = bool.TryParse(Value(reader["pin_locked"]), out bool locked) && locked || Value(reader["pin_locked"]) == "1"
+            PinLocked = bool.TryParse(Value(reader["pin_locked"]), out bool locked) && locked || Value(reader["pin_locked"]) == "1",
+            LastScanTimestamp = reader["last_scan_timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["last_scan_timestamp"]) : null
         };
     }
 
-    private static EventRecord ReadEvent(MySqlDataReader reader)
+    public async Task CloseEventAsync(string eventId)
     {
-        return new EventRecord
+        if (string.IsNullOrWhiteSpace(eventId)) return;
+
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var transaction = await connection.BeginTransactionAsync();
+
+        try
         {
-            EventId = Value(reader["event_id"]),
-            EventName = Value(reader["event_name"]),
-            VerificationMode = FromStorageVerificationMode(Value(reader["verification_mode"])),
-            IsRestricted = bool.TryParse(Value(reader["is_restricted"]), out bool restricted) && restricted || Value(reader["is_restricted"]) == "1",
-            Status = string.IsNullOrWhiteSpace(Value(reader["status"])) ? "Active" : Value(reader["status"]),
-            EventDate = DateTime.TryParse(Value(reader["event_date"]), out DateTime eventDate) ? eventDate : null
-        };
-    }
+            // 1. Clean up pre-approved attendee list allocations for this event first
+            using (var clearAttendeesCmd = new MySqlCommand("DELETE FROM event_approved_students WHERE event_id = @event_id;", connection, transaction))
+            {
+                clearAttendeesCmd.Parameters.AddWithValue("@event_id", eventId);
+                await clearAttendeesCmd.ExecuteNonQueryAsync();
+            }
 
-    private static object NullIfEmpty(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
-    }
+            // 2. Shut down and remove the main event tracking record
+            using (var deleteEventCmd = new MySqlCommand("DELETE FROM events WHERE event_id = @event_id;", connection, transaction))
+            {
+                deleteEventCmd.Parameters.AddWithValue("@event_id", eventId);
+                await deleteEventCmd.ExecuteNonQueryAsync();
+            }
 
-    private static string Value(object? value)
-    {
-        return value == null || value == DBNull.Value ? "" : value.ToString() ?? "";
-    }
-
-    public static string ToStorageValue(VerificationMode mode)
-    {
-        return mode switch
+            // Commit changes safely to MySQL
+            await transaction.CommitAsync();
+        }
+        catch
         {
-            VerificationMode.Fast => "Fast",
-            VerificationMode.Standard => "Standard",
-            VerificationMode.HighSecurity => "High-Security",
-            _ => "Standard"
-        };
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
-    public static VerificationMode FromStorageVerificationMode(string mode)
-    {
-        return mode switch
-        {
-            "Fast" => VerificationMode.Fast,
-            "High-Security" => VerificationMode.HighSecurity,
-            _ => VerificationMode.Standard
-        };
-    }
-
-    public static string ToStorageValue(TransactionType transactionType)
-    {
-        return transactionType switch
-        {
-            TransactionType.Entry => "ENTRY",
-            TransactionType.Exit => "EXIT",
-            TransactionType.EventAttendance => "EVENT_ATTENDANCE",
-            _ => "ENTRY"
-        };
-    }
+    private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
+    private static string Value(object? value) => value == null || value == DBNull.Value ? "" : value.ToString() ?? "";
+    public static string ToStorageValue(VerificationMode mode) => mode switch { VerificationMode.Fast => "Fast", VerificationMode.Standard => "Standard", VerificationMode.HighSecurity => "HighSecurity", _ => "Standard" };
+    public static string ToStorageValue(TransactionType type) => type switch { TransactionType.Entry => "Entry", TransactionType.Exit => "Exit", TransactionType.EventAttendance => "EventAttendance", _ => "Entry" };
 }

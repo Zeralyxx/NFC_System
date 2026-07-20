@@ -5,35 +5,324 @@ using Microsoft.UI.Xaml.Controls;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using WinRT.Interop;
 
 namespace NFC_System
 {
-    public class EventRecordModel
-    {
-        public string EventId { get; set; }
-        public string EventName { get; set; }
-        public string EventDate { get; set; }
-        public string Mode { get; set; }
-        public List<AttendeeRecordModel> Roster { get; set; } = new();
-    }
-
-    public class AttendeeRecordModel
-    {
-        public string StudentId { get; set; }
-        public string FullName { get; set; }
-        public string ClearanceStatus { get; set; }
-    }
-
     public sealed partial class EventManagementWindow : Window
     {
-        private List<EventRecordModel> _mockEvents = new();
+        private List<StudentRecord> _masterAttendeesList = new();
+        private readonly DatabaseService _database = new();
+        private EventRecord? _selectedEvent;
 
         public EventManagementWindow()
         {
             this.InitializeComponent();
             MaximizeWindow();
-            LoadDummyData();
+            _ = InitializeAsync();
+        }
+
+        private async Task InitializeAsync()
+        {
+            try
+            {
+                await _database.EnsureSchemaAsync();
+                await LoadActiveEventsAsync();
+                await LoadCoursesAsync();
+                LogMessage("[INFO] Event Administration initialized.");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[DB ERROR] {ex.Message}");
+            }
+        }
+
+        private async Task LoadActiveEventsAsync()
+        {
+            try
+            {
+                IReadOnlyList<EventRecord> events = await _database.GetActiveEventsAsync();
+                ActiveEventsListView.ItemsSource = events;
+                CloseEventButton.IsEnabled = false;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[DB ERROR] Could not load events: {ex.Message}");
+            }
+        }
+
+        // 1. Ensure courses load into BOTH dropdowns
+        private async Task LoadCoursesAsync()
+        {
+            try
+            {
+                IReadOnlyList<string> courses = await _database.GetDistinctCoursesAsync();
+                CourseComboBox.ItemsSource = courses;            // For Adding
+                ViewFilterCourseComboBox.ItemsSource = courses;  // For Filtering the view
+            }
+            catch { }
+        }
+
+        // 2. Fetch data once, then pass it to the filter method
+        private async Task RefreshAttendeesListAsync()
+        {
+            if (_selectedEvent == null) return;
+            try
+            {
+                // Fetch the raw list from the database
+                var attendees = await _database.GetEventAttendeesAsync(_selectedEvent.EventId);
+
+                // Store it in memory
+                _masterAttendeesList = new List<StudentRecord>(attendees);
+
+                // Apply any currently selected filters to the UI
+                ApplyViewFilters();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[DB ERROR] Could not load attendees: {ex.Message}");
+            }
+        }
+
+        private void ApplyViewFilters()
+        {
+            if (_masterAttendeesList == null) return;
+
+            string? courseFilter = ViewFilterCourseComboBox.SelectedItem?.ToString();
+            string? yearFilter = (ViewFilterYearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString();
+
+            // Start with all attendees
+            var filteredData = _masterAttendeesList.AsEnumerable();
+
+            // Apply Course Filter
+            if (!string.IsNullOrWhiteSpace(courseFilter))
+            {
+                filteredData = filteredData.Where(s => s.Course == courseFilter);
+            }
+
+            // Apply Year Filter
+            if (!string.IsNullOrWhiteSpace(yearFilter))
+            {
+                if (yearFilter == "5+")
+                {
+                    filteredData = filteredData.Where(s => int.TryParse(s.YearLevel, out int y) && y >= 5);
+                }
+                else
+                {
+                    filteredData = filteredData.Where(s => s.YearLevel == yearFilter);
+                }
+            }
+
+            // Force the UI to render the filtered subset
+            AttendeesListView.ItemsSource = new System.Collections.ObjectModel.ObservableCollection<StudentRecord>(filteredData);
+        }
+
+        // 4. Filter Event Handlers
+        private void ViewFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyViewFilters();
+        }
+
+        private void ClearViewFilters_Click(object sender, RoutedEventArgs e)
+        {
+            ViewFilterCourseComboBox.SelectedIndex = -1;
+            ViewFilterYearComboBox.SelectedIndex = -1;
+            ApplyViewFilters();
+        }
+
+        private async void CreateEventButton_Click(object sender, RoutedEventArgs e)
+        {
+            string eventId = EventIdTextBox.Text.Trim();
+            string eventName = EventNameTextBox.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(eventName))
+            {
+                LogMessage("[WARNING] Event ID and Event Name are required.");
+                return;
+            }
+
+            VerificationMode mode = EventModeComboBox.SelectedIndex switch
+            {
+                0 => VerificationMode.Fast,
+                2 => VerificationMode.HighSecurity,
+                _ => VerificationMode.Standard
+            };
+
+            bool isRestricted = RestrictedEventCheckBox.IsChecked ?? false;
+
+            try
+            {
+                await _database.SaveEventAsync(eventId, eventName, mode, isRestricted);
+                LogMessage($"[SUCCESS] Event '{eventName}' ({eventId}) created and activated.");
+
+                EventIdTextBox.Text = "";
+                EventNameTextBox.Text = "";
+                await LoadActiveEventsAsync();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[DB ERROR] Failed to create event: {ex.Message}");
+            }
+        }
+
+        // Handles selection for enabling the "Close Event" button
+        private void ActiveEventsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _selectedEvent = ActiveEventsListView.SelectedItem as EventRecord;
+            CloseEventButton.IsEnabled = _selectedEvent != null;
+        }
+
+        // --- ATTENDEE POPUP DIALOG TRIGGERS ---
+
+        private async void ActiveEventsListView_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            if (e.ClickedItem is EventRecord clickedEvent)
+            {
+                if (!clickedEvent.IsRestricted)
+                {
+                    LogMessage($"[INFO] '{clickedEvent.EventId}' is an open event. No pre-approval required.");
+                    return;
+                }
+
+                _selectedEvent = clickedEvent;
+
+                // Initialize the Dialog
+                AttendeeManagementDialog.XamlRoot = this.Content.XamlRoot;
+                AttendeeManagementDialog.Title = $"Manage Attendees: {clickedEvent.DisplayName}";
+
+                // Clear out any old inputs
+                CourseComboBox.SelectedIndex = -1;
+                YearComboBox.SelectedIndex = -1;
+                IndividualIdTextBox.Text = "";
+
+                // Fetch the current list before showing
+                await RefreshAttendeesListAsync();
+
+                // Show the modal
+                await AttendeeManagementDialog.ShowAsync();
+
+                // Unselect so it can be clicked again later if needed
+                ActiveEventsListView.SelectedItem = null;
+            }
+        }
+
+        private async void AddBatchButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedEvent == null) return;
+
+            string? selectedCourse = CourseComboBox.SelectedIndex >= 0 ? CourseComboBox.SelectedItem?.ToString() : null;
+            string? selectedYear = YearComboBox.SelectedIndex >= 0 ? (YearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() : null;
+
+            if (string.IsNullOrWhiteSpace(selectedCourse) && string.IsNullOrWhiteSpace(selectedYear))
+            {
+                LogMessage("[WARNING] Please select a Course or Year Level to batch add.");
+                return;
+            }
+
+            try
+            {
+                await _database.AddBatchToEventAsync(_selectedEvent.EventId, selectedCourse, selectedYear);
+
+                // Detailed Log Output
+                string filterDetails = $"Course: {(selectedCourse ?? "Any")}, Year: {(selectedYear ?? "Any")}";
+                LogMessage($"[SUCCESS] Batch approved for '{_selectedEvent.EventId}' [{filterDetails}].");
+
+                await RefreshAttendeesListAsync();
+
+                CourseComboBox.SelectedIndex = -1;
+                YearComboBox.SelectedIndex = -1;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[ERROR] Failed to add batch: {ex.Message}");
+            }
+        }
+
+        private async void AddIndividualButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedEvent == null) return;
+
+            string studentId = IndividualIdTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(studentId)) return;
+
+            try
+            {
+                await _database.AddEventAttendeeAsync(_selectedEvent.EventId, studentId);
+                LogMessage($"[SUCCESS] Added student '{studentId}' to '{_selectedEvent.EventId}'.");
+
+                IndividualIdTextBox.Text = "";
+                await RefreshAttendeesListAsync();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[ERROR] Failed to add student: {ex.Message}");
+            }
+        }
+
+        private async void RemoveAttendeeButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedEvent == null) return;
+
+            if (sender is Button btn && btn.Tag is string studentId)
+            {
+                try
+                {
+                    await _database.RemoveEventAttendeeAsync(_selectedEvent.EventId, studentId);
+                    LogMessage($"[SUCCESS] Removed '{studentId}' from event list.");
+                    await RefreshAttendeesListAsync();
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"[ERROR] Failed to remove attendee: {ex.Message}");
+                }
+            }
+        }
+
+        // --- GENERAL MANAGEMENT ---
+
+        private async void CloseEventButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedEvent != null)
+            {
+                try
+                {
+                    await _database.CloseEventAsync(_selectedEvent.EventId);
+                    LogMessage($"[SUCCESS] Event '{_selectedEvent.DisplayName}' closed and removed.");
+
+                    ActiveEventsListView.SelectedItem = null;
+                    await LoadActiveEventsAsync();
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"[DB ERROR] Could not close event: {ex.Message}");
+                }
+            }
+        }
+
+        private void RefreshLogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            LogMessage("[INFO] Administrator activity logs refreshed.");
+        }
+
+        private void LogMessage(string message)
+        {
+            string timestamp = DateTime.Now.ToString("HH:mm:ss");
+            EventLogsListView.Items.Insert(0, $"{timestamp} | {message}");
+        }
+
+        private void DashboardButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dashboard = new MainWindow();
+            dashboard.Activate();
+            this.Close();
+        }
+
+        private void BackToAttendanceButton_Click(object sender, RoutedEventArgs e)
+        {
+            var attendanceWindow = new EventAttendanceWindow();
+            attendanceWindow.Activate();
+            this.Close();
         }
 
         private void MaximizeWindow()
@@ -41,90 +330,7 @@ namespace NFC_System
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-
-            if (appWindow.Presenter is OverlappedPresenter presenter)
-            {
-                presenter.Maximize();
-            }
-        }
-
-        private void LoadDummyData()
-        {
-            // Injecting temporary UI test data
-            _mockEvents = new List<EventRecordModel>
-            {
-                new EventRecordModel
-                {
-                    EventId = "EVT-001", EventName = "Foundation Day Assembly", EventDate = "2026-07-20", Mode = "High-Security",
-                    Roster = new List<AttendeeRecordModel>
-                    {
-                        new AttendeeRecordModel { StudentId = "26-00001", FullName = "Justin Mason", ClearanceStatus = "Approved" },
-                        new AttendeeRecordModel { StudentId = "26-00045", FullName = "Alyssa Rivera", ClearanceStatus = "Approved" }
-                    }
-                },
-                new EventRecordModel
-                {
-                    EventId = "EVT-002", EventName = "CS Department Seminar", EventDate = "2026-07-22", Mode = "Standard",
-                    Roster = new List<AttendeeRecordModel>
-                    {
-                        new AttendeeRecordModel { StudentId = "26-00102", FullName = "Marcus Cruz", ClearanceStatus = "Approved" },
-                        new AttendeeRecordModel { StudentId = "26-00001", FullName = "Justin Mason", ClearanceStatus = "Approved" }
-                    }
-                },
-                new EventRecordModel
-                {
-                    EventId = "EVT-003", EventName = "University Intramurals", EventDate = "2026-08-01", Mode = "Fast",
-                    Roster = new List<AttendeeRecordModel>
-                    {
-                        new AttendeeRecordModel { StudentId = "26-00214", FullName = "Elena Santos", ClearanceStatus = "Approved" }
-                    }
-                }
-            };
-
-            EventsListView.ItemsSource = _mockEvents;
-        }
-
-        private void EventsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (EventsListView.SelectedItem is EventRecordModel selectedEvent)
-            {
-                SelectedEventLabel.Text = $"Showing roster for: {selectedEvent.EventName}";
-                AttendeesListView.ItemsSource = selectedEvent.Roster;
-                ExportRosterButton.IsEnabled = true;
-            }
-            else
-            {
-                SelectedEventLabel.Text = "Select an event from the directory...";
-                AttendeesListView.ItemsSource = null;
-                ExportRosterButton.IsEnabled = false;
-            }
-        }
-
-        private void BackButton_Click(object sender, RoutedEventArgs e)
-        {
-            var dashboard = new MainWindow();
-            dashboard.Activate();
-            this.Close();
-        }
-
-        private void ExportEventsButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Placeholder export feedback
-            ExportEventsButton.Content = "Exporting...";
-            System.Threading.Tasks.Task.Delay(1000).ContinueWith(_ =>
-            {
-                DispatcherQueue.TryEnqueue(() => ExportEventsButton.Content = "Export Events (CSV)");
-            });
-        }
-
-        private void ExportRosterButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Placeholder export feedback
-            ExportRosterButton.Content = "Roster Exported!";
-            System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ =>
-            {
-                DispatcherQueue.TryEnqueue(() => ExportRosterButton.Content = "Export Roster (CSV)");
-            });
+            if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
     }
 }

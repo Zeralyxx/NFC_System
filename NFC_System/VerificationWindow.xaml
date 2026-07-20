@@ -30,20 +30,21 @@
                 <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
                 <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
             </StackPanel>
-            
+
             <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                 <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="System independently validates credentials and enforces tailgating rules based on risk mode" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                
+                
             </StackPanel>
 
             <!-- Security Mode & Anti-Tailgating Controls -->
             <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                    <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" SelectedIndex="0" Width="170">
+                    <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="170" SelectionChanged="DirectionComboBox_SelectionChanged">
                         <ComboBoxItem Content="Entry"/>
                         <ComboBoxItem Content="Exit"/>
                     </ComboBox>
-                    <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" SelectedIndex="2" Width="240">
+                    <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="240" SelectionChanged="SecurityModeComboBox_SelectionChanged">
                         <ComboBoxItem Content="Fast (NFC Only)"/>
                         <ComboBoxItem Content="Standard (NFC + PIN)"/>
                         <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
@@ -52,185 +53,57 @@
             </Border>
         </Grid>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4.5*"/>
-                <ColumnDefinition Width="5.5*"/>
-            </Grid.ColumnDefinitions>
+        <!-- Main Content (Sleek Single Column) -->
+        <Grid Grid.Row="1" RowSpacing="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <!-- Emergency Unlock -->
+                <RowDefinition Height="*"/>
+                <!-- Audit Logs (Takes remaining space) -->
+            </Grid.RowDefinitions>
 
-            <!-- Left Column: Decision Engine & Student Details -->
-            <Grid Grid.Column="0" RowSpacing="16">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <!-- Pass/Fail Result Engine -->
-                <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <StackPanel Spacing="16">
-                        <TextBlock Text="Automated Decision Engine" Style="{StaticResource CardTitleStyle}"/>
-
-                        <!-- Updated Background Color and Padding -->
-                        <Border x:Name="ResultBorder" CornerRadius="16" Padding="32" Background="#F59E0B">
-                            <StackPanel HorizontalAlignment="Center" Spacing="4">
-                                <TextBlock x:Name="ResultTextBlock" Text="AWAITING NFC TAP" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center"/>
-                                <TextBlock x:Name="ResultSubTextBlock" Text="System Ready" FontSize="14" Foreground="White" Opacity="0.9" HorizontalAlignment="Center" TextAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border x:Name="SuccessSummaryBorder" CornerRadius="12" Padding="12" Background="#1A34D399" BorderBrush="#3034D399" BorderThickness="1" Visibility="Collapsed">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Success Summary" Style="{StaticResource DataValueStyle}" Foreground="#34D399"/>
-                                <TextBlock x:Name="SuccessSummaryTextBlock" Text="-" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
+            <!-- 1. Guard Emergency Unlock -->
+            <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="#1A450A0A" BorderBrush="#30F87171" BorderThickness="1">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xEA39;" Foreground="#F87171" FontSize="16"/>
+                        <TextBlock Text="Guard Emergency Override (Account Unlock)" Style="{StaticResource DataValueStyle}" Foreground="#F87171"/>
                     </StackPanel>
-                </Border>
 
-                <!-- Student Details & Entry State -->
-                <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Student Details" Style="{StaticResource CardTitleStyle}"/>
-
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <Grid ColumnSpacing="16" RowSpacing="10" Margin="0,4,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="140"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Style="{StaticResource DataLabelStyle}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="StudentNameTextBlock" Grid.Row="0" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="22" TextWrapping="WrapWholeWords" VerticalAlignment="Center"/>
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="StudentIdTextBlock" Grid.Row="1" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
-
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Course" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="CourseTextBlock" Grid.Row="2" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18" TextWrapping="Wrap"/>
-
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Year Level" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="YearLevelTextBlock" Grid.Row="3" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
-
-                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Section" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="SectionTextBlock" Grid.Row="4" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
-
-                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Enrollment" Style="{StaticResource DataLabelStyle}" VerticalAlignment="Center"/>
-                                <Border x:Name="StatusBadge" Grid.Row="5" Grid.Column="1" Padding="12,4" CornerRadius="12" HorizontalAlignment="Left" Background="#1AFFFFFF">
-                                    <TextBlock x:Name="StatusTextBlock" Text="-" Style="{StaticResource DataValueStyle}"/>
-                                </Border>
-
-                                <TextBlock Grid.Row="6" Grid.Column="0" Text="Current State" Style="{StaticResource DataLabelStyle}" VerticalAlignment="Center"/>
-                                <Border Grid.Row="6" Grid.Column="1" Padding="12,4" CornerRadius="12" HorizontalAlignment="Left" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1">
-                                    <TextBlock x:Name="EntryStateTextBlock" Text="Unknown (Wait for scan)" Style="{StaticResource DataValueStyle}" Foreground="#60A5FA"/>
-                                </Border>
-
-                                <TextBlock Grid.Row="7" Grid.Column="0" Text="NFC UID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="UidTextBlock" Grid.Row="7" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="16"/>
-
-                                <TextBlock Grid.Row="8" Grid.Column="0" Text="Last Audit Scan" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="ScanTimeTextBlock" Grid.Row="8" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" FontSize="18"/>
-                            </Grid>
-                        </ScrollViewer>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="OverrideStudentIdBox" Grid.Column="0" PlaceholderText="Student ID (e.g. 26-00001)"/>
+                        <Button x:Name="UnlockAccountButton" Grid.Column="1" Content="Unlock Account" Click="UnlockAccountButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" Height="32" Padding="24,0"/>
                     </Grid>
-                </Border>
-            </Grid>
+                </StackPanel>
+            </Border>
 
-            <!-- Right Column: 2FA & Logs -->
-            <Grid Grid.Column="1" RowSpacing="24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="6*"/>
-                    <RowDefinition Height="4*"/>
-                </Grid.RowDefinitions>
+            <!-- 2. Audit Logs -->
+            <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                <!-- Secondary Authentication Block -->
-                <Border Grid.Row="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
-                        <StackPanel Spacing="0">
-                            <TextBlock Text="Secondary Authentication (2FA)" Style="{StaticResource CardTitleStyle}"/>
-
-                            <Grid ColumnSpacing="24" Margin="0,8,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <!-- Left Column: PIN & Manual UID -->
-                                <StackPanel Grid.Column="0" Spacing="12">
-                                    <TextBlock Text="1. PIN Entry" Style="{StaticResource DataValueStyle}"/>
-                                    <PasswordBox x:Name="VerifyPinBox" FontSize="20" MaxLength="4" PlaceholderText="****" IsEnabled="False"/>
-                                    <Button x:Name="SubmitPinButton" Content="Submit PIN" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
-
-                                    <Grid ColumnSpacing="12" Margin="0,24,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="ManualUidTextBox" Header="Manual NFC UID" PlaceholderText="Use when offline" Grid.Column="0"/>
-                                        <Button x:Name="ProcessManualUidButton" Content="Process UID" Grid.Column="1" Height="40" Margin="0,28,0,0" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                                    </Grid>
-                                </StackPanel>
-
-                                <!-- Right Column: QR Validation (Updated Stretch Alignment) -->
-                                <StackPanel Grid.Column="1" Spacing="12">
-                                    <TextBlock Text="2. QR Validation" Style="{StaticResource DataValueStyle}"/>
-
-                                    <!-- Added HorizontalContentAlignment & VerticalContentAlignment -->
-                                    <Button x:Name="TriggerQrScannerButton" Click="TriggerQrScannerButton_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Padding="0" BorderThickness="0" Background="Transparent">
-                                        <Border Height="120" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                                                <FontIcon Glyph="&#xED14;" FontSize="32" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                                <TextBlock Text="Camera QR Pending" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </Button>
-
-                                    <TextBox x:Name="QrCredentialTextBox" PlaceholderText="Paste scanned QR payload" IsEnabled="False"/>
-                                    <Button x:Name="SubmitQrButton" Content="Validate QR" HorizontalAlignment="Stretch" CornerRadius="{StaticResource ButtonCornerRadius}" IsEnabled="False" Height="40"/>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </ScrollViewer>
-                </Border>
-
-                <!-- Audit Logs -->
-                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Security &amp; Tailgating Alerts" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1AF87171" BorderBrush="#30F87171" BorderThickness="1" VerticalAlignment="Center">
-                                <TextBlock Text="Monitoring Active" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#F87171"/>
-                            </Border>
-                        </Grid>
-
-                        <ListView Grid.Row="1" x:Name="VerificationLogListView" Background="Transparent" Padding="0,0,16,0"/>
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Security &amp; Tailgating Alerts" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                        <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1AF87171" BorderBrush="#30F87171" BorderThickness="1" VerticalAlignment="Center">
+                            <TextBlock Text="Monitoring Active" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#F87171"/>
+                        </Border>
                     </Grid>
-                </Border>
-            </Grid>
+
+                    <!-- Expanded View for Logs -->
+                    <ListView Grid.Row="1" x:Name="VerificationLogListView" Background="Transparent" Padding="0,0,16,0"/>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </Window>

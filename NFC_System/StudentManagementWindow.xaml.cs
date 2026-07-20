@@ -2,107 +2,127 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using WinRT.Interop;
+using MySqlConnector;
 
 namespace NFC_System
 {
-    // Dummy Data Model
-    public class StudentRecordModel
-    {
-        public string StudentId { get; set; }
-        public string FullName { get; set; }
-        public string Course { get; set; }
-        public string Status { get; set; }
-        public string NfcUid { get; set; }
-        public bool IsLockedOut { get; set; }
-    }
-
     public sealed partial class StudentManagementWindow : Window
     {
-        private List<StudentRecordModel> _allStudents = new();
+        private readonly DatabaseService _database = new();
+        private List<StudentRecord> _allStudents = new();
+        private int _currentPage = 1;
+        private const int PageSize = 10;
 
         public StudentManagementWindow()
         {
             this.InitializeComponent();
             MaximizeWindow();
-            LoadDummyData();
+            _ = LoadDataAsync();
         }
 
-        private void MaximizeWindow()
+        private async Task LoadDataAsync()
         {
-            IntPtr hWnd = WindowNative.GetWindowHandle(this);
-            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
-            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-
-            if (appWindow.Presenter is OverlappedPresenter presenter)
+            try
             {
-                presenter.Maximize();
+                using var connection = new MySqlConnection(DatabaseService.ConnectionString);
+                await connection.OpenAsync();
+
+                string sql = "SELECT * FROM students";
+                using var command = new MySqlCommand(sql, connection);
+                using var reader = await command.ExecuteReaderAsync();
+
+                var students = new List<StudentRecord>();
+                while (await reader.ReadAsync())
+                {
+                    students.Add(new StudentRecord
+                    {
+                        StudentId = reader["student_id"].ToString() ?? "",
+                        FullName = reader["full_name"].ToString() ?? "",
+                        Course = reader["course"].ToString() ?? "",
+                        Status = reader["status"].ToString() ?? "Active",
+                        NfcUid = reader["nfc_uid"].ToString() ?? "",
+                        PinLocked = reader["pin_locked"] != DBNull.Value && Convert.ToBoolean(reader["pin_locked"]),
+                        FailedPinAttempts = reader["failed_pin_attempts"] != DBNull.Value ? Convert.ToInt32(reader["failed_pin_attempts"]) : 0
+                    });
+                }
+
+                _allStudents = students;
+
+                // Dynamically populate the Course Filter based on existing data
+                var courses = _allStudents.Select(s => s.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+                CourseFilterComboBox.Items.Clear();
+                CourseFilterComboBox.Items.Add("All Courses");
+                foreach (var course in courses)
+                {
+                    CourseFilterComboBox.Items.Add(course);
+                }
+                CourseFilterComboBox.SelectedIndex = 0;
+
+                RefreshDataGrid();
             }
-        }
-
-        private void LoadDummyData()
-        {
-            // Injecting temporary UI test data
-            _allStudents = new List<StudentRecordModel>
+            catch (Exception ex)
             {
-                new StudentRecordModel { StudentId = "26-00001", FullName = "Justin Mason", Course = "BS Computer Science", Status = "Active", NfcUid = "04:A1:B2:C3", IsLockedOut = false },
-                new StudentRecordModel { StudentId = "26-00045", FullName = "Alyssa Rivera", Course = "BS Information Tech", Status = "Active", NfcUid = "11:F2:E3:D4", IsLockedOut = true },
-                new StudentRecordModel { StudentId = "26-00102", FullName = "Marcus Cruz", Course = "BS Engineering", Status = "Inactive", NfcUid = "99:A8:B7:C6", IsLockedOut = false },
-                new StudentRecordModel { StudentId = "26-00214", FullName = "Elena Santos", Course = "BS Computer Science", Status = "Expelled", NfcUid = "00:00:00:00", IsLockedOut = true }
-            };
-
-            RefreshDataGrid();
+                System.Diagnostics.Debug.WriteLine($"[DB ERROR] {ex.Message}");
+            }
         }
 
         private void RefreshDataGrid()
         {
+            if (StudentListView == null) return;
+
             string searchTerm = SearchBox.Text.ToLower();
-            string filter = FilterComboBox.SelectedItem is ComboBoxItem item ? item.Content.ToString() : "All Students";
+            string statusFilter = StatusFilterComboBox.SelectedItem is ComboBoxItem item ? item.Content.ToString() : "All Students";
+            string courseFilter = CourseFilterComboBox.SelectedItem?.ToString() ?? "All Courses";
 
             var filteredData = _allStudents.Where(s =>
                 (string.IsNullOrEmpty(searchTerm) || s.FullName.ToLower().Contains(searchTerm) || s.StudentId.Contains(searchTerm)) &&
-                (filter == "All Students" ||
-                (filter == "Active Only" && s.Status == "Active") ||
-                (filter == "Locked Out" && s.IsLockedOut) ||
-                (filter == "Inactive" && s.Status == "Inactive"))
+                (statusFilter == "All Students" ||
+                 (statusFilter == "Active Only" && s.Status == "Active") ||
+                 (statusFilter == "Locked Out" && s.PinLocked) ||
+                 (statusFilter == "Inactive" && s.Status == "Inactive")) &&
+                (courseFilter == "All Courses" || s.Course == courseFilter)
             ).ToList();
 
-            StudentListView.ItemsSource = filteredData;
+            // Paging Math
+            int totalItems = filteredData.Count;
+            int totalPages = (int)Math.Ceiling(totalItems / (double)PageSize);
+
+            _currentPage = Math.Clamp(_currentPage, 1, totalPages == 0 ? 1 : totalPages);
+
+            var pagedData = filteredData.Skip((_currentPage - 1) * PageSize).Take(PageSize).ToList();
+
+            StudentListView.ItemsSource = pagedData;
+
+            // Update UI Pagination Controls
+            PageInfoText.Text = $"Page {_currentPage} of {totalPages}";
+            PrevBtn.IsEnabled = _currentPage > 1;
+            NextBtn.IsEnabled = _currentPage < totalPages;
         }
 
-        private void BackButton_Click(object sender, RoutedEventArgs e)
+        private void PageChange_Click(object sender, RoutedEventArgs e)
         {
-            var dashboard = new MainWindow();
-            dashboard.Activate();
-            this.Close();
-        }
+            if ((sender as Button)?.Name == "PrevBtn") _currentPage--;
+            else _currentPage++;
 
-        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
             RefreshDataGrid();
-        }
-
-        private void FilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (StudentListView != null) // Prevent null ref on initialization
-            {
-                RefreshDataGrid();
-            }
         }
 
         private void StudentListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (StudentListView.SelectedItem is StudentRecordModel selectedStudent)
+            if (StudentListView == null) return;
+
+            if (StudentListView.SelectedItem is StudentRecord selectedStudent)
             {
-                // Populate text fields
                 EditNameText.Text = selectedStudent.FullName;
                 EditIdText.Text = selectedStudent.StudentId;
                 EditUidText.Text = selectedStudent.NfcUid;
 
-                // Populate combo box
                 EditStatusComboBox.SelectedIndex = selectedStudent.Status switch
                 {
                     "Active" => 0,
@@ -110,34 +130,31 @@ namespace NFC_System
                     _ => 2
                 };
 
-                // Populate Lockout UI
-                if (selectedStudent.IsLockedOut)
+                if (selectedStudent.PinLocked)
                 {
                     LockoutStatusText.Text = "ACCOUNT LOCKED (Too many PIN failures)";
-                    LockoutStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.DarkOrange);
+                    LockoutStatusText.Foreground = new SolidColorBrush(Colors.DarkOrange);
                     UnlockAccountButton.IsEnabled = true;
                 }
                 else
                 {
                     LockoutStatusText.Text = "Account is secure (No active flags)";
-                    LockoutStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.ForestGreen);
+                    LockoutStatusText.Foreground = new SolidColorBrush(Colors.ForestGreen);
                     UnlockAccountButton.IsEnabled = false;
                 }
 
-                // Enable forms
                 EditStatusComboBox.IsEnabled = true;
                 ResetPinBox.IsEnabled = true;
-                ResetPinBox.Password = ""; // Clear old typing
+                ResetPinBox.Password = "";
                 SaveChangesButton.IsEnabled = true;
             }
             else
             {
-                // Reset/Disable panel if nothing is selected
                 EditNameText.Text = "-";
                 EditIdText.Text = "-";
                 EditUidText.Text = "-";
                 LockoutStatusText.Text = "Select a student";
-                LockoutStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray);
+                LockoutStatusText.Foreground = new SolidColorBrush(Colors.Gray);
                 EditStatusComboBox.IsEnabled = false;
                 UnlockAccountButton.IsEnabled = false;
                 ResetPinBox.IsEnabled = false;
@@ -145,18 +162,74 @@ namespace NFC_System
             }
         }
 
-        private void UnlockAccountButton_Click(object sender, RoutedEventArgs e)
+        private async void UnlockAccountButton_Click(object sender, RoutedEventArgs e)
         {
-            // Temporary UI feedback logic
-            LockoutStatusText.Text = "Account successfully unlocked.";
-            LockoutStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.ForestGreen);
-            UnlockAccountButton.IsEnabled = false;
+            if (StudentListView.SelectedItem is StudentRecord selected)
+            {
+                await _database.UpdatePinFailureAsync(selected.StudentId, 0, false);
+                selected.PinLocked = false;
+                selected.FailedPinAttempts = 0;
+                StudentListView_SelectionChanged(null, null); // Refresh right panel
+                RefreshDataGrid(); // Refresh list visual
+            }
         }
 
-        private void SaveChangesButton_Click(object sender, RoutedEventArgs e)
+        private async void SaveChangesButton_Click(object sender, RoutedEventArgs e)
         {
-            // Placeholder for Database UPDATE logic
-            EditNameText.Text = "Saved Successfully!";
+            if (StudentListView.SelectedItem is StudentRecord selected)
+            {
+                selected.Status = ((ComboBoxItem)EditStatusComboBox.SelectedItem).Content.ToString();
+                string newPin = ResetPinBox.Password;
+
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(newPin))
+                    {
+                        await _database.ResetPinAsync(selected.StudentId, newPin);
+                    }
+
+                    // We pass null for PIN here because SaveStudentAsync will ignore the pin if it's null,
+                    // and we already updated the PIN directly above if needed.
+                    await _database.SaveStudentAsync(selected, null);
+
+                    SaveChangesButton.Content = "Saved Successfully!";
+                    RefreshDataGrid(); // Sync list view
+                    await Task.Delay(2000);
+                    SaveChangesButton.Content = "Save Security Changes";
+                    ResetPinBox.Password = "";
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error Saving: {ex.Message}");
+                }
+            }
+        }
+
+        private void MaximizeWindow()
+        {
+            IntPtr hWnd = WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
+        }
+
+        private void BackButton_Click(object sender, RoutedEventArgs e)
+        {
+            new MainWindow().Activate();
+            this.Close();
+        }
+
+        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            _currentPage = 1; // Reset to page 1 on new search
+            RefreshDataGrid();
+        }
+
+        private void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (StudentListView == null) return;
+            _currentPage = 1; // Reset to page 1 on new filter
+            RefreshDataGrid();
         }
     }
 }
