@@ -48,7 +48,6 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
-                        <!-- New Row for Paging -->
                     </Grid.RowDefinitions>
 
                     <!-- Search and Filter Toolbar -->
@@ -174,8 +173,6 @@
                                     <Button x:Name="UnlockAccountButton" Grid.Column="1" Content="Unlock Account" Click="UnlockAccountButton_Click" IsEnabled="False" CornerRadius="{StaticResource ButtonCornerRadius}" Margin="8,0,0,0"/>
                                 </Grid>
                             </Border>
-
-                            <PasswordBox x:Name="ResetPinBox" Header="Administrative PIN Reset" PlaceholderText="Enter new 4-digit PIN" MaxLength="4" IsEnabled="False"/>
                         </StackPanel>
 
                         <!-- Save Actions -->

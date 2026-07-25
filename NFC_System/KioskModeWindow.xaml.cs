@@ -48,6 +48,9 @@ namespace NFC_System
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
 
+        // NEW: Inactivity Timer to prevent the kiosk from getting permanently stuck
+        private readonly DispatcherTimer _inactivityTimer = new();
+
         // Camera & QR Tracking
         private MediaFrameReader? _frameReader;
         private readonly SoftwareBitmapSource _previewSource = new();
@@ -90,31 +93,33 @@ namespace NFC_System
             EnforceFullScreenMode();
             ApplyDynamicHeader();
 
+            // Setup the 15-second inactivity timeout
+            _inactivityTimer.Interval = TimeSpan.FromSeconds(15);
+            _inactivityTimer.Tick += InactivityTimer_Tick;
+
             Closed += KioskModeWindow_Closed;
             _ = InitializeCameraAsync();
-
-            // We will handle the serial connection inside this async method instead
             _ = SyncOperationalModeAsync();
 
-            // NEW: Listen for live changes from the guard's computer
             KioskStateController.ModeChanged += KioskStateController_ModeChanged;
+        }
+
+        private void InactivityTimer_Tick(object? sender, object e)
+        {
+            // If the user took too long, cancel the session and reset the terminal
+            _inactivityTimer.Stop();
+            SetState(AuthenticationStage.Idle);
         }
 
         private void KioskStateController_ModeChanged(VerificationMode newMode, TransactionType newType)
         {
-            // Must marshal to the UI thread because a background event is triggering this
             DispatcherQueue.TryEnqueue(() =>
             {
-                // 1. Update the internal engine rules
                 _currentMode = newMode;
-
-                // 2. Update the header text so students see the new mode
                 string modeText = newMode == VerificationMode.Fast ? "Fast" :
                                   newMode == VerificationMode.Standard ? "Standard" : "High-Security";
 
                 KioskHeaderSubtitle.Text = $"GATE TERMINAL  •  {newType.ToString().ToUpper()} ({modeText})";
-
-                // 3. Force the screen to instantly redraw with the new required steps
                 SetState(AuthenticationStage.Idle);
             });
         }
@@ -132,10 +137,7 @@ namespace NFC_System
                 _serialPort.DataReceived += SerialPort_DataReceived;
                 _serialPort.Open();
             }
-            catch
-            {
-                // In a real deployment, you might want to show a hardware error icon here
-            }
+            catch { }
         }
 
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
@@ -145,35 +147,24 @@ namespace NFC_System
                 if (_serialPort == null || !_serialPort.IsOpen) return;
                 string line = _serialPort.ReadLine().Trim();
 
-                // 1. Listen for NFC Scans
                 if (line.StartsWith("UID="))
                 {
                     string uid = line.Substring(4).Trim();
-
                     if (_currentStage == AuthenticationStage.Idle)
                     {
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            ProcessNfcScan(uid);
-                        });
+                        DispatcherQueue.TryEnqueue(() => ProcessNfcScan(uid));
                     }
                 }
-                // 2. Listen for Physical Keypad Presses
                 else if (line.StartsWith("KEY="))
                 {
                     string key = line.Substring(4).Trim();
-
-                    // Only process keystrokes if the screen is actually asking for a PIN
                     if (_currentStage == AuthenticationStage.WaitingForPIN && !string.IsNullOrEmpty(key))
                     {
                         DispatcherQueue.TryEnqueue(() =>
                         {
-                            // Map the letters based on the Arduino code we wrote earlier
                             bool isEnter = (key == "A");
                             bool isClear = (key == "B");
                             bool isCancel = (key == "C");
-
-                            // If the key is a number (0-9), pass it. Otherwise, pass an empty string.
                             string digit = char.IsDigit(key[0]) ? key : "";
 
                             ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
@@ -203,42 +194,38 @@ namespace NFC_System
         {
             try
             {
-                // 1. Fetch Security Mode
                 string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
 
                 if (savedMode == "Fast") { _currentMode = VerificationMode.Fast; DebugSecurityLevel.SelectedIndex = 0; }
                 else if (savedMode == "High-Security") { _currentMode = VerificationMode.HighSecurity; DebugSecurityLevel.SelectedIndex = 2; }
                 else { _currentMode = VerificationMode.Standard; DebugSecurityLevel.SelectedIndex = 1; }
 
-                // 2. Fetch Hardware Port Dynamically (No Hardcodes!)
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
                 TryConnectSerial(nfcPort);
             }
             catch
             {
-                // Fallbacks in case the database is totally offline
                 _currentMode = VerificationMode.Standard;
                 DebugSecurityLevel.SelectedIndex = 1;
                 TryConnectSerial("COM3");
             }
-
             SetState(AuthenticationStage.Idle);
         }
 
         private void KioskModeWindow_Closed(object sender, WindowEventArgs args)
         {
             _isClosing = true;
+            _inactivityTimer.Stop();
             CloseSerialPort();
             _ = DisposeCameraAsync();
-
-            // NEW: Unsubscribe from the live feed to prevent crashes
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
         }
 
         private void ExitKiosk_Click(object sender, RoutedEventArgs e)
         {
             _isClosing = true;
-            CloseSerialPort(); // NEW
+            _inactivityTimer.Stop();
+            CloseSerialPort();
             _ = DisposeCameraAsync();
 
             if (_originatingMode == "Event") { new EventAttendanceWindow().Activate(); }
@@ -248,7 +235,6 @@ namespace NFC_System
 
         private void ForgotIdButton_Click(object sender, RoutedEventArgs e)
         {
-            // Jump straight to the camera viewport without an active NFC session
             _tempStudentName = "";
             _tempStudentId = "";
             _activeSession = null;
@@ -269,6 +255,16 @@ namespace NFC_System
         {
             _currentStage = newState;
             UpdateUiForState(newState);
+
+            // Inactivity Timeout Manager
+            if (newState == AuthenticationStage.WaitingForPIN || newState == AuthenticationStage.WaitingForQR)
+            {
+                _inactivityTimer.Start(); // Start the 15-second clock
+            }
+            else
+            {
+                _inactivityTimer.Stop(); // Pause the clock on any other stage
+            }
 
             // Auto-reset back to idle after a few seconds of showing the final result
             if (newState == AuthenticationStage.AccessGranted || newState == AuthenticationStage.AccessDenied)
@@ -337,23 +333,18 @@ namespace NFC_System
         }
 
         /* =========================================================================
-         * HARDWARE INTERFACE HOOKS (Connected to VerificationEngine)
+         * HARDWARE INTERFACE HOOKS
          * ========================================================================= */
 
         public async void ProcessNfcScan(string uid)
         {
-
-            // Prevent double taps or concurrent execution loops
             if (_currentStage != AuthenticationStage.Idle) return;
 
-            // FIX 1: Use KioskStateController to correctly define the transaction type globally!
             var transType = _originatingMode == "Event" ? TransactionType.EventAttendance : KioskStateController.CurrentType;
             string? eventId = _originatingMode == "Event" ? _contextDetails : null;
 
-            // 1. Process database & cryptography checks off the UI thread
             VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(uid, _currentMode, transType, eventId);
 
-            // 2. Safely marshal everything back to the UI thread for visual updates
             DispatcherQueue.TryEnqueue(async () =>
             {
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
@@ -369,22 +360,15 @@ namespace NFC_System
                 else
                 {
                     _activeSession = outcome.Session;
-                    ExecuteStateChange(AuthenticationStage.NFCVerified); // Flashes checkmark panel
+                    ExecuteStateChange(AuthenticationStage.NFCVerified);
 
-                    // Hold the checkmark on screen briefly for user satisfaction
                     await Task.Delay(800);
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
 
-                    if (outcome.IsGranted)
-                    {
-                        ExecuteStateChange(AuthenticationStage.AccessGranted);
-                    }
-                    else if (outcome.Step == VerificationStep.RequiresPin)
-                    {
-                        ExecuteStateChange(AuthenticationStage.WaitingForPIN);
-                    }
+                    if (outcome.IsGranted) ExecuteStateChange(AuthenticationStage.AccessGranted);
+                    else if (outcome.Step == VerificationStep.RequiresPin) ExecuteStateChange(AuthenticationStage.WaitingForPIN);
                 }
             });
         }
@@ -392,6 +376,10 @@ namespace NFC_System
         public async void ProcessHardwareKeypadStroke(string digit, bool isEnter, bool isClear, bool isCancel)
         {
             if (_currentStage != AuthenticationStage.WaitingForPIN || _activeSession == null) return;
+
+            // Reset the inactivity timeout every time they touch a button
+            _inactivityTimer.Stop();
+            _inactivityTimer.Start();
 
             if (isCancel)
             {
@@ -411,7 +399,7 @@ namespace NFC_System
 
             if (isEnter)
             {
-                if (_currentPinBuffer.Length < 4) return; // Prevent short submissions
+                if (_currentPinBuffer.Length < 4) return;
 
                 VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer);
 
@@ -434,7 +422,7 @@ namespace NFC_System
                 }
                 else
                 {
-                    SetState(AuthenticationStage.PINVerified); // Visual confirmation flash
+                    SetState(AuthenticationStage.PINVerified);
                     await Task.Delay(800);
 
                     if (outcome.IsGranted)
@@ -451,7 +439,6 @@ namespace NFC_System
                 return;
             }
 
-            // Append digit
             if (_currentPinBuffer.Length < 4 && !string.IsNullOrEmpty(digit))
             {
                 _currentPinBuffer += digit;
@@ -460,18 +447,18 @@ namespace NFC_System
             }
         }
 
-
-
         public async void ProcessQrScan(string payload)
         {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
 
+            // Reset the timeout as they are successfully feeding data
+            _inactivityTimer.Stop();
+            _inactivityTimer.Start();
+
             VerificationOutcome outcome;
 
-            // SCENARIO A: Fallback Initiation (No NFC session exists yet)
             if (_activeSession == null)
             {
-                // FIX 1: Use KioskStateController here as well!
                 var transType = _originatingMode == "Event" ? TransactionType.EventAttendance : KioskStateController.CurrentType;
                 string? eventId = _originatingMode == "Event" ? _contextDetails : null;
 
@@ -489,7 +476,6 @@ namespace NFC_System
                 }
                 else if (outcome.Step == VerificationStep.RequiresPin)
                 {
-                    // Transition directly into the PIN screen
                     _activeSession = outcome.Session;
                     LoadProfileData(_tempStudentName, _tempStudentId);
                     SetState(AuthenticationStage.WaitingForPIN);
@@ -497,7 +483,6 @@ namespace NFC_System
                 return;
             }
 
-            // SCENARIO B: Standard High-Security Mode (They tapped NFC, Typed PIN, and are now validating QR)
             outcome = await _engine.SubmitQrAsync(_activeSession, payload);
 
             _outcomeTitle = outcome.ResultTitle;
@@ -555,17 +540,12 @@ namespace NFC_System
             var blue = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250));
             var green = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
 
-            // Reset to grey initial state
             ProgNfcIcon.Foreground = grey; ProgNfcText.Foreground = grey;
             ProgPinIcon.Foreground = grey; ProgPinText.Foreground = grey;
             ProgQrIcon.Foreground = grey; ProgQrText.Foreground = grey;
             ProgNfcIcon.Glyph = "\uECCA"; ProgPinIcon.Glyph = "\uECA7"; ProgQrIcon.Glyph = "\uED14";
 
-            // FIX 2: Stop right here if access is denied! Leave the progress bar grey.
-            if (_currentStage == AuthenticationStage.AccessDenied)
-            {
-                return;
-            }
+            if (_currentStage == AuthenticationStage.AccessDenied) return;
 
             if (_currentStage >= AuthenticationStage.WaitingForPIN)
             {
@@ -610,11 +590,7 @@ namespace NFC_System
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-
-            if (appWindow != null)
-            {
-                appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
-            }
+            if (appWindow != null) appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
         }
 
         private void ApplyDynamicHeader()
@@ -641,10 +617,7 @@ namespace NFC_System
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu
                 });
 
-                var frameSource = _mediaCapture.FrameSources.Values.FirstOrDefault(
-                    fs => fs.Info.MediaStreamType == MediaStreamType.VideoPreview)
-                    ?? _mediaCapture.FrameSources.Values.FirstOrDefault();
-
+                var frameSource = _mediaCapture.FrameSources.Values.FirstOrDefault(fs => fs.Info.MediaStreamType == MediaStreamType.VideoPreview) ?? _mediaCapture.FrameSources.Values.FirstOrDefault();
                 if (frameSource == null) return;
 
                 _frameReader = await _mediaCapture.CreateFrameReaderAsync(frameSource, MediaEncodingSubtypes.Bgra8);
@@ -689,18 +662,12 @@ namespace NFC_System
                     string? payload = DecodeQrPayload(normalizedBitmap);
                     if (!string.IsNullOrWhiteSpace(payload))
                     {
-                        if (payload == _lastScannedQr && (DateTime.Now - _lastQrScanTime).TotalSeconds < 3)
-                        {
-                            return;
-                        }
+                        if (payload == _lastScannedQr && (DateTime.Now - _lastQrScanTime).TotalSeconds < 3) return;
 
                         _lastScannedQr = payload;
                         _lastQrScanTime = DateTime.Now;
 
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            ProcessQrScan(payload);
-                        });
+                        DispatcherQueue.TryEnqueue(() => ProcessQrScan(payload));
                     }
                 }
                 finally
@@ -739,13 +706,11 @@ namespace NFC_System
                     _frameReader.Dispose();
                     _frameReader = null;
                 }
-
                 if (_mediaCapture != null)
                 {
                     _mediaCapture.Dispose();
                     _mediaCapture = null;
                 }
-
                 KioskCameraPreview.Source = null;
             }
             finally
@@ -764,11 +729,9 @@ namespace NFC_System
             else if (DebugSecurityLevel.SelectedIndex == 1) _currentMode = VerificationMode.Standard;
             else if (DebugSecurityLevel.SelectedIndex == 2) _currentMode = VerificationMode.HighSecurity;
 
-            // Drop back to clean ready state
             SetState(AuthenticationStage.Idle);
         }
 
-        // Simulates passing Justin Mason's real hardware NFC Tag ID to the engine
         private void SimulateNfc_Click(object sender, RoutedEventArgs e) => ProcessNfcScan("04:A1:B2:C3");
 
         private void SimulatePin_Click(object sender, RoutedEventArgs e)
@@ -780,15 +743,27 @@ namespace NFC_System
             ProcessHardwareKeypadStroke("", true, false, false);
         }
 
-        // Simulates a webcam correctly decoding Justin Mason's QR Signature
         private void SimulateQr_Click(object sender, RoutedEventArgs e) => ProcessQrScan("TCU|26-00001|04:A1:B2:C3");
 
-        // Simulates a random unassigned badge
         private void SimulateFail_Click(object sender, RoutedEventArgs e)
         {
-            if (_currentStage == AuthenticationStage.Idle) ProcessNfcScan("00:00:00:00");
-            else if (_currentStage == AuthenticationStage.WaitingForPIN) { ProcessHardwareKeypadStroke("9", false, false, false); ProcessHardwareKeypadStroke("", true, false, false); }
-            else if (_currentStage == AuthenticationStage.WaitingForQR) ProcessQrScan("INVALID");
+            if (_currentStage == AuthenticationStage.Idle)
+            {
+                ProcessNfcScan("00:00:00:00");
+            }
+            else if (_currentStage == AuthenticationStage.WaitingForPIN)
+            {
+                // FIX: Inject 4 bad digits so the simulated failure actually fires
+                ProcessHardwareKeypadStroke("9", false, false, false);
+                ProcessHardwareKeypadStroke("9", false, false, false);
+                ProcessHardwareKeypadStroke("9", false, false, false);
+                ProcessHardwareKeypadStroke("9", false, false, false);
+                ProcessHardwareKeypadStroke("", true, false, false);
+            }
+            else if (_currentStage == AuthenticationStage.WaitingForQR)
+            {
+                ProcessQrScan("INVALID");
+            }
         }
     }
 }

@@ -182,12 +182,17 @@ namespace NFC_System
             EventRecord? selectedEvent = ActiveEventComboBox.SelectedItem as EventRecord;
             if (selectedEvent == null) return;
 
+            // NEW: Read the ComboBox to see if this kiosk is checking people IN or OUT
+            TransactionType tType = DirectionComboBox.SelectedIndex == 1
+                ? TransactionType.Exit
+                : TransactionType.EventAttendance;
+
             try
             {
                 VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(
                     uid,
                     selectedEvent.VerificationMode,
-                    TransactionType.EventAttendance, // We will update the engine logic for this next!
+                    tType, // Passes the dynamic type instead of hardcoding EventAttendance
                     selectedEvent.EventId);
 
                 ApplyOutcome(outcome);

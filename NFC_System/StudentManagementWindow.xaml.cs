@@ -144,8 +144,6 @@ namespace NFC_System
                 }
 
                 EditStatusComboBox.IsEnabled = true;
-                ResetPinBox.IsEnabled = true;
-                ResetPinBox.Password = "";
                 SaveChangesButton.IsEnabled = true;
             }
             else
@@ -157,7 +155,6 @@ namespace NFC_System
                 LockoutStatusText.Foreground = new SolidColorBrush(Colors.Gray);
                 EditStatusComboBox.IsEnabled = false;
                 UnlockAccountButton.IsEnabled = false;
-                ResetPinBox.IsEnabled = false;
                 SaveChangesButton.IsEnabled = false;
             }
         }
@@ -179,24 +176,16 @@ namespace NFC_System
             if (StudentListView.SelectedItem is StudentRecord selected)
             {
                 selected.Status = ((ComboBoxItem)EditStatusComboBox.SelectedItem).Content.ToString();
-                string newPin = ResetPinBox.Password;
 
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(newPin))
-                    {
-                        await _database.ResetPinAsync(selected.StudentId, newPin);
-                    }
-
-                    // We pass null for PIN here because SaveStudentAsync will ignore the pin if it's null,
-                    // and we already updated the PIN directly above if needed.
+                    // Update only standard properties. The PIN remains unchanged by passing null.
                     await _database.SaveStudentAsync(selected, null);
 
                     SaveChangesButton.Content = "Saved Successfully!";
                     RefreshDataGrid(); // Sync list view
                     await Task.Delay(2000);
                     SaveChangesButton.Content = "Save Security Changes";
-                    ResetPinBox.Password = "";
                 }
                 catch (Exception ex)
                 {

@@ -44,7 +44,7 @@ namespace NFC_System
 
         private void EventManagement_Click(object sender, RoutedEventArgs e)
         {
-            var reportsWin = new EventManagementWindow();
+            var reportsWin = new EventReportsWindow();
             reportsWin.Activate();
             this.Close();
         }

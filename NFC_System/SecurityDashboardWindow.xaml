@@ -29,7 +29,7 @@
 
             <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                 <TextBlock Text="Security Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Configure risk modes, restricted events, PIN recovery, alerts, and audit logs" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                <TextBlock Text="Manage active directories, monitor alerts, and execute administrative security overrides" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
             </StackPanel>
 
             <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Click="RefreshButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Center"/>
@@ -46,23 +46,10 @@
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                 <StackPanel Spacing="24">
 
-                    <!-- 1. Verification Mode Control -->
+                    <!-- 1. PIN Lockout Recovery & Reset -->
                     <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Verification Mode Control" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <ComboBox x:Name="DefaultModeComboBox" Header="Default Risk Mode" SelectedIndex="1" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Fast (NFC Only)"/>
-                                <ComboBoxItem Content="Standard (NFC + PIN)"/>
-                                <ComboBoxItem Content="High-Security (NFC + PIN + QR)"/>
-                            </ComboBox>
-                            <Button x:Name="SaveDefaultModeButton" Content="Save Default Mode" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 2. PIN Lockout Recovery -->
-                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="PIN Lockout Recovery" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <TextBlock Text="Change Student PIN" Style="{StaticResource CardTitleStyle}" Margin="0"/>
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -71,45 +58,22 @@
                                 <TextBox x:Name="ResetStudentIdTextBox" Grid.Column="0" Header="Student ID" PlaceholderText="e.g. 26-00001"/>
                                 <PasswordBox x:Name="NewPinPasswordBox" Grid.Column="1" Header="New 4-Digit PIN" MaxLength="4" PlaceholderText="****"/>
                             </Grid>
-                            <Button x:Name="ResetPinButton" Content="Reset PIN and Unlock" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
+                            <Button x:Name="ResetPinButton" Content="Set New PIN &amp; Unlock Account" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- 3. Restricted Event Setup -->
+                    <!-- 2. Academic Course Management -->
                     <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Restricted Event Setup" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1*"/>
-                                    <ColumnDefinition Width="2*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="EventIdTextBox" Grid.Column="0" Header="Event ID" PlaceholderText="e.g. EVT-001"/>
-                                <TextBox x:Name="EventNameTextBox" Grid.Column="1" Header="Event Name" PlaceholderText="Foundation Day Assembly"/>
-                            </Grid>
-                            <ComboBox x:Name="EventModeComboBox" Header="Event Verification Mode" SelectedIndex="2" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Fast (NFC Only)"/>
-                                <ComboBoxItem Content="Standard (NFC + PIN)"/>
-                                <ComboBoxItem Content="High-Security (NFC + PIN + QR)"/>
-                            </ComboBox>
-                            <CheckBox x:Name="RestrictedEventCheckBox" Content="Restricted event: only approved attendees are allowed" IsChecked="True" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <Button x:Name="SaveEventButton" Content="Save Event" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 4. Approved Attendee List -->
-                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Approved Attendee List" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="AttendeeEventIdTextBox" Grid.Column="0" Header="Event ID" PlaceholderText="e.g. EVT-001"/>
-                                <TextBox x:Name="AttendeeStudentIdTextBox" Grid.Column="1" Header="Student ID" PlaceholderText="e.g. 26-00001"/>
+                                <TextBox x:Name="NewCourseTextBox" Grid.Column="0" Header="Add New Course" PlaceholderText="e.g. BS Computer Science"/>
+                                <Button x:Name="AddCourseButton" Grid.Column="1" Content="Add Course" Click="AddCourseButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
                             </Grid>
-                            <Button x:Name="AddAttendeeButton" Content="Approve Student for Event" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
                         </StackPanel>
                     </Border>
 

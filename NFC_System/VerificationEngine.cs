@@ -12,7 +12,7 @@ public sealed class VerificationEngine
         _database = database;
     }
 
-    public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string eventId)
+    public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null)
     {
         StudentRecord? student = await _database.GetStudentByUidAsync(uid);
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
@@ -172,6 +172,12 @@ public sealed class VerificationEngine
         {
             await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
             student.EntryState = "OUTSIDE";
+
+            // NEW: If they are exiting and an Event is active, log the check-out!
+            if (!string.IsNullOrWhiteSpace(session.EventId))
+            {
+                await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
+            }
         }
         else if (session.TransactionType == TransactionType.EventAttendance)
         {
@@ -187,7 +193,7 @@ public sealed class VerificationEngine
             Step = VerificationStep.Completed,
             IsGranted = true,
             ResultTitle = session.TransactionType == TransactionType.EventAttendance ? "ATTENDANCE RECORDED" : "ACCESS GRANTED",
-            ResultMessage = remarks,
+            ResultMessage = session.TransactionType == TransactionType.Exit && !string.IsNullOrWhiteSpace(session.EventId) ? "Event Check-Out Recorded" : remarks,
             Student = student,
             Session = session,
             LogLine = $"{scanTime} | {student.StudentId} | {student.FullName} | GRANTED | {DatabaseService.ToStorageValue(session.TransactionType)} | {DatabaseService.ToStorageValue(session.Mode)}"
@@ -233,7 +239,7 @@ public sealed class VerificationEngine
             Timestamp = outcome.Timestamp
         };
 
-        return outcome;
+        
     }
 
     private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)

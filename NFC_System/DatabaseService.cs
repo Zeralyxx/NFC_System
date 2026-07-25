@@ -5,6 +5,18 @@ using System.Threading.Tasks;
 
 namespace NFC_System;
 
+public sealed class AttendanceLog
+{
+    public string Timestamp { get; set; } = "";
+    public string StudentId { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public string Course { get; set; } = "";
+    public string Section { get; set; } = ""; // NEW
+    public string Mode { get; set; } = "";
+
+    public string Status { get; set; } = ""; // NEW: Catches "PRESENT" or "DEPARTED"
+}
+
 public sealed class DatabaseService
 {
     public const string ConnectionString = "Server=127.0.0.1;Port=3306;Database=nfc_system;User ID=root;Password=;";
@@ -221,17 +233,26 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(
-            "SELECT DISTINCT course FROM students WHERE course IS NOT NULL AND course <> '' ORDER BY course ASC",
-            connection);
+        // Pulls the official list of courses you created in the Dashboard
+        using var command = new MySqlCommand("SELECT course_name FROM courses ORDER BY course_name ASC", connection);
 
         var courses = new List<string>();
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            courses.Add(Value(reader["course"]));
+            courses.Add(Value(reader["course_name"]));
         }
         return courses;
+    }
+    public async Task AddCourseAsync(string courseName)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // INSERT IGNORE prevents a crash if you try to add the exact same course twice
+        using var command = new MySqlCommand("INSERT IGNORE INTO courses (course_name) VALUES (@name)", connection);
+        command.Parameters.AddWithValue("@name", courseName.Trim());
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task UpdateStudentStatusAsync(string studentId, string status)
@@ -597,7 +618,7 @@ public sealed class DatabaseService
         return Convert.ToInt32(await attendeeCommand.ExecuteScalarAsync()) > 0;
     }
 
-    public async Task RecordAttendanceAsync(string eventId, string studentId, VerificationMode mode, string status, string remarks)
+    public async Task RecordAttendanceAsync(string? eventId, string studentId, VerificationMode mode, string status, string remarks)
     {
         if (string.IsNullOrWhiteSpace(eventId)) return;
 
@@ -704,6 +725,69 @@ public sealed class DatabaseService
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+   
+
+    // Add these methods into the DatabaseService class:
+    public async Task<IReadOnlyList<EventRecord>> GetAllEventsAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // Gets ALL events for reporting, sorted by newest first
+        using var command = new MySqlCommand(@"
+            SELECT event_id, event_name, event_date, verification_mode, is_restricted
+            FROM events
+            ORDER BY event_date DESC", connection);
+
+        var events = new List<EventRecord>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            events.Add(new EventRecord
+            {
+                EventId = Value(reader["event_id"]),
+                EventName = Value(reader["event_name"]),
+                VerificationMode = Enum.TryParse<VerificationMode>(Value(reader["verification_mode"]), out var vMode) ? vMode : VerificationMode.Standard,
+                IsRestricted = reader["is_restricted"] != DBNull.Value && Convert.ToBoolean(reader["is_restricted"]),
+                EventDate = reader["event_date"] != DBNull.Value ? Convert.ToDateTime(reader["event_date"]) : null
+            });
+        }
+        return events;
+    }
+
+    public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // NEW: Added 'ea.status' to the SELECT statement
+        using var command = new MySqlCommand(@"
+            SELECT ea.timestamp, ea.student_id, s.full_name, s.course, s.section_name, ea.verification_mode, ea.status
+            FROM event_attendance ea
+            LEFT JOIN students s ON ea.student_id = s.student_id
+            WHERE ea.event_id = @event_id
+            ORDER BY ea.timestamp DESC", connection);
+
+        command.Parameters.AddWithValue("@event_id", eventId);
+
+        var list = new List<AttendanceLog>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new AttendanceLog
+            {
+                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm tt") : "",
+                StudentId = Value(reader["student_id"]),
+                FullName = Value(reader["full_name"]),
+                Course = Value(reader["course"]),
+                Section = Value(reader["section_name"]),
+                Mode = Value(reader["verification_mode"]),
+                Status = Value(reader["status"]) // NEW: Maps the Check-in/Check-out status
+            });
+        }
+        return list;
     }
 
     private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;

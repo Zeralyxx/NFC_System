@@ -31,17 +31,29 @@ namespace NFC_System
             ClearButton.Click += ClearButton_Click;
             SaveButton.Click += SaveButton_Click;
 
-            // NEW: Kick off the async loader
+            // Kick off the async loader
             _ = InitializeAsync();
         }
 
         private async Task InitializeAsync()
         {
-            // Fetch the port dynamically from the database, fallback to COM3
-            string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+            try
+            {
+                await _database.EnsureSchemaAsync();
 
-            TryConnectSerial(nfcPort);
-            UidLogListView.Items.Insert(0, $"[INFO] Ready for enrollment. Port: {nfcPort}");
+                // CHANGE 1: Fetch the official courses and populate the dropdown!
+                CourseComboBox.ItemsSource = await _database.GetDistinctCoursesAsync();
+
+                // Fetch the port dynamically from the database, fallback to COM3
+                string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+
+                TryConnectSerial(nfcPort);
+                UidLogListView.Items.Insert(0, $"[INFO] Ready for enrollment. Port: {nfcPort}");
+            }
+            catch (Exception ex)
+            {
+                UidLogListView.Items.Insert(0, $"[ERROR] Setup failed: {ex.Message}");
+            }
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -117,7 +129,7 @@ namespace NFC_System
                     string uid = line.Substring(4).Trim();
                     bool invalidUid = IsInvalidUid(uid);
 
-                    // NEW: Query the database on the background thread BEFORE updating the UI
+                    // Query the database on the background thread BEFORE updating the UI
                     StudentRecord? existingStudent = null;
                     if (!invalidUid)
                     {
@@ -136,7 +148,7 @@ namespace NFC_System
                         {
                             NfcUidTextBox.Text = uid;
 
-                            // NEW: If the student exists in the database, auto-fill the form!
+                            // If the student exists in the database, auto-fill the form!
                             if (existingStudent != null)
                             {
                                 _isExistingProfile = true; // Tell the system this is an update
@@ -144,7 +156,10 @@ namespace NFC_System
 
                                 StudentIdTextBox.Text = existingStudent.StudentId;
                                 FullNameTextBox.Text = existingStudent.FullName;
-                                CourseTextBox.Text = existingStudent.Course;
+
+                                // CHANGE 2: Select the matched course in the dropdown
+                                CourseComboBox.SelectedItem = existingStudent.Course;
+
                                 YearLevelTextBox.Text = existingStudent.YearLevel;
                                 SectionTextBox.Text = existingStudent.SectionName;
 
@@ -186,7 +201,7 @@ namespace NFC_System
                                 UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
                             }
 
-                            PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseTextBox.Text}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
+                            PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
                         }
                     });
                     _isScanning = false;
@@ -219,13 +234,15 @@ namespace NFC_System
             string qrCredential = QrCredentialTextBox.Text.Trim();
             string status = StatusComboBox.SelectedItem is ComboBoxItem item ? item.Content?.ToString() ?? "Active" : "Active";
 
+            // CHANGE 3: Extract the selected course from the ComboBox
+            string course = CourseComboBox.SelectedItem?.ToString() ?? "";
+
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] Critical structural criteria missing (ID, Name, or NFC).");
                 return;
             }
 
-            // With this:
             if (string.IsNullOrWhiteSpace(pin))
             {
                 // If it's a NEW student, they MUST enter a PIN
@@ -254,7 +271,7 @@ namespace NFC_System
                 {
                     StudentId = studentId,
                     FullName = fullName,
-                    Course = CourseTextBox.Text.Trim(),
+                    Course = course, // Maps the course we extracted above
                     YearLevel = YearLevelTextBox.Text.Trim(),
                     SectionName = SectionTextBox.Text.Trim(),
                     Status = status,
@@ -265,7 +282,7 @@ namespace NFC_System
                 await _database.SaveStudentAsync(student, pin);
 
                 UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {fullName}");
-                PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
+                PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
                 ClearForm();
             }
             catch (Exception ex)
@@ -278,7 +295,10 @@ namespace NFC_System
         {
             StudentIdTextBox.Text = "";
             FullNameTextBox.Text = "";
-            CourseTextBox.Text = "";
+
+            // CHANGE 4: Clear the Combobox instead of the old textbox
+            CourseComboBox.SelectedItem = null;
+
             YearLevelTextBox.Text = "";
             SectionTextBox.Text = "";
             NfcUidTextBox.Text = "";
@@ -337,7 +357,4 @@ namespace NFC_System
             catch { }
         }
     }
-
-
 }
-

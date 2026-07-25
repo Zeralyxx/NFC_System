@@ -48,8 +48,7 @@
 
                         <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001"/>
                         <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
-                        <TextBox x:Name="CourseTextBox" Header="Course" PlaceholderText="e.g. BS Computer Science"/>
-
+                        <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
                         <Grid ColumnSpacing="16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>

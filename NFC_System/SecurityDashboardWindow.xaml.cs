@@ -17,10 +17,7 @@ namespace NFC_System
             this.InitializeComponent();
             MaximizeWindow();
 
-            SaveDefaultModeButton.Click += SaveDefaultModeButton_Click;
             ResetPinButton.Click += ResetPinButton_Click;
-            SaveEventButton.Click += SaveEventButton_Click;
-            AddAttendeeButton.Click += AddAttendeeButton_Click;
 
             _ = InitializeAsync();
         }
@@ -30,14 +27,6 @@ namespace NFC_System
             try
             {
                 await _database.EnsureSchemaAsync();
-                string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
-                DefaultModeComboBox.SelectedIndex = savedMode switch
-                {
-                    "Fast" => 0,
-                    "High-Security" => 2,
-                    _ => 1
-                };
-
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
@@ -47,14 +36,12 @@ namespace NFC_System
         }
 
         // For testing purposes, this method opens the alert details window when the Refresh button is clicked. 
-        private void RefreshButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
-            // Launch the details modal instantly for testing
-            var alertWindow = new AlertDetailsWindow();
-            alertWindow.Activate();
+            _ = RefreshDashboardAsync();
         }
 
-        // Only works if there are items in the AlertsListView. This is a placeholder for actual alert selection logic. 
+        // Only works if there are items in the AlertsListView. 
         private void AlertsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (AlertsListView.SelectedItem != null)
@@ -77,20 +64,6 @@ namespace NFC_System
             this.Close();
         }
 
-        private async void SaveDefaultModeButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                VerificationMode mode = GetSelectedMode(DefaultModeComboBox);
-                await _database.SetSettingAsync("verification_mode", DatabaseService.ToStorageValue(mode));
-                StatusTextBlock.Text = $"Default verification mode saved: {DatabaseService.ToStorageValue(mode)}";
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"Could not save mode: {ex.Message}";
-            }
-        }
-
         private async void ResetPinButton_Click(object sender, RoutedEventArgs e)
         {
             string studentId = ResetStudentIdTextBox.Text.Trim();
@@ -105,8 +78,9 @@ namespace NFC_System
             try
             {
                 await _database.ResetPinAsync(studentId, pin);
-                StatusTextBlock.Text = $"PIN reset and lockout cleared for {studentId}.";
+                StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
                 NewPinPasswordBox.Password = "";
+                ResetStudentIdTextBox.Text = "";
             }
             catch (Exception ex)
             {
@@ -114,53 +88,48 @@ namespace NFC_System
             }
         }
 
-        private async void SaveEventButton_Click(object sender, RoutedEventArgs e)
+        private async void AddCourseButton_Click(object sender, RoutedEventArgs e)
         {
-            string eventId = EventIdTextBox.Text.Trim();
-            string eventName = EventNameTextBox.Text.Trim();
+            string courseName = NewCourseTextBox.Text.Trim();
 
-            if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(eventName))
+            if (string.IsNullOrWhiteSpace(courseName))
             {
-                StatusTextBlock.Text = "Enter both event ID and event name.";
+                StatusTextBlock.Text = "Please enter a valid course name.";
                 return;
             }
 
             try
             {
-                await _database.SaveEventAsync(
-                    eventId,
-                    eventName,
-                    GetSelectedMode(EventModeComboBox),
-                    RestrictedEventCheckBox.IsChecked == true);
+                // 1. Save to database
+                await _database.AddCourseAsync(courseName);
 
-                AttendeeEventIdTextBox.Text = eventId;
-                StatusTextBlock.Text = $"Event saved: {eventId} - {eventName}.";
+                // 2. Clear the input box
+                NewCourseTextBox.Text = "";
+                StatusTextBlock.Text = $"Course '{courseName}' added successfully.";
+
+                // 3. Show a clear, visible success prompt
+                ContentDialog successDialog = new ContentDialog
+                {
+                    Title = "Course Created Successfully",
+                    Content = $"The academic course '{courseName}' has been added to the database.\n\nIt will now appear in the dropdown menu on the Student Registration window.",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                await successDialog.ShowAsync();
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Could not save event: {ex.Message}";
-            }
-        }
+                StatusTextBlock.Text = $"Could not add course: {ex.Message}";
 
-        private async void AddAttendeeButton_Click(object sender, RoutedEventArgs e)
-        {
-            string eventId = AttendeeEventIdTextBox.Text.Trim();
-            string studentId = AttendeeStudentIdTextBox.Text.Trim();
-
-            if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(studentId))
-            {
-                StatusTextBlock.Text = "Enter both event ID and student ID.";
-                return;
-            }
-
-            try
-            {
-                await _database.AddEventAttendeeAsync(eventId, studentId);
-                StatusTextBlock.Text = $"{studentId} approved for {eventId}.";
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"Could not approve attendee: {ex.Message}";
+                ContentDialog errorDialog = new ContentDialog
+                {
+                    Title = "Database Error",
+                    Content = $"Failed to add the course.\n\nDetails: {ex.Message}",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await errorDialog.ShowAsync();
             }
         }
 
@@ -186,16 +155,6 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"Could not refresh dashboard: {ex.Message}";
             }
-        }
-
-        private static VerificationMode GetSelectedMode(ComboBox comboBox)
-        {
-            return comboBox.SelectedIndex switch
-            {
-                0 => VerificationMode.Fast,
-                2 => VerificationMode.HighSecurity,
-                _ => VerificationMode.Standard
-            };
         }
 
         private void MaximizeWindow()
