@@ -7,7 +7,7 @@ public static class PinHasher
 {
     private const int SaltSize = 16;
     private const int HashSize = 32;
-    private const int Iterations = 100_000;
+    private const int Iterations = 15_000;
 
     public static (string Salt, string Hash) HashPin(string pin)
     {
@@ -26,10 +26,19 @@ public static class PinHasher
             return false;
         }
 
-        byte[] salt = Convert.FromBase64String(saltBase64);
-        byte[] expectedHash = Convert.FromBase64String(hashBase64);
-        byte[] actualHash = Rfc2898DeriveBytes.Pbkdf2(pin, salt, Iterations, HashAlgorithmName.SHA256, HashSize);
+        try
+        {
+            byte[] salt = Convert.FromBase64String(saltBase64);
+            byte[] expectedHash = Convert.FromBase64String(hashBase64);
+            byte[] actualHash = Rfc2898DeriveBytes.Pbkdf2(pin, salt, Iterations, HashAlgorithmName.SHA256, HashSize);
 
-        return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
+            return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
+        }
+        catch (FormatException)
+        {
+            // CRASH PREVENTION: If the database contains old, legacy, or corrupted data 
+            // that isn't valid Base64, simply reject the PIN instead of crashing the app.
+            return false;
+        }
     }
 }

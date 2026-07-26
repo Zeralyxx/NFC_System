@@ -18,48 +18,50 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header & State Controllers -->
-        <Grid Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+        <!-- NEW: Clean Two-Row Header Layout -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,32" Spacing="20">
+            <!-- Top Row: Title -->
+            <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
 
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
-                <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-            </StackPanel>
+            <!-- Bottom Row: Toolbar -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Left Buttons -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Empty Space Spacer -->
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Right Dropdowns -->
+                </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                
-                
-            </StackPanel>
-
-            <!-- Security Mode & Anti-Tailgating Controls -->
-            <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                    <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="170" SelectionChanged="DirectionComboBox_SelectionChanged">
-                        <ComboBoxItem Content="Entry"/>
-                        <ComboBoxItem Content="Exit"/>
-                    </ComboBox>
-                    <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="240" SelectionChanged="SecurityModeComboBox_SelectionChanged">
-                        <ComboBoxItem Content="Fast (NFC Only)"/>
-                        <ComboBoxItem Content="Standard (NFC + PIN)"/>
-                        <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
-                    </ComboBox>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                    <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                 </StackPanel>
-            </Border>
-        </Grid>
+
+                <!-- Security Mode & Anti-Tailgating Controls -->
+                <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16,8" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
+                        <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Entry"/>
+                            <ComboBoxItem Content="Exit"/>
+                        </ComboBox>
+                        <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="220" SelectionChanged="SecurityModeComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Fast (NFC Only)"/>
+                            <ComboBoxItem Content="Standard (NFC + PIN)"/>
+                            <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
 
         <!-- Main Content (Sleek Single Column) -->
         <Grid Grid.Row="1" RowSpacing="24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <!-- Emergency Unlock -->
                 <RowDefinition Height="*"/>
-                <!-- Audit Logs (Takes remaining space) -->
             </Grid.RowDefinitions>
 
             <!-- 1. Guard Emergency Unlock -->
@@ -100,7 +102,6 @@
                         </Border>
                     </Grid>
 
-                    <!-- Expanded View for Logs -->
                     <ListView Grid.Row="1" x:Name="VerificationLogListView" Background="Transparent" Padding="0,0,16,0"/>
                 </Grid>
             </Border>

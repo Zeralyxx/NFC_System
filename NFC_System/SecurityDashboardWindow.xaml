@@ -38,13 +38,31 @@
         <!-- Main Content -->
         <Grid Grid.Row="1" ColumnSpacing="24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4.5*"/>
-                <ColumnDefinition Width="5.5*"/>
+                <!-- NEW: Named Column Definitions so we can resize them dynamically -->
+                <ColumnDefinition x:Name="LeftAdminColumn" Width="4.5*"/>
+                <ColumnDefinition x:Name="RightLogsColumn" Width="5.5*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Left Column: Administration Modules -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+            <ScrollViewer x:Name="AdminScrollViewer" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                 <StackPanel Spacing="24">
+
+                    <!-- Cloud Synchronization Module -->
+                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Database Synchronization" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <TextBlock Text="Sync local gate terminal records with the online master database." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
 
                     <!-- 1. PIN Lockout Recovery & Reset -->
                     <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
@@ -84,12 +102,36 @@
             <!-- Right Column: Logs & Alerts -->
             <Grid Grid.Column="1" RowSpacing="24">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="1*"/>
                     <RowDefinition Height="1*"/>
                 </Grid.RowDefinitions>
 
+                <!-- Unified Audit Filter Toolbar -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+
+                    <!-- NEW: Expand Logs Toggle Button -->
+                    <ToggleButton x:Name="ExpandLogsToggle" Content="⛶ Expand Logs" Click="ExpandLogsToggle_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+
+                    <Rectangle Width="2" Height="20" Fill="#30FFFFFF" Margin="8,0"/>
+
+                    <TextBlock Text="Filters:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" Margin="0,0,4,0"/>
+
+                    <ComboBox x:Name="LogTypeFilter" SelectedIndex="0" Width="190" SelectionChanged="LogTypeFilter_SelectionChanged">
+                        <ComboBoxItem Content="All Events"/>
+                        <ComboBoxItem Content="PIN Lockouts"/>
+                        <ComboBoxItem Content="Unauthorized Attempts"/>
+                        <ComboBoxItem Content="Bad Reads"/>
+                        <ComboBoxItem Content="Admin Overrides"/>
+                    </ComboBox>
+
+                    <CalendarDatePicker x:Name="LogDateFilter" PlaceholderText="Select Date" DateChanged="LogDateFilter_DateChanged" Width="150"/>
+
+                    <Button x:Name="ClearFiltersButton" Content="Clear" Click="ClearFiltersButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                </StackPanel>
+
                 <!-- Security Alerts -->
-                <Border Grid.Row="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -107,19 +149,34 @@
                             </Border>
                         </Grid>
 
-                        <ListView Grid.Row="1" x:Name="AlertsListView" Background="Transparent" Padding="0,0,16,0"/>
+                        <ListView Grid.Row="1" x:Name="AlertsListView" Background="Transparent" Padding="0,0,16,0" SelectionMode="None">
+                            <!-- NEW: ItemTemplate forces the text to wrap instead of cut off -->
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,8" FontSize="14" Foreground="#F87171"/>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
                     </Grid>
                 </Border>
 
                 <!-- Verification Audit Trail -->
-                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border Grid.Row="2" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Verification Audit Trail" Style="{StaticResource CardTitleStyle}"/>
-                        <ListView Grid.Row="1" x:Name="AuditLogsListView" Background="Transparent" Padding="0,0,16,0"/>
+                        <TextBlock Grid.Row="0" Text="Verification Audit Trail" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,16"/>
+
+                        <ListView Grid.Row="1" x:Name="AuditLogsListView" Background="Transparent" Padding="0,0,16,0" SelectionMode="None">
+                            <!-- NEW: ItemTemplate forces the text to wrap instead of cut off -->
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,8" FontSize="14"/>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
                     </Grid>
                 </Border>
             </Grid>

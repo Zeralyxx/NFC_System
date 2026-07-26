@@ -74,6 +74,9 @@ public sealed class VerificationSession
 
     // NEW: Made nullable (?) so main gate entries don't throw null reference errors
     public string? EventId { get; init; }
+
+    // NEW: Tells the engine a QR was used, preventing premature Fast Mode database logging
+    public bool IsQrFallback { get; init; } = false;
 }
 
 public sealed class VerificationOutcome

@@ -3,20 +3,21 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using System;
-using System.Threading.Tasks;
-using WinRT.Interop;
 using Microsoft.UI.Xaml.Media.Imaging;
+using System;
 using System.Collections.Generic;
+using System.IO.Ports;
 using System.Linq;
+using System.Threading.Tasks;
 using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
+using Windows.Media.Devices;
 using Windows.Media.MediaProperties;
 using Windows.Storage.Streams;
+using WinRT.Interop;
 using ZXing;
 using ZXing.Common;
-using System.IO.Ports;
 
 namespace NFC_System
 {
@@ -33,6 +34,12 @@ namespace NFC_System
 
     public sealed partial class KioskModeWindow : Window
     {
+        // ====================================================================
+        // LIVE EVENT BRIDGE: Streams logs to the Guard Window in real-time
+        // ====================================================================
+        public static event Action<VerificationOutcome>? OnKioskOutcome;
+        public static event Action<string>? OnKioskLog;
+
         private readonly string _originatingMode;
         private readonly string _contextDetails;
 
@@ -48,7 +55,6 @@ namespace NFC_System
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
 
-        // NEW: Inactivity Timer to prevent the kiosk from getting permanently stuck
         private readonly DispatcherTimer _inactivityTimer = new();
 
         // Camera & QR Tracking
@@ -59,7 +65,10 @@ namespace NFC_System
         private bool _isDisposingCamera;
         private bool _isClosing;
 
-        // Strict Debounce: Prevents the same QR from being spammed
+        private DateTime _lastFrameProcessTime = DateTime.MinValue;
+        private DateTime _lastPreviewTime = DateTime.MinValue;
+        private bool _isUpdatingPreview = false;
+
         private string _lastScannedQr = string.Empty;
         private DateTime _lastQrScanTime = DateTime.MinValue;
 
@@ -75,6 +84,7 @@ namespace NFC_System
 
         // PIN Tracking
         private string _currentPinBuffer = "";
+        private bool _isVerifyingPin = false;
 
         // Dynamic UI Text Storage
         private string _tempStudentName = "";
@@ -93,8 +103,7 @@ namespace NFC_System
             EnforceFullScreenMode();
             ApplyDynamicHeader();
 
-            // Setup the 15-second inactivity timeout
-            _inactivityTimer.Interval = TimeSpan.FromSeconds(15);
+            _inactivityTimer.Interval = TimeSpan.FromSeconds(30);
             _inactivityTimer.Tick += InactivityTimer_Tick;
 
             Closed += KioskModeWindow_Closed;
@@ -106,7 +115,6 @@ namespace NFC_System
 
         private void InactivityTimer_Tick(object? sender, object e)
         {
-            // If the user took too long, cancel the session and reset the terminal
             _inactivityTimer.Stop();
             SetState(AuthenticationStage.Idle);
         }
@@ -123,10 +131,6 @@ namespace NFC_System
                 SetState(AuthenticationStage.Idle);
             });
         }
-
-        /* =========================================================================
-         * PHYSICAL HARDWARE LISTENERS
-         * ========================================================================= */
 
         private void TryConnectSerial(string portName)
         {
@@ -158,16 +162,26 @@ namespace NFC_System
                 else if (line.StartsWith("KEY="))
                 {
                     string key = line.Substring(4).Trim();
-                    if (_currentStage == AuthenticationStage.WaitingForPIN && !string.IsNullOrEmpty(key))
+
+                    if ((_currentStage == AuthenticationStage.WaitingForPIN || _currentStage == AuthenticationStage.Idle) && !string.IsNullOrEmpty(key))
                     {
                         DispatcherQueue.TryEnqueue(() =>
                         {
-                            bool isEnter = (key == "A");
-                            bool isClear = (key == "B");
-                            bool isCancel = (key == "C");
-                            string digit = char.IsDigit(key[0]) ? key : "";
+                            if (key == "D")
+                            {
+                                ForgotIdButton_Click(null!, null!);
+                                return;
+                            }
 
-                            ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
+                            if (_currentStage == AuthenticationStage.WaitingForPIN)
+                            {
+                                bool isEnter = (key == "A");
+                                bool isClear = (key == "B");
+                                bool isCancel = (key == "C");
+                                string digit = char.IsDigit(key[0]) ? key : "";
+
+                                ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
+                            }
                         });
                     }
                 }
@@ -227,9 +241,6 @@ namespace NFC_System
             _inactivityTimer.Stop();
             CloseSerialPort();
             _ = DisposeCameraAsync();
-
-            if (_originatingMode == "Event") { new EventAttendanceWindow().Activate(); }
-            else { new VerificationWindow().Activate(); }
             this.Close();
         }
 
@@ -241,9 +252,17 @@ namespace NFC_System
             SetState(AuthenticationStage.WaitingForQR);
         }
 
-        /* =========================================================================
-         * STATE MACHINE ENGINE
-         * ========================================================================= */
+        private void PlaySecurityAlert()
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    Console.Beep(2500, 300);
+                    System.Threading.Thread.Sleep(100);
+                }
+            });
+        }
 
         private void SetState(AuthenticationStage newState)
         {
@@ -256,24 +275,16 @@ namespace NFC_System
             _currentStage = newState;
             UpdateUiForState(newState);
 
-            // Inactivity Timeout Manager
             if (newState == AuthenticationStage.WaitingForPIN || newState == AuthenticationStage.WaitingForQR)
-            {
-                _inactivityTimer.Start(); // Start the 15-second clock
-            }
+                _inactivityTimer.Start();
             else
-            {
-                _inactivityTimer.Stop(); // Pause the clock on any other stage
-            }
+                _inactivityTimer.Stop();
 
-            // Auto-reset back to idle after a few seconds of showing the final result
             if (newState == AuthenticationStage.AccessGranted || newState == AuthenticationStage.AccessDenied)
             {
                 await Task.Delay(3500);
                 if (_currentStage == AuthenticationStage.AccessGranted || _currentStage == AuthenticationStage.AccessDenied)
-                {
                     SetState(AuthenticationStage.Idle);
-                }
             }
         }
 
@@ -285,6 +296,7 @@ namespace NFC_System
             {
                 case AuthenticationStage.Idle:
                     _currentPinBuffer = "";
+                    _isVerifyingPin = false;
                     _tempStudentName = "";
                     _tempStudentId = "";
                     _activeSession = null;
@@ -305,6 +317,7 @@ namespace NFC_System
                     break;
 
                 case AuthenticationStage.WaitingForPIN:
+                    _isVerifyingPin = false;
                     TogglePanels(showStatus: false, showPin: true, showQr: false);
                     UpdatePinDots();
                     PinErrorText.Visibility = Visibility.Collapsed;
@@ -332,10 +345,6 @@ namespace NFC_System
             }
         }
 
-        /* =========================================================================
-         * HARDWARE INTERFACE HOOKS
-         * ========================================================================= */
-
         public async void ProcessNfcScan(string uid)
         {
             if (_currentStage != AuthenticationStage.Idle) return;
@@ -343,7 +352,26 @@ namespace NFC_System
             var transType = _originatingMode == "Event" ? TransactionType.EventAttendance : KioskStateController.CurrentType;
             string? eventId = _originatingMode == "Event" ? _contextDetails : null;
 
+            if (IsInvalidUid(uid))
+            {
+                PlaySecurityAlert();
+                _outcomeTitle = "BAD READ";
+                _outcomeMessage = "Card couldn't be read properly. Please tap again.";
+                ExecuteStateChange(AuthenticationStage.AccessDenied);
+
+                string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+                OnKioskLog?.Invoke($"{logTime} | UID {uid} | BAD READ: Please tap again");
+
+                _ = Task.Run(() => _database.LogVerificationAsync(null, uid, transType, _currentMode, false, "BAD_NFC_READ", "BAD_READ", "Card couldn't be read properly. User prompted to tap again."));
+                return;
+            }
+
             VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(uid, _currentMode, transType, eventId);
+
+            if (outcome.Session != null) _activeSession = outcome.Session;
+
+            // STREAM TO GUARD WINDOW
+            OnKioskOutcome?.Invoke(outcome);
 
             DispatcherQueue.TryEnqueue(async () =>
             {
@@ -352,6 +380,10 @@ namespace NFC_System
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
+                    string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
+                    if (severeErrors.Contains(outcome.ErrorCategory))
+                        PlaySecurityAlert();
+
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
                     LoadProfileData(_tempStudentName, _tempStudentId);
@@ -359,9 +391,7 @@ namespace NFC_System
                 }
                 else
                 {
-                    _activeSession = outcome.Session;
                     ExecuteStateChange(AuthenticationStage.NFCVerified);
-
                     await Task.Delay(800);
 
                     _outcomeTitle = outcome.ResultTitle;
@@ -375,17 +405,12 @@ namespace NFC_System
 
         public async void ProcessHardwareKeypadStroke(string digit, bool isEnter, bool isClear, bool isCancel)
         {
-            if (_currentStage != AuthenticationStage.WaitingForPIN || _activeSession == null) return;
+            if (_currentStage != AuthenticationStage.WaitingForPIN || _activeSession == null || _isVerifyingPin) return;
 
-            // Reset the inactivity timeout every time they touch a button
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
 
-            if (isCancel)
-            {
-                SetState(AuthenticationStage.Idle);
-                return;
-            }
+            if (isCancel) { SetState(AuthenticationStage.Idle); return; }
 
             if (isClear)
             {
@@ -401,40 +426,64 @@ namespace NFC_System
             {
                 if (_currentPinBuffer.Length < 4) return;
 
-                VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer);
+                _isVerifyingPin = true;
 
-                if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
+                PinErrorText.Text = "Verifying...";
+                PinErrorText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+                PinErrorText.Visibility = Visibility.Visible;
+
+                try
                 {
-                    _currentPinBuffer = "";
-                    UpdatePinDots();
+                    await Task.Delay(400);
 
-                    if (_activeSession.Student.PinLocked)
+                    VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer);
+
+                    // FIX 1: UPDATE THE SESSION SO PROGRESS IS NOT STUCK!
+                    if (outcome.Session != null)
+                        _activeSession = outcome.Session;
+
+                    // STREAM TO GUARD WINDOW
+                    OnKioskOutcome?.Invoke(outcome);
+
+                    if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                     {
-                        _outcomeTitle = outcome.ResultTitle;
-                        _outcomeMessage = outcome.ResultMessage;
-                        SetState(AuthenticationStage.AccessDenied);
+                        _currentPinBuffer = "";
+                        UpdatePinDots();
+
+                        if (outcome.ErrorCategory == "PIN_LOCKED")
+                        {
+                            PlaySecurityAlert();
+                            _outcomeTitle = outcome.ResultTitle;
+                            _outcomeMessage = outcome.ResultMessage;
+                            SetState(AuthenticationStage.AccessDenied);
+                        }
+                        else
+                        {
+                            System.Threading.Tasks.Task.Run(() => { Console.Beep(1500, 200); });
+                            PinErrorText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                            PinErrorText.Text = outcome.ResultMessage;
+                        }
                     }
                     else
                     {
-                        PinErrorText.Text = outcome.ResultMessage;
-                        PinErrorText.Visibility = Visibility.Visible;
+                        SetState(AuthenticationStage.PINVerified);
+                        await Task.Delay(800);
+
+                        if (outcome.IsGranted)
+                        {
+                            _outcomeTitle = outcome.ResultTitle;
+                            _outcomeMessage = outcome.ResultMessage;
+                            SetState(AuthenticationStage.AccessGranted);
+                        }
+                        else if (outcome.Step == VerificationStep.RequiresQr)
+                        {
+                            SetState(AuthenticationStage.WaitingForQR);
+                        }
                     }
                 }
-                else
+                finally
                 {
-                    SetState(AuthenticationStage.PINVerified);
-                    await Task.Delay(800);
-
-                    if (outcome.IsGranted)
-                    {
-                        _outcomeTitle = outcome.ResultTitle;
-                        _outcomeMessage = outcome.ResultMessage;
-                        SetState(AuthenticationStage.AccessGranted);
-                    }
-                    else if (outcome.Step == VerificationStep.RequiresQr)
-                    {
-                        SetState(AuthenticationStage.WaitingForQR);
-                    }
+                    _isVerifyingPin = false;
                 }
                 return;
             }
@@ -451,7 +500,6 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
 
-            // Reset the timeout as they are successfully feeding data
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
 
@@ -463,12 +511,20 @@ namespace NFC_System
                 string? eventId = _originatingMode == "Event" ? _contextDetails : null;
 
                 outcome = await _engine.BeginQrFallbackVerificationAsync(payload, _currentMode, transType, eventId);
+                if (outcome.Session != null) _activeSession = outcome.Session;
+
+                // STREAM TO GUARD WINDOW
+                OnKioskOutcome?.Invoke(outcome);
 
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
+                    string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
+                    if (severeErrors.Contains(outcome.ErrorCategory))
+                        PlaySecurityAlert();
+
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
                     LoadProfileData(_tempStudentName, _tempStudentId);
@@ -476,7 +532,6 @@ namespace NFC_System
                 }
                 else if (outcome.Step == VerificationStep.RequiresPin)
                 {
-                    _activeSession = outcome.Session;
                     LoadProfileData(_tempStudentName, _tempStudentId);
                     SetState(AuthenticationStage.WaitingForPIN);
                 }
@@ -484,17 +539,27 @@ namespace NFC_System
             }
 
             outcome = await _engine.SubmitQrAsync(_activeSession, payload);
+            if (outcome.Session != null) _activeSession = outcome.Session;
+
+            // STREAM TO GUARD WINDOW
+            OnKioskOutcome?.Invoke(outcome);
 
             _outcomeTitle = outcome.ResultTitle;
             _outcomeMessage = outcome.ResultMessage;
 
-            if (outcome.IsGranted) SetState(AuthenticationStage.AccessGranted);
-            else SetState(AuthenticationStage.AccessDenied);
-        }
+            if (outcome.IsGranted)
+            {
+                SetState(AuthenticationStage.AccessGranted);
+            }
+            else
+            {
+                string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
+                if (severeErrors.Contains(outcome.ErrorCategory))
+                    PlaySecurityAlert();
 
-        /* =========================================================================
-         * UI HELPERS
-         * ========================================================================= */
+                SetState(AuthenticationStage.AccessDenied);
+            }
+        }
 
         private void TogglePanels(bool showStatus, bool showPin, bool showQr)
         {
@@ -590,7 +655,22 @@ namespace NFC_System
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-            if (appWindow != null) appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+
+            if (appWindow != null)
+            {
+                // 1. Detect all physically connected monitors
+                var displayAreas = DisplayArea.FindAll();
+
+                // 2. If a 2nd screen is connected (Student Kiosk), auto-move this window to Screen 2
+                if (displayAreas.Count > 1)
+                {
+                    var secondScreen = displayAreas[1]; // Index 1 is the 2nd monitor
+                    appWindow.MoveAndResize(secondScreen.WorkArea);
+                }
+
+                // 3. Lock it into full screen
+                appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+            }
         }
 
         private void ApplyDynamicHeader()
@@ -598,9 +678,42 @@ namespace NFC_System
             KioskHeaderSubtitle.Text = $"{_originatingMode.ToUpper()} TERMINAL  •  {_contextDetails.ToUpper()}";
         }
 
-        /* =========================================================================
-         * KIOSK CAMERA ENGINE
-         * ========================================================================= */
+        private static bool IsInvalidUid(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid)) return true;
+
+            string[] parts = uid.Split(':');
+            if (parts.Length != 4 && parts.Length != 7) return true;
+
+            bool allZero = true;
+            foreach (string part in parts)
+            {
+                if (part != "00")
+                {
+                    allZero = false;
+                    break;
+                }
+            }
+
+            if (allZero) return true;
+
+            if (parts.Length >= 4)
+            {
+                int start = parts.Length - 4;
+                bool trailingZeros = true;
+                for (int i = start; i < parts.Length; i++)
+                {
+                    if (parts[i] != "00")
+                    {
+                        trailingZeros = false;
+                        break;
+                    }
+                }
+                if (trailingZeros) return true;
+            }
+
+            return false;
+        }
 
         private async Task InitializeCameraAsync()
         {
@@ -609,13 +722,23 @@ namespace NFC_System
                 var devices = await Windows.Devices.Enumeration.DeviceInformation.FindAllAsync(Windows.Devices.Enumeration.DeviceClass.VideoCapture);
                 if (devices.Count == 0) return;
 
+                string targetCameraId = string.IsNullOrEmpty(KioskStateController.SelectedCameraId) ? devices[0].Id : KioskStateController.SelectedCameraId;
+                var selectedDevice = devices.FirstOrDefault(d => d.Id == targetCameraId) ?? devices[0];
+
                 _mediaCapture = new MediaCapture();
                 await _mediaCapture.InitializeAsync(new MediaCaptureInitializationSettings
                 {
-                    VideoDeviceId = devices[0].Id,
+                    VideoDeviceId = selectedDevice.Id,
                     StreamingCaptureMode = StreamingCaptureMode.Video,
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu
                 });
+
+                var focusControl = _mediaCapture.VideoDeviceController.FocusControl;
+                if (focusControl.Supported)
+                {
+                    var settings = new FocusSettings { Mode = FocusMode.Continuous, AutoFocusRange = AutoFocusRange.FullRange };
+                    focusControl.Configure(settings);
+                }
 
                 var frameSource = _mediaCapture.FrameSources.Values.FirstOrDefault(fs => fs.Info.MediaStreamType == MediaStreamType.VideoPreview) ?? _mediaCapture.FrameSources.Values.FirstOrDefault();
                 if (frameSource == null) return;
@@ -634,62 +757,111 @@ namespace NFC_System
         {
             if (_isClosing || _currentStage != AuthenticationStage.WaitingForQR) return;
 
+            bool processPreview = !_isUpdatingPreview && (DateTime.Now - _lastPreviewTime).TotalMilliseconds >= 66;
+            bool processDecode = !_isDecoding && (DateTime.Now - _lastFrameProcessTime).TotalMilliseconds >= 500;
+
+            if (!processPreview && !processDecode) return;
+
             using var frame = sender.TryAcquireLatestFrame();
             var videoFrame = frame?.VideoMediaFrame;
             using var rawBitmap = videoFrame?.SoftwareBitmap;
 
             if (rawBitmap == null) return;
 
-            using SoftwareBitmap normalizedBitmap = (rawBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8 || rawBitmap.BitmapAlphaMode == BitmapAlphaMode.Straight)
-                ? SoftwareBitmap.Convert(rawBitmap, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied)
-                : SoftwareBitmap.Copy(rawBitmap);
-
-            var displayBitmap = SoftwareBitmap.Copy(normalizedBitmap);
-            DispatcherQueue.TryEnqueue(async () =>
+            if (processPreview)
             {
-                if (!_isClosing && _currentStage == AuthenticationStage.WaitingForQR)
-                {
-                    try { await _previewSource.SetBitmapAsync(displayBitmap); } catch { }
-                }
-                displayBitmap.Dispose();
-            });
+                _isUpdatingPreview = true;
+                _lastPreviewTime = DateTime.Now;
 
-            if (!_isDecoding && (DateTime.Now - _lastQrScanTime).TotalMilliseconds >= 700)
+                SoftwareBitmap previewBitmap;
+                if (rawBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8 || rawBitmap.BitmapAlphaMode == BitmapAlphaMode.Straight)
+                    previewBitmap = SoftwareBitmap.Convert(rawBitmap, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+                else
+                    previewBitmap = SoftwareBitmap.Copy(rawBitmap);
+
+                DispatcherQueue.TryEnqueue(async () =>
+                {
+                    try
+                    {
+                        if (!_isClosing && _currentStage == AuthenticationStage.WaitingForQR)
+                            await _previewSource.SetBitmapAsync(previewBitmap);
+                    }
+                    catch { }
+                    finally
+                    {
+                        previewBitmap.Dispose();
+                        _isUpdatingPreview = false;
+                    }
+                });
+            }
+
+            if (processDecode)
             {
                 _isDecoding = true;
-                try
+                _lastFrameProcessTime = DateTime.Now;
+
+                var decodeBitmap = SoftwareBitmap.Copy(rawBitmap);
+
+                Task.Run(async () =>
                 {
-                    string? payload = DecodeQrPayload(normalizedBitmap);
-                    if (!string.IsNullOrWhiteSpace(payload))
+                    try
                     {
-                        if (payload == _lastScannedQr && (DateTime.Now - _lastQrScanTime).TotalSeconds < 3) return;
+                        string? payload = await DecodeQrPayloadAsync(decodeBitmap);
 
-                        _lastScannedQr = payload;
-                        _lastQrScanTime = DateTime.Now;
+                        if (!string.IsNullOrWhiteSpace(payload))
+                        {
+                            if (payload == _lastScannedQr && (DateTime.Now - _lastQrScanTime).TotalSeconds < 3) return;
 
-                        DispatcherQueue.TryEnqueue(() => ProcessQrScan(payload));
+                            _lastScannedQr = payload;
+                            _lastQrScanTime = DateTime.Now;
+
+                            DispatcherQueue.TryEnqueue(() => ProcessQrScan(payload));
+                        }
                     }
-                }
-                finally
-                {
-                    _isDecoding = false;
-                }
+                    catch { }
+                    finally
+                    {
+                        decodeBitmap.Dispose();
+                        _isDecoding = false;
+                    }
+                });
             }
         }
 
-        private string? DecodeQrPayload(SoftwareBitmap bitmap)
+        private async Task<string?> DecodeQrPayloadAsync(SoftwareBitmap bitmap)
         {
-            uint capacity = (uint)(bitmap.PixelWidth * bitmap.PixelHeight * 4);
-            var buffer = new Windows.Storage.Streams.Buffer(capacity);
-            bitmap.CopyToBuffer(buffer);
+            try
+            {
+                using var stream = new InMemoryRandomAccessStream();
+                var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream);
+                encoder.SetSoftwareBitmap(bitmap);
 
-            byte[] pixels = new byte[capacity];
-            using DataReader reader = DataReader.FromBuffer(buffer);
-            reader.ReadBytes(pixels);
+                double ratio = (double)bitmap.PixelHeight / bitmap.PixelWidth;
+                encoder.BitmapTransform.ScaledWidth = 500;
+                encoder.BitmapTransform.ScaledHeight = (uint)(500 * ratio);
+                encoder.BitmapTransform.InterpolationMode = BitmapInterpolationMode.NearestNeighbor;
 
-            var source = new RGBLuminanceSource(pixels, bitmap.PixelWidth, bitmap.PixelHeight, RGBLuminanceSource.BitmapFormat.BGRA32);
-            Result? result = _barcodeReader.Decode(source);
-            return result?.Text;
+                await encoder.FlushAsync();
+
+                var decoder = await BitmapDecoder.CreateAsync(stream);
+                var pixelData = await decoder.GetPixelDataAsync(
+                    BitmapPixelFormat.Bgra8,
+                    BitmapAlphaMode.Ignore,
+                    new BitmapTransform(),
+                    ExifOrientationMode.IgnoreExifOrientation,
+                    ColorManagementMode.DoNotColorManage);
+
+                byte[] pixels = pixelData.DetachPixelData();
+
+                var source = new RGBLuminanceSource(pixels, (int)decoder.PixelWidth, (int)decoder.PixelHeight, RGBLuminanceSource.BitmapFormat.BGRA32);
+
+                Result? result = _barcodeReader.Decode(source);
+                return result?.Text;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private async Task DisposeCameraAsync()
@@ -719,10 +891,6 @@ namespace NFC_System
             }
         }
 
-        /* =========================================================================
-         * DEBUG SIMULATION HOOKS
-         * ========================================================================= */
-
         private void DebugSecurityLevel_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (DebugSecurityLevel.SelectedIndex == 0) _currentMode = VerificationMode.Fast;
@@ -734,18 +902,23 @@ namespace NFC_System
 
         private void SimulateNfc_Click(object sender, RoutedEventArgs e) => ProcessNfcScan("04:A1:B2:C3");
 
-        private void SimulatePin_Click(object sender, RoutedEventArgs e)
+        private async void SimulatePin_Click(object sender, RoutedEventArgs e)
         {
-            ProcessHardwareKeypadStroke("1", false, false, false);
-            ProcessHardwareKeypadStroke("2", false, false, false);
-            ProcessHardwareKeypadStroke("3", false, false, false);
-            ProcessHardwareKeypadStroke("4", false, false, false);
-            ProcessHardwareKeypadStroke("", true, false, false);
+            if (_currentStage != AuthenticationStage.WaitingForPIN) return;
+
+            string[] strokes = { "1", "2", "3", "4", "ENTER" };
+            foreach (var stroke in strokes)
+            {
+                if (stroke == "ENTER") ProcessHardwareKeypadStroke("", true, false, false);
+                else ProcessHardwareKeypadStroke(stroke, false, false, false);
+
+                await Task.Delay(150);
+            }
         }
 
-        private void SimulateQr_Click(object sender, RoutedEventArgs e) => ProcessQrScan("TCU|26-00001|04:A1:B2:C3");
+        private void SimulateQr_Click(object sender, RoutedEventArgs e) => ProcessQrScan("26-00001");
 
-        private void SimulateFail_Click(object sender, RoutedEventArgs e)
+        private async void SimulateFail_Click(object sender, RoutedEventArgs e)
         {
             if (_currentStage == AuthenticationStage.Idle)
             {
@@ -753,12 +926,14 @@ namespace NFC_System
             }
             else if (_currentStage == AuthenticationStage.WaitingForPIN)
             {
-                // FIX: Inject 4 bad digits so the simulated failure actually fires
-                ProcessHardwareKeypadStroke("9", false, false, false);
-                ProcessHardwareKeypadStroke("9", false, false, false);
-                ProcessHardwareKeypadStroke("9", false, false, false);
-                ProcessHardwareKeypadStroke("9", false, false, false);
-                ProcessHardwareKeypadStroke("", true, false, false);
+                string[] strokes = { "9", "9", "9", "9", "ENTER" };
+                foreach (var stroke in strokes)
+                {
+                    if (stroke == "ENTER") ProcessHardwareKeypadStroke("", true, false, false);
+                    else ProcessHardwareKeypadStroke(stroke, false, false, false);
+
+                    await Task.Delay(150);
+                }
             }
             else if (_currentStage == AuthenticationStage.WaitingForQR)
             {

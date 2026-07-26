@@ -90,12 +90,13 @@
                             <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="12">
                                 <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
                                 <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
-                                <!-- NEW: Fallback Trigger Button -->
-                                <Button x:Name="ForgotIdButton" Content="Forgot ID? Use Digital QR" Click="ForgotIdButton_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF" Foreground="White" CornerRadius="8" Padding="16,10" Margin="0,24,0,0" HorizontalAlignment="Center"/>
+
+                                <!-- UPDATED: Hardware Button Hint added to text -->
+                                <Button x:Name="ForgotIdButton" Content="Forgot ID? Use QR (Press D)" Click="ForgotIdButton_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF" Foreground="White" CornerRadius="8" Padding="16,10" Margin="0,24,0,0" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
 
-                        <!-- PANEL 2: Hardware PIN Entry (No touch controls) -->
+                        <!-- PANEL 2: Hardware PIN Entry -->
                         <StackPanel x:Name="PinPanel" Visibility="Collapsed" HorizontalAlignment="Center" Spacing="32">
                             <TextBlock Text="ENTER SECURITY PIN" FontSize="32" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" CharacterSpacing="100"/>
 
@@ -111,9 +112,11 @@
 
                             <StackPanel Spacing="8" Margin="0,24,0,0" Opacity="0.6">
                                 <TextBlock Text="Use the terminal keypad to continue." FontSize="18" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                                <TextBlock Text="ENTER = Confirm" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                                <TextBlock Text="CLEAR = Delete" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                                <TextBlock Text="CANCEL = Abort" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Press A to Confirm" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Press B to Delete" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Press C = Abort" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                                <!-- NEW: D button hint -->
+                                <TextBlock Text="Press D = Scan QR" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </StackPanel>
 
@@ -130,13 +133,8 @@
                             <!-- Camera Viewport Base -->
                             <Border Grid.Row="1" CornerRadius="16" Background="Black" BorderBrush="#30FFFFFF" BorderThickness="2" MaxWidth="500" MaxHeight="500" HorizontalAlignment="Center">
                                 <Grid>
-                                    <!-- Live Camera Feed (Plug in your SoftwareBitmapSource here) -->
                                     <Image x:Name="KioskCameraPreview" Stretch="UniformToFill"/>
-
-                                    <!-- Dimmed Overlay -->
                                     <Border Background="#66000000"/>
-
-                                    <!-- Center Targeting Box (Transparent cutout effect) -->
                                     <Border Width="250" Height="250" BorderBrush="#3B82F6" BorderThickness="4" CornerRadius="16" Background="Transparent" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Border Height="2" Background="#3B82F6" VerticalAlignment="Center" Opacity="0.6"/>
                                     </Border>

@@ -1,9 +1,28 @@
 using MySqlConnector;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NFC_System;
+
+public sealed class VerificationLogRecord
+{
+    public string Timestamp { get; set; } = "";
+    public string StudentId { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public string Course { get; set; } = "";
+    public string Section { get; set; } = "";
+    public string Action { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string Mode { get; set; } = "";
+
+    // NEW: Bypasses the XAML Converter bug by assigning the color directly in the data model!
+    public Microsoft.UI.Xaml.Media.Brush StatusColor =>
+        Status == "GRANTED"
+            ? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)) // Green
+            : new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+}
 
 public sealed class AttendanceLog
 {
@@ -25,6 +44,142 @@ public sealed class DatabaseService
     {
         // Table structures are safely maintained inside phpMyAdmin to prevent runtime structural lag.
         return Task.CompletedTask;
+    }
+
+    public async Task<(int TotalScansToday, int CurrentlyInside, int DeniedToday)> GetUniversityMetricsAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        int totalScans = 0;
+        int inside = 0;
+        int denied = 0;
+
+        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE DATE(timestamp) = CURDATE()", connection))
+            totalScans = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+
+        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE entry_state = 'INSIDE'", connection))
+            inside = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+
+        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
+            denied = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+
+        return (totalScans, inside, denied);
+    }
+
+    public async Task<IReadOnlyList<StatItem>> GetDailySecurityAlertsAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // Gets the total blocked/denied entries for every day in system history
+        using var command = new MySqlCommand(@"
+            SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
+            FROM verification_logs 
+            WHERE is_granted = 0 
+            GROUP BY DATE(timestamp), DateLbl 
+            ORDER BY DATE(timestamp) DESC", connection);
+
+        var list = new List<StatItem>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new StatItem
+            {
+                Label = Value(reader["DateLbl"]),
+                Value = Value(reader["Total"]) + " Blocks"
+            });
+        }
+        return list;
+    }
+    public async Task<(string HighDayLabel, int HighCount, string LowDayLabel, int LowCount)> GetSecurityAlertExtremesAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // Fetches daily denied counts for the last 30 days, ordered highest to lowest
+        using var command = new MySqlCommand(@"
+            SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
+            FROM verification_logs 
+            WHERE is_granted = 0 AND timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            GROUP BY DATE(timestamp), DateLbl
+            ORDER BY Total DESC", connection);
+
+        var list = new List<(string DateLbl, int Count)>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add((Value(reader["DateLbl"]), Convert.ToInt32(reader["Total"])));
+        }
+
+        // Return placeholders if there are no logs at all
+        if (list.Count == 0) return ("No Data", 0, "No Data", 0);
+
+        var high = list.First(); // Highest count
+        var low = list.Last();   // Lowest count
+
+        return (high.DateLbl, high.Count, low.DateLbl, low.Count);
+    }
+
+    public async Task<IReadOnlyList<StatItem>> GetDailyEntryStatsAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // Gets the total successful entries per day for the last 7 active days
+        using var command = new MySqlCommand(@"
+            SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
+            FROM verification_logs 
+            WHERE transaction_type = 'Entry' AND is_granted = 1 
+            GROUP BY DATE(timestamp), DateLbl 
+            ORDER BY DATE(timestamp) DESC 
+            LIMIT 7", connection);
+
+        var list = new List<StatItem>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new StatItem
+            {
+                Label = Value(reader["DateLbl"]),
+                Value = Value(reader["Total"]) + " Entries"
+            });
+        }
+        return list;
+    }
+
+    public async Task<IReadOnlyList<VerificationLogRecord>> GetGeneralLedgerAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            SELECT vl.timestamp, vl.student_id, s.full_name, s.course, s.section_name, 
+                   vl.transaction_type, vl.is_granted, vl.verification_mode
+            FROM verification_logs vl
+            LEFT JOIN students s ON vl.student_id = s.student_id
+            ORDER BY vl.timestamp DESC
+            LIMIT 500", connection);
+
+        var list = new List<VerificationLogRecord>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
+
+            list.Add(new VerificationLogRecord
+            {
+                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
+                StudentId = Value(reader["student_id"]),
+                FullName = string.IsNullOrWhiteSpace(Value(reader["full_name"])) ? "Unknown / Unregistered" : Value(reader["full_name"]),
+                Course = Value(reader["course"]),
+                Section = Value(reader["section_name"]),
+                Action = Value(reader["transaction_type"]),
+                Status = isGranted ? "GRANTED" : "DENIED",
+                Mode = Value(reader["verification_mode"])
+            });
+        }
+        return list;
     }
 
     /* =========================================================================
@@ -114,6 +269,30 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@uid", uid);
+
+        using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        return ReadStudent(reader);
+    }
+
+    public async Task<StudentRecord?> GetStudentByIdAsync(string studentId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        string sql = @"
+            SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+            FROM students
+            WHERE student_id = @id
+            LIMIT 1";
+
+        using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", studentId);
 
         using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())

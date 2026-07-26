@@ -18,51 +18,51 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+        <!-- NEW: Clean Two-Row Header Layout -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,32" Spacing="20">
+            <!-- Top Row: Title -->
+            <TextBlock Text="Event Attendance Tracking" Style="{StaticResource PageTitleStyle}" Margin="0"/>
 
-            <!-- Added "Manage Events" Button Here -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
-                <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                <Button x:Name="ManageEventsButton" Content="Manage Events" Click="ManageEventsButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-            </StackPanel>
+            <!-- Bottom Row: Toolbar -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Left Buttons -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Empty Space Spacer -->
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Right Dropdowns -->
+                </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Event Attendance Tracking" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-          
-            </StackPanel>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                    <Button x:Name="ManageEventsButton" Content="Manage Events" Click="ManageEventsButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                    <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                </StackPanel>
 
-            <!-- Added Transaction Type (Entry/Exit) Dropdown Here -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" SelectedIndex="0" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
-                    <ComboBoxItem Content="Entry"/>
-                    <ComboBoxItem Content="Exit"/>
-                </ComboBox>
-
-                <ComboBox x:Name="ActiveEventComboBox" Header="Select Active Event" Width="240" PlaceholderText="Select an event" SelectionChanged="ActiveEventComboBox_SelectionChanged">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding DisplayName}"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <Button x:Name="RefreshEventsButton" Content="Refresh Events" Click="RefreshEventsButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Bottom"/>
-            </StackPanel>
-        </Grid>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
+                    <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" SelectedIndex="0" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
+                        <ComboBoxItem Content="Entry"/>
+                        <ComboBoxItem Content="Exit"/>
+                    </ComboBox>
+                    <ComboBox x:Name="ActiveEventComboBox" Header="Select Active Event" Width="240" PlaceholderText="Select an event" SelectionChanged="ActiveEventComboBox_SelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button x:Name="RefreshEventsButton" Content="Refresh Events" Click="RefreshEventsButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Bottom"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
 
         <!-- Main Content Area -->
         <Grid Grid.Row="1" RowSpacing="24" MaxWidth="1000" HorizontalAlignment="Stretch">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <!-- Emergency Unlock -->
                 <RowDefinition Height="*"/>
-                <!-- Logs -->
             </Grid.RowDefinitions>
 
             <!-- 1. Guard Emergency Unlock -->

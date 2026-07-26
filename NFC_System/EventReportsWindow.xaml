@@ -6,7 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="Event Analytics &amp; Reports">
+    Title="Analytics &amp; Reporting Center">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -18,39 +18,282 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Margin="0,0,0,32">
+        <!-- ========================================================= -->
+        <!-- HEADER: [Navigation] -> [Title] -> [Mode Toggles]         -->
+        <!-- ========================================================= -->
+        <Grid Grid.Row="0" Margin="0,0,0,32">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
+            <!-- LEFT: Navigation Buttons -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,24,0">
                 <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
                 <Button Content="Go to Event Management" Padding="16,10" Click="ManageEventsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
             </StackPanel>
 
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Analytics &amp; Reports" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Review attendance turnover, export audit ledgers, and analyze demographic data" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+            <!-- CENTER: Title & Subtitle -->
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="Analytics &amp; Reporting Center" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                <TextBlock Text="Analyze daily campus traffic, event turnout, and demographic engagement" Style="{StaticResource BodyTextStyle}" FontSize="16" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+
+            <!-- RIGHT: Mode Toggle Switcher -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <Button x:Name="UniversityModeBtn" Content="University Traffic" Click="UniversityModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                <Button x:Name="EventModeBtn" Content="Event Analytics" Click="EventModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Foreground="White" FontWeight="Normal"/>
             </StackPanel>
         </Grid>
 
-        <!-- Main Content Area -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
+
+        <!-- ========================================================= -->
+        <!-- VIEW 1: UNIVERSITY CAMPUS TRAFFIC                         -->
+        <!-- ========================================================= -->
+        <Grid x:Name="UniversityViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Visible">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="4.5*"/>
+                <ColumnDefinition Width="5.5*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Campus Statistics -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                <StackPanel Spacing="24">
+
+                    <!-- Campus Traffic -->
+                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="20">
+                            <TextBlock Text="Campus Traffic (Today)" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
+                                    <StackPanel>
+                                        <TextBlock Text="Total Scans" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="UnivTotalScansText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
+                                    <StackPanel>
+                                        <TextBlock Text="Currently Inside" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="UnivInsideText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Security Overview (Today & Extremes) -->
+                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Security Overview" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+
+                            <!-- Today's Stats -->
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Access Denied Blocks (Today):" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                <TextBlock x:Name="UnivDeniedText" Text="--" FontSize="32" FontWeight="Bold" Foreground="#F87171"/>
+                                <TextBlock Text="Includes Unregistered, Tailgating, &amp; PIN Failures" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                            </StackPanel>
+
+                            <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
+
+                            <!-- Detailed Threat Analysis -->
+                            <TextBlock Text="Threat Extremes (Last 30 Days)" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,4"/>
+
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- High Alert Day -->
+                                <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="16">
+                                    <StackPanel>
+                                        <TextBlock Text="Highest Alert Day" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="HighAlertDateText" Text="--" Foreground="White" Margin="0,4,0,4"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <TextBlock x:Name="HighAlertCountText" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F87171"/>
+                                            <TextBlock Text="blocks" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Low Alert Day -->
+                                <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="16">
+                                    <StackPanel>
+                                        <TextBlock Text="Lowest Alert Day" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="LowAlertDateText" Text="--" Foreground="White" Margin="0,4,0,4"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <TextBlock x:Name="LowAlertCountText" Text="--" FontSize="24" FontWeight="Bold" Foreground="#34D399"/>
+                                            <TextBlock Text="blocks" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- NEW: Full Historical Threat Breakdown -->
+                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Historical Threat Breakdown" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <TextBlock Text="Daily log of all blocked access attempts since system deployment." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                            <Border Background="#0AFFFFFF" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,8,0,0">
+                                <ListView x:Name="HistoricalThreatsListView" MaxHeight="250" Background="Transparent" Padding="0">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="local:StatItem">
+                                            <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{x:Bind Label}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Foreground="#F87171" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Valid Entries by Date -->
+                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Valid Entries by Date" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <ItemsControl x:Name="DailyEntriesItemsControl">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="local:StatItem">
+                                        <Grid Margin="0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind Label}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Right: Live General Ledger -->
+            <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                            <TextBlock Text="General Access Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
+                            <TextBlock Text="Filterable stream of all main gate interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                        </StackPanel>
+
+                        <!-- NEW: University Filter Bar -->
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                            <ComboBox x:Name="UnivFilterCourse" PlaceholderText="Course" Width="160" SelectionChanged="UnivFilter_SelectionChanged"/>
+                            <ComboBox x:Name="UnivFilterSection" PlaceholderText="Section" Width="130" SelectionChanged="UnivFilter_SelectionChanged"/>
+                            <ComboBox x:Name="UnivFilterStatus" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
+                                <ComboBoxItem Content="All Statuses"/>
+                                <ComboBoxItem Content="GRANTED"/>
+                                <ComboBoxItem Content="DENIED"/>
+                            </ComboBox>
+                            <Button Content="Clear Filters" Click="ClearUnivFilters_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- University Data Grid -->
+                    <Border Grid.Row="1" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="1" Text="Student Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="2" Text="Course &amp; Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="3" Text="Action" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="4" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                </Grid>
+                            </Border>
+
+                            <ListView Grid.Row="1" x:Name="UniversityAuditListView" Background="Transparent" Padding="0,8">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:VerificationLogRecord">
+                                        <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*"/>
+                                                <ColumnDefinition Width="2*"/>
+                                                <ColumnDefinition Width="2*"/>
+                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="1*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
+                                                <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                                <TextBlock Text="{x:Bind Course}" Style="{StaticResource BodyTextStyle}" Foreground="White" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{x:Bind Section}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Left"/>
+                                            </StackPanel>
+
+                                            <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="4" Text="{x:Bind Status}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+
+        <!-- ========================================================= -->
+        <!-- VIEW 2: EVENT ANALYTICS (PRESERVED)                       -->
+        <!-- ========================================================= -->
+        <Grid x:Name="EventViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="4*"/>
                 <ColumnDefinition Width="6*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Left Column: Controls & Analytics (Scrollable) -->
+            <!-- Left Column: Controls & Analytics -->
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                 <StackPanel Spacing="24">
 
                     <!-- Event Selector -->
                     <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Report Configuration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <TextBlock Text="Event Report Configuration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
                             <ComboBox x:Name="EventComboBox" Header="Select Event Database" HorizontalAlignment="Stretch" DisplayMemberPath="DisplayName" SelectionChanged="EventComboBox_SelectionChanged" PlaceholderText="Choose an event..."/>
                             <Button x:Name="ExportButton" Content="Export to Excel" Click="ExportButton_Click" HorizontalAlignment="Stretch" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" Margin="0,8,0,0" IsEnabled="False"/>
                         </StackPanel>
@@ -178,12 +421,12 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Text="Attendance Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,12"/>
+                        <TextBlock Grid.Row="0" Text="Event Attendance Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,12"/>
 
-                        <!-- NEW: Interactive Filter Bar -->
+                        <!-- Interactive Filter Bar -->
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
                             <ComboBox x:Name="FilterCourseComboBox" PlaceholderText="Course" Width="160" SelectionChanged="Filter_SelectionChanged"/>
-                            <ComboBox x:Name="FilterSectionComboBox" PlaceholderText="Section" Width="100" SelectionChanged="Filter_SelectionChanged"/>
+                            <ComboBox x:Name="FilterSectionComboBox" PlaceholderText="Section" Width="130" SelectionChanged="Filter_SelectionChanged"/>
                             <ComboBox x:Name="FilterStatusComboBox" SelectedIndex="0" Width="180" SelectionChanged="Filter_SelectionChanged">
                                 <ComboBoxItem Content="All Attendees"/>
                                 <ComboBoxItem Content="Completed Event"/>
@@ -239,7 +482,6 @@
                                                 <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
                                             </StackPanel>
 
-                                            <!-- FIX: Anchored the alignment strictly to the left -->
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
                                                 <TextBlock Text="{x:Bind Course}" Style="{StaticResource BodyTextStyle}" Foreground="White" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{x:Bind Section}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Left"/>

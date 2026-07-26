@@ -12,7 +12,8 @@ public sealed class VerificationEngine
         _database = database;
     }
 
-    public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null)
+    // NEW: Added the 'isQrFallback' parameter to securely control the flow
+    public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null, bool isQrFallback = false)
     {
         StudentRecord? student = await _database.GetStudentByUidAsync(uid);
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
@@ -67,8 +68,24 @@ public sealed class VerificationEngine
             Uid = uid,
             Mode = mode,
             TransactionType = transactionType,
-            EventId = eventId
+            EventId = eventId,
+            IsQrFallback = isQrFallback // NEW: Save the flag to the session
         };
+
+        // NEW: If this is a QR Fallback, we MUST force a PIN check and skip Fast Mode granting
+        if (isQrFallback)
+        {
+            return new VerificationOutcome
+            {
+                Step = VerificationStep.RequiresPin,
+                IsGranted = false,
+                ResultTitle = "QR ACCEPTED",
+                ResultMessage = "Please enter your PIN to verify identity",
+                Student = student,
+                Session = session,
+                LogLine = $"{scanTime} | {student.StudentId} | {student.FullName} | QR OK | PIN REQUIRED"
+            };
+        }
 
         if (mode == VerificationMode.Fast)
         {
@@ -122,7 +139,8 @@ public sealed class VerificationEngine
         student.FailedPinAttempts = 0;
         student.PinLocked = false;
 
-        if (session.Mode == VerificationMode.HighSecurity)
+        // NEW: If they already used a QR code to start this process, don't ask for it again!
+        if (session.Mode == VerificationMode.HighSecurity && !session.IsQrFallback)
         {
             return new VerificationOutcome
             {
@@ -136,7 +154,9 @@ public sealed class VerificationEngine
             };
         }
 
-        return await GrantAsync(session, "NFC and PIN authentication passed.");
+        // Dynamically adjust the log remarks based on what method they used
+        string logRemarks = session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.";
+        return await GrantAsync(session, logRemarks);
     }
 
     public async Task<VerificationOutcome> SubmitQrAsync(VerificationSession session, string qrCredential)
@@ -173,7 +193,6 @@ public sealed class VerificationEngine
             await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
             student.EntryState = "OUTSIDE";
 
-            // NEW: If they are exiting and an Event is active, log the check-out!
             if (!string.IsNullOrWhiteSpace(session.EventId))
             {
                 await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
@@ -202,44 +221,36 @@ public sealed class VerificationEngine
 
     public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId)
     {
-        // 1. Validate the signature format (Expected: TCU|StudentId|NfcUid)
-        string[] parts = qrPayload.Split('|');
-        if (parts.Length < 3 || parts[0] != "TCU")
+        // 1. Validate the payload (Expected: Just the StudentID)
+        string extractedStudentId = qrPayload.Trim();
+
+        if (string.IsNullOrWhiteSpace(extractedStudentId))
         {
             return new VerificationOutcome
             {
                 IsGranted = false,
                 Step = VerificationStep.Completed,
                 ResultTitle = "INVALID CREDENTIAL",
-                ResultMessage = "Unrecognized digital signature format."
+                ResultMessage = "QR code payload is empty or unreadable."
             };
         }
 
-        string extractedUid = parts[2];
+        // 2. Fetch the student by ID to retrieve their assigned NFC UID
+        StudentRecord? student = await _database.GetStudentByIdAsync(extractedStudentId);
 
-        // 2. Feed the extracted UID into the existing security pipeline
-        VerificationOutcome outcome = await BeginNfcVerificationAsync(extractedUid, mode, transactionType, eventId);
-
-        // 3. If the account is expelled, locked, or triggers anti-tailgating, reject immediately
-        if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
+        if (student == null)
         {
-            return outcome;
+            return new VerificationOutcome
+            {
+                IsGranted = false,
+                Step = VerificationStep.Completed,
+                ResultTitle = "INVALID CREDENTIAL",
+                ResultMessage = "Student ID not found in the database."
+            };
         }
 
-        // 4. THE SECURITY OVERRIDE: Because a QR code can be easily copied, 
-        // we MUST revoke "Fast Mode" instant-entry and strictly enforce a PIN check.
-        return new VerificationOutcome
-        {
-            IsGranted = false,
-            Step = VerificationStep.RequiresPin,
-            ResultTitle = "QR ACCEPTED",
-            ResultMessage = "Please enter your PIN to verify identity",
-            Student = outcome.Student,    // Carry over the student data
-            Session = outcome.Session,    // Carry over the session data
-            Timestamp = outcome.Timestamp
-        };
-
-        
+        // 3. Feed their registered NFC UID into the security pipeline, explicitly flagging it as a QR Fallback
+        return await BeginNfcVerificationAsync(student.NfcUid, mode, transactionType, eventId, isQrFallback: true);
     }
 
     private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)

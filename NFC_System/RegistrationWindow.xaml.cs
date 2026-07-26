@@ -184,7 +184,7 @@ namespace NFC_System
 
                             // Generate the QR based on whatever the Student ID currently is
                             string currentId = StudentIdTextBox.Text.Trim();
-                            string generatedQr = BuildQrCredential(currentId, uid);
+                            string generatedQr = BuildQrCredential(currentId);
                             QrCredentialTextBox.Text = generatedQr;
 
                             if (!string.IsNullOrEmpty(generatedQr))
@@ -261,7 +261,7 @@ namespace NFC_System
 
             if (string.IsNullOrWhiteSpace(qrCredential))
             {
-                qrCredential = BuildQrCredential(studentId, nfcUid);
+                qrCredential = BuildQrCredential(studentId);
                 QrCredentialTextBox.Text = qrCredential;
             }
 
@@ -336,10 +336,10 @@ namespace NFC_System
             return bitmap;
         }
 
-        private static string BuildQrCredential(string studentId, string nfcUid)
+        private static string BuildQrCredential(string studentId)
         {
-            if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(nfcUid)) return "";
-            return $"TCU|{studentId}|{nfcUid}";
+            if (string.IsNullOrWhiteSpace(studentId)) return "";
+            return studentId;
         }
 
         private void CloseSerialPort()

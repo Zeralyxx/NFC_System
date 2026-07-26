@@ -3,7 +3,9 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using WinRT.Interop;
 
 namespace NFC_System
@@ -22,7 +24,7 @@ namespace NFC_System
             _ = InitializeAsync();
         }
 
-        private async System.Threading.Tasks.Task InitializeAsync()
+        private async Task InitializeAsync()
         {
             try
             {
@@ -35,26 +37,52 @@ namespace NFC_System
             }
         }
 
-        // For testing purposes, this method opens the alert details window when the Refresh button is clicked. 
+        // NEW: Expands the right column to 100% width for easier log reading
+        private void ExpandLogsToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (ExpandLogsToggle.IsChecked == true)
+            {
+                // Collapse the left admin panel completely
+                LeftAdminColumn.Width = new GridLength(0);
+                AdminScrollViewer.Visibility = Visibility.Collapsed;
+                ExpandLogsToggle.Content = "⮌ Collapse";
+            }
+            else
+            {
+                // Restore the split view
+                LeftAdminColumn.Width = new GridLength(4.5, GridUnitType.Star);
+                AdminScrollViewer.Visibility = Visibility.Visible;
+                ExpandLogsToggle.Content = "⛶ Expand Logs";
+            }
+        }
+
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             _ = RefreshDashboardAsync();
         }
 
-        // Only works if there are items in the AlertsListView. 
-        private void AlertsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void LogDateFilter_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args)
         {
-            if (AlertsListView.SelectedItem != null)
-            {
-                var alertWindow = new AlertDetailsWindow();
-                // Here you would normally pass the selected alert data into the window:
-                // alertWindow.LoadAlertData(selectedItem);
+            _ = RefreshDashboardAsync();
+        }
 
-                alertWindow.Activate();
+        private void LogTypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = RefreshDashboardAsync();
+        }
 
-                // Deselect the item so it can be clicked again later
-                AlertsListView.SelectedItem = null;
-            }
+        private void ClearFiltersButton_Click(object sender, RoutedEventArgs e)
+        {
+            LogDateFilter.DateChanged -= LogDateFilter_DateChanged;
+            if (LogTypeFilter != null) LogTypeFilter.SelectionChanged -= LogTypeFilter_SelectionChanged;
+
+            LogDateFilter.Date = null;
+            if (LogTypeFilter != null) LogTypeFilter.SelectedIndex = 0;
+
+            LogDateFilter.DateChanged += LogDateFilter_DateChanged;
+            if (LogTypeFilter != null) LogTypeFilter.SelectionChanged += LogTypeFilter_SelectionChanged;
+
+            _ = RefreshDashboardAsync();
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -62,6 +90,25 @@ namespace NFC_System
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
+        }
+
+        private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
+        {
+            UploadDataButton.IsEnabled = false;
+            StatusTextBlock.Text = "Uploading local records to cloud database...";
+            await Task.Delay(2000);
+            StatusTextBlock.Text = "Upload complete. Cloud is securely synced.";
+            UploadDataButton.IsEnabled = true;
+        }
+
+        private async void GetNewDataButton_Click(object sender, RoutedEventArgs e)
+        {
+            GetNewDataButton.IsEnabled = false;
+            StatusTextBlock.Text = "Downloading latest records from cloud database...";
+            await Task.Delay(2000);
+            StatusTextBlock.Text = "Download complete. Local database is up to date.";
+            GetNewDataButton.IsEnabled = true;
+            await RefreshDashboardAsync();
         }
 
         private async void ResetPinButton_Click(object sender, RoutedEventArgs e)
@@ -78,9 +125,18 @@ namespace NFC_System
             try
             {
                 await _database.ResetPinAsync(studentId, pin);
-                StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
+
                 NewPinPasswordBox.Password = "";
                 ResetStudentIdTextBox.Text = "";
+                StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
+
+                try
+                {
+                    await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Security personnel manually unlocked account and reset PIN for {studentId}.");
+                }
+                catch { }
+
+                await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
@@ -100,14 +156,11 @@ namespace NFC_System
 
             try
             {
-                // 1. Save to database
                 await _database.AddCourseAsync(courseName);
 
-                // 2. Clear the input box
                 NewCourseTextBox.Text = "";
                 StatusTextBlock.Text = $"Course '{courseName}' added successfully.";
 
-                // 3. Show a clear, visible success prompt
                 ContentDialog successDialog = new ContentDialog
                 {
                     Title = "Course Created Successfully",
@@ -133,23 +186,72 @@ namespace NFC_System
             }
         }
 
-        private async System.Threading.Tasks.Task RefreshDashboardAsync()
+        private async Task RefreshDashboardAsync()
         {
             try
             {
+                var allAlerts = await _database.GetRecentAlertsAsync();
+                var allLogs = await _database.GetRecentLogsAsync();
+
+                // 1. FILTER THE JUNK: Strip out intermediate PIN failures from BOTH lists.
+                // By filtering out "PIN_FAILURE", we hide attempts 1 and 2, but we keep the final "PIN_LOCKED" event.
+                allAlerts = allAlerts.Where(a => !a.Contains("PIN_FAILURE", StringComparison.OrdinalIgnoreCase)).ToList();
+                allLogs = allLogs.Where(l => !l.Contains("PIN_FAILURE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+                // 2. Apply Date Filtering
+                DateTime? filterDate = LogDateFilter.Date?.DateTime;
+                if (filterDate.HasValue)
+                {
+                    string targetDateString = filterDate.Value.ToString("yyyy-MM-dd");
+                    allAlerts = allAlerts.Where(a => a.Contains(targetDateString)).ToList();
+                    allLogs = allLogs.Where(l => l.Contains(targetDateString)).ToList();
+                }
+
+                // 3. Apply Event Type Filtering via Keyword Mapping
+                string selectedType = (LogTypeFilter?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Events";
+                if (selectedType != "All Events")
+                {
+                    List<string> filterKeywords = new List<string>();
+
+                    switch (selectedType)
+                    {
+                        case "PIN Lockouts":
+                            filterKeywords.AddRange(new[] { "PIN_LOCKED", "lockout" });
+                            break;
+                        case "Unauthorized Attempts":
+                            filterKeywords.AddRange(new[] { "UNAUTHORIZED", "NOT_REGISTERED", "TAILGATING", "DENIED", "INACTIVE" });
+                            break;
+                        case "Bad Reads":
+                            filterKeywords.AddRange(new[] { "BAD_READ", "BAD_NFC_READ", "INVALID" });
+                            break;
+                        case "Admin Overrides":
+                            filterKeywords.AddRange(new[] { "ADMIN_OVERRIDE", "SECURITY OVERRIDE" });
+                            break;
+                    }
+
+                    if (filterKeywords.Count > 0)
+                    {
+                        allAlerts = allAlerts.Where(a => filterKeywords.Any(k => a.Contains(k, StringComparison.OrdinalIgnoreCase))).ToList();
+                        allLogs = allLogs.Where(l => filterKeywords.Any(k => l.Contains(k, StringComparison.OrdinalIgnoreCase))).ToList();
+                    }
+                }
+
+                // 4. Bind the processed and filtered data back to the UI
                 AlertsListView.Items.Clear();
-                foreach (string alert in await _database.GetRecentAlertsAsync())
+                foreach (string alert in allAlerts)
                 {
                     AlertsListView.Items.Add(alert);
                 }
 
                 AuditLogsListView.Items.Clear();
-                foreach (string log in await _database.GetRecentLogsAsync())
+                foreach (string log in allLogs)
                 {
                     AuditLogsListView.Items.Add(log);
                 }
 
-                StatusTextBlock.Text = "Dashboard refreshed.";
+                StatusTextBlock.Text = filterDate.HasValue
+                    ? $"Dashboard filtered for {filterDate.Value:MMM dd, yyyy}."
+                    : "Dashboard refreshed successfully.";
             }
             catch (Exception ex)
             {

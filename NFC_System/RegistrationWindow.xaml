@@ -77,7 +77,7 @@
                             <StackPanel Spacing="16">
                                 <TextBlock Text="Credential Enrollment" Style="{StaticResource CardTitleStyle}" FontSize="18" Margin="0"/>
                                 <TextBox x:Name="NfcUidTextBox" Header="NFC UID" PlaceholderText="Tap NFC card or type UID for testing"/>
-                                <TextBox x:Name="QrCredentialTextBox" Header="QR Credential Payload" PlaceholderText="Auto-generated from student ID and NFC UID" IsReadOnly="True"/>
+                                <TextBox x:Name="QrCredentialTextBox" Header="QR Credential Payload" PlaceholderText="Auto-generated from Student ID" IsReadOnly="True"/>
                             </StackPanel>
                         </Border>
 
