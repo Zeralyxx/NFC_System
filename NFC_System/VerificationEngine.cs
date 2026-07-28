@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace NFC_System;
@@ -12,9 +14,47 @@ public sealed class VerificationEngine
         _database = database;
     }
 
+    // ====================================================================
+    // EVALUATION MODULE: DATABASE QUERY PERFORMANCE MONITOR
+    // ====================================================================
+    private void LogPerformanceMetric(string operation, double elapsedMs, string result)
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                // Save to the app's local directory safely
+                string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                Directory.CreateDirectory(logDirectory);
+                string logFile = Path.Combine(logDirectory, "System_Performance_Metrics.csv");
+
+                bool isNewFile = !File.Exists(logFile);
+                using var writer = new StreamWriter(logFile, true);
+
+                if (isNewFile)
+                {
+                    writer.WriteLine("Timestamp,Operation,Elapsed Time (ms),Result");
+                }
+
+                writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},\"{operation}\",{elapsedMs},\"{result}\"");
+            }
+            catch { /* Failsafe: Ignore IO errors so the verification flow never crashes */ }
+        });
+    }
+
     public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null, bool isQrFallback = false)
     {
+        // ---------------------------------------------------------
+        // START DB TIMER: Retrieve Student Profile & PIN Hash
+        // ---------------------------------------------------------
+        Stopwatch profileTimer = Stopwatch.StartNew();
+
         StudentRecord? student = await _database.GetStudentByUidAsync(uid);
+
+        profileTimer.Stop();
+        LogPerformanceMetric("DB Query: Retrieve Profile & PIN Hash (NFC)", profileTimer.ElapsedMilliseconds, student != null ? "Found" : "Not Found");
+        // ---------------------------------------------------------
+
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         if (student == null)
@@ -41,7 +81,6 @@ public sealed class VerificationEngine
             return Denied(uid, student, "ACCESS DENIED", "Anti-tailgating rule blocked repeated entry", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | TAILGATING");
         }
 
-        // Only enforce Exit Tailgating if they are leaving the Main Gate (Not an event)
         if (transactionType == TransactionType.Exit && string.IsNullOrWhiteSpace(eventId) && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
         {
             string error = "IRREGULAR_EXIT_SEQUENCE";
@@ -52,7 +91,17 @@ public sealed class VerificationEngine
 
         if (transactionType == TransactionType.EventAttendance)
         {
+            // ---------------------------------------------------------
+            // START DB TIMER: Event Registration Check
+            // ---------------------------------------------------------
+            Stopwatch eventTimer = Stopwatch.StartNew();
+
             bool allowed = await _database.IsStudentAllowedForEventAsync(eventId, student.StudentId);
+
+            eventTimer.Stop();
+            LogPerformanceMetric("DB Query: Validate Event Roster", eventTimer.ElapsedMilliseconds, allowed ? "Approved" : "Denied");
+            // ---------------------------------------------------------
+
             if (!allowed)
             {
                 string error = "UNAUTHORIZED_EVENT_ACCESS";
@@ -197,7 +246,6 @@ public sealed class VerificationEngine
         }
         else if (session.TransactionType == TransactionType.Exit)
         {
-            // FIX: Ensure Event Checkouts do NOT mark the student as OUTSIDE the whole University
             if (!string.IsNullOrWhiteSpace(session.EventId))
             {
                 await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
@@ -212,7 +260,6 @@ public sealed class VerificationEngine
         {
             await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
 
-            // Mark them as inside the university if they weren't already
             await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
             student.EntryState = "INSIDE";
         }
@@ -240,7 +287,16 @@ public sealed class VerificationEngine
             return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "QR code payload is empty or unreadable." };
         }
 
+        // ---------------------------------------------------------
+        // START DB TIMER: Retrieve Student Profile & PIN Hash (Via QR)
+        // ---------------------------------------------------------
+        Stopwatch profileTimer = Stopwatch.StartNew();
+
         StudentRecord? student = await _database.GetStudentByIdAsync(extractedStudentId);
+
+        profileTimer.Stop();
+        LogPerformanceMetric("DB Query: Retrieve Profile & PIN Hash (QR)", profileTimer.ElapsedMilliseconds, student != null ? "Found" : "Not Found");
+        // ---------------------------------------------------------
 
         if (student == null)
         {

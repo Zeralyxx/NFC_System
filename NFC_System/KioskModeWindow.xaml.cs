@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
@@ -40,7 +42,6 @@ namespace NFC_System
         private readonly string _originatingMode;
         private readonly string _contextDetails;
 
-        // FIX: The Kiosk now stores the actual Database ID
         private readonly string? _eventId;
 
         private SerialPort? _serialPort;
@@ -80,7 +81,6 @@ namespace NFC_System
         private string _outcomeTitle = "";
         private string _outcomeMessage = "";
 
-        // FIX: Constructor updated to accept the Event ID
         public KioskModeWindow(string originatingMode, string contextDetails, string? eventId = null)
         {
             this.InitializeComponent();
@@ -101,6 +101,33 @@ namespace NFC_System
             _ = SyncOperationalModeAsync();
 
             KioskStateController.ModeChanged += KioskStateController_ModeChanged;
+        }
+
+        // ====================================================================
+        // SYSTEM EVALUATION: PERFORMANCE METRICS LOGGER
+        // ====================================================================
+        private void LogPerformanceMetric(string operation, double elapsedMs, string result)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                    Directory.CreateDirectory(logDirectory);
+                    string logFile = Path.Combine(logDirectory, "System_Performance_Metrics.csv");
+
+                    bool isNewFile = !File.Exists(logFile);
+                    using var writer = new StreamWriter(logFile, true);
+
+                    if (isNewFile)
+                    {
+                        writer.WriteLine("Timestamp,Operation,Elapsed Time (ms),Result");
+                    }
+
+                    writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},\"{operation}\",{elapsedMs},\"{result}\"");
+                }
+                catch { /* Failsafe: Ignore IO errors so the UI never crashes during check-in */ }
+            });
         }
 
         private void InactivityTimer_Tick(object? sender, object e)
@@ -290,16 +317,15 @@ namespace NFC_System
             else
                 _inactivityTimer.Stop();
 
-            // UPDATED: Split the reset delay to allow faster throughput for successful entries
             if (newState == AuthenticationStage.AccessGranted)
             {
-                await Task.Delay(1000); // 1-second delay for approvals
+                await Task.Delay(1000);
                 if (_currentStage == AuthenticationStage.AccessGranted)
                     SetState(AuthenticationStage.Idle);
             }
             else if (newState == AuthenticationStage.AccessDenied)
             {
-                await Task.Delay(2000); // 2-second delay for denials so users can read the error
+                await Task.Delay(3500);
                 if (_currentStage == AuthenticationStage.AccessDenied)
                     SetState(AuthenticationStage.Idle);
             }
@@ -366,6 +392,11 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.Idle) return;
 
+            // ====================================================================
+            // EVALUATION MODULE: START NFC RESPONSE TIMER
+            // ====================================================================
+            Stopwatch nfcTimer = Stopwatch.StartNew();
+
             var transType = KioskStateController.CurrentType;
             if (_originatingMode == "Event" && transType == TransactionType.Entry)
             {
@@ -396,6 +427,13 @@ namespace NFC_System
             {
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : uid;
+
+                // Stop the timer exactly before updating the UI state
+                nfcTimer.Stop();
+
+                string nfcResult = outcome.IsGranted ? "MATCH (Access Granted)" :
+                                   (outcome.Step == VerificationStep.RequiresPin ? "MATCH (Proceeding to PIN)" : "DENIED");
+                LogPerformanceMetric("NFC Reader Response Time", nfcTimer.ElapsedMilliseconds, nfcResult);
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
@@ -453,9 +491,24 @@ namespace NFC_System
 
                 try
                 {
-                    await Task.Delay(400);
+                    await Task.Delay(400); // Artificial visual UI delay (excluded from metrics)
+
+                    // ====================================================================
+                    // EVALUATION MODULE: START PIN VERIFICATION TIMER
+                    // ====================================================================
+                    Stopwatch pinTimer = Stopwatch.StartNew();
 
                     VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer);
+
+                    pinTimer.Stop();
+
+                    // Parse out exact performance details
+                    string pinResult = "MISMATCH";
+                    if (outcome.ErrorCategory == "PIN_LOCKED") pinResult = "LOCKED";
+                    else if (outcome.IsGranted) pinResult = "MATCH (Access Granted)";
+                    else if (outcome.Step == VerificationStep.RequiresQr) pinResult = "MATCH (Proceeding to QR)";
+
+                    LogPerformanceMetric("PIN Authentication", pinTimer.ElapsedMilliseconds, pinResult);
 
                     if (outcome.Session != null)
                         _activeSession = outcome.Session;
@@ -517,6 +570,8 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
 
+            Stopwatch qrTimer = Stopwatch.StartNew();
+
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
 
@@ -547,11 +602,19 @@ namespace NFC_System
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
                     LoadProfileData(_tempStudentName, _tempStudentId);
+
+                    qrTimer.Stop();
+                    LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / MISMATCH");
+
                     SetState(AuthenticationStage.AccessDenied);
                 }
                 else if (outcome.Step == VerificationStep.RequiresPin)
                 {
                     LoadProfileData(_tempStudentName, _tempStudentId);
+
+                    qrTimer.Stop();
+                    LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "MATCH (Proceeding to PIN)");
+
                     SetState(AuthenticationStage.WaitingForPIN);
                 }
                 return;
@@ -567,6 +630,9 @@ namespace NFC_System
 
             if (outcome.IsGranted)
             {
+                qrTimer.Stop();
+                LogPerformanceMetric("QR Validation (High Security Match)", qrTimer.ElapsedMilliseconds, "MATCH (Access Granted)");
+
                 SetState(AuthenticationStage.AccessGranted);
             }
             else
@@ -574,6 +640,9 @@ namespace NFC_System
                 string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
                 if (severeErrors.Contains(outcome.ErrorCategory))
                     PlaySecurityAlert();
+
+                qrTimer.Stop();
+                LogPerformanceMetric("QR Validation (High Security Match)", qrTimer.ElapsedMilliseconds, "MISMATCH");
 
                 SetState(AuthenticationStage.AccessDenied);
             }
