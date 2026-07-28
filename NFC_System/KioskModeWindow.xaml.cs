@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
@@ -40,7 +42,6 @@ namespace NFC_System
         private readonly string _originatingMode;
         private readonly string _contextDetails;
 
-        // FIX: The Kiosk now stores the actual Database ID
         private readonly string? _eventId;
 
         private SerialPort? _serialPort;
@@ -80,7 +81,6 @@ namespace NFC_System
         private string _outcomeTitle = "";
         private string _outcomeMessage = "";
 
-        // FIX: Constructor updated to accept the Event ID
         public KioskModeWindow(string originatingMode, string contextDetails, string? eventId = null)
         {
             this.InitializeComponent();
@@ -101,6 +101,34 @@ namespace NFC_System
             _ = SyncOperationalModeAsync();
 
             KioskStateController.ModeChanged += KioskStateController_ModeChanged;
+        }
+
+        // ====================================================================
+        // NEW: SYSTEM EVALUATION - PERFORMANCE METRICS LOGGER
+        // ====================================================================
+        private void LogPerformanceMetric(string operation, double elapsedMs, string result)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    // Save to the app's local directory safely
+                    string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                    Directory.CreateDirectory(logDirectory);
+                    string logFile = Path.Combine(logDirectory, "System_Performance_Metrics.csv");
+
+                    bool isNewFile = !File.Exists(logFile);
+                    using var writer = new StreamWriter(logFile, true);
+
+                    if (isNewFile)
+                    {
+                        writer.WriteLine("Timestamp,Operation,Elapsed Time (ms),Result");
+                    }
+
+                    writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},\"{operation}\",{elapsedMs},\"{result}\"");
+                }
+                catch { /* Failsafe: Ignore IO errors so the UI never crashes during check-in */ }
+            });
         }
 
         private void InactivityTimer_Tick(object? sender, object e)
@@ -290,16 +318,15 @@ namespace NFC_System
             else
                 _inactivityTimer.Stop();
 
-            // UPDATED: Split the reset delay to allow faster throughput for successful entries
             if (newState == AuthenticationStage.AccessGranted)
             {
-                await Task.Delay(1000); // 1-second delay for approvals
+                await Task.Delay(1000);
                 if (_currentStage == AuthenticationStage.AccessGranted)
                     SetState(AuthenticationStage.Idle);
             }
             else if (newState == AuthenticationStage.AccessDenied)
             {
-                await Task.Delay(2000); // 2-second delay for denials so users can read the error
+                await Task.Delay(3500);
                 if (_currentStage == AuthenticationStage.AccessDenied)
                     SetState(AuthenticationStage.Idle);
             }
@@ -517,6 +544,11 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
 
+            // ====================================================================
+            // EVALUATION MODULE: START QR VALIDATION TIMER
+            // ====================================================================
+            Stopwatch qrTimer = Stopwatch.StartNew();
+
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
 
@@ -547,16 +579,27 @@ namespace NFC_System
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
                     LoadProfileData(_tempStudentName, _tempStudentId);
+
+                    // RECORD DENIED QR METRIC
+                    qrTimer.Stop();
+                    LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / MISMATCH");
+
                     SetState(AuthenticationStage.AccessDenied);
                 }
                 else if (outcome.Step == VerificationStep.RequiresPin)
                 {
                     LoadProfileData(_tempStudentName, _tempStudentId);
+
+                    // RECORD SUCCESSFUL QR METRIC (AWAITING PIN)
+                    qrTimer.Stop();
+                    LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "MATCH (Proceeding to PIN)");
+
                     SetState(AuthenticationStage.WaitingForPIN);
                 }
                 return;
             }
 
+            // Normal High Security Sequence
             outcome = await _engine.SubmitQrAsync(_activeSession, payload);
             if (outcome.Session != null) _activeSession = outcome.Session;
 
@@ -567,6 +610,10 @@ namespace NFC_System
 
             if (outcome.IsGranted)
             {
+                // RECORD SUCCESSFUL QR METRIC (GRANTED)
+                qrTimer.Stop();
+                LogPerformanceMetric("QR Validation (High Security Match)", qrTimer.ElapsedMilliseconds, "MATCH (Access Granted)");
+
                 SetState(AuthenticationStage.AccessGranted);
             }
             else
@@ -574,6 +621,10 @@ namespace NFC_System
                 string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
                 if (severeErrors.Contains(outcome.ErrorCategory))
                     PlaySecurityAlert();
+
+                // RECORD DENIED QR METRIC
+                qrTimer.Stop();
+                LogPerformanceMetric("QR Validation (High Security Match)", qrTimer.ElapsedMilliseconds, "MISMATCH");
 
                 SetState(AuthenticationStage.AccessDenied);
             }
