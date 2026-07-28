@@ -143,7 +143,7 @@ namespace NFC_System
             }
             catch { }
         }
-
+        //Attempt to fix the issue with the keypad not responding by adding a check for the serial port being open before reading data. This should prevent any exceptions from being thrown when the serial port is closed or unavailable.
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
             try
@@ -161,29 +161,44 @@ namespace NFC_System
                 }
                 else if (line.StartsWith("KEY="))
                 {
-                    string key = line.Substring(4).Trim();
+                    // Force uppercase to prevent any case-sensitivity issues from the hardware
+                    string key = line.Substring(4).Trim().ToUpper();
 
-                    if ((_currentStage == AuthenticationStage.WaitingForPIN || _currentStage == AuthenticationStage.Idle) && !string.IsNullOrEmpty(key))
+                    DispatcherQueue.TryEnqueue(() =>
                     {
-                        DispatcherQueue.TryEnqueue(() =>
+                        // 1. GLOBAL TRIGGER: "D" overrides to QR Fallback from Idle or PIN stages.
+                        // Using .Contains() prevents invisible hardware characters from breaking the logic.
+                        if (key.Contains("D"))
                         {
-                            if (key == "D")
+                            if (_currentStage == AuthenticationStage.Idle || _currentStage == AuthenticationStage.WaitingForPIN)
                             {
-                                ForgotIdButton_Click(null!, null!);
-                                return;
+                                ForgotIdButton_Click(this, new RoutedEventArgs());
+                            }
+                            return;
+                        }
+
+                        // 2. STANDARD PIN ENTRY (Only active during WaitingForPIN stage)
+                        if (_currentStage == AuthenticationStage.WaitingForPIN && !string.IsNullOrEmpty(key))
+                        {
+                            bool isEnter = key.Contains("A");
+                            bool isClear = key.Contains("B");
+                            bool isCancel = key.Contains("C");
+
+                            string digit = "";
+
+                            // Safely extract just the number if one was pressed
+                            foreach (char c in key)
+                            {
+                                if (char.IsDigit(c))
+                                {
+                                    digit = c.ToString();
+                                    break;
+                                }
                             }
 
-                            if (_currentStage == AuthenticationStage.WaitingForPIN)
-                            {
-                                bool isEnter = (key == "A");
-                                bool isClear = (key == "B");
-                                bool isCancel = (key == "C");
-                                string digit = char.IsDigit(key[0]) ? key : "";
-
-                                ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
-                            }
-                        });
-                    }
+                            ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
+                        }
+                    });
                 }
             }
             catch { }

@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,31 +53,24 @@ namespace NFC_System
             }
         }
 
-        // 1. Ensure courses load into BOTH dropdowns
         private async Task LoadCoursesAsync()
         {
             try
             {
                 IReadOnlyList<string> courses = await _database.GetDistinctCoursesAsync();
-                CourseComboBox.ItemsSource = courses;            // For Adding
-                ViewFilterCourseComboBox.ItemsSource = courses;  // For Filtering the view
+                CourseComboBox.ItemsSource = courses;
+                ViewFilterCourseComboBox.ItemsSource = courses;
             }
             catch { }
         }
 
-        // 2. Fetch data once, then pass it to the filter method
         private async Task RefreshAttendeesListAsync()
         {
             if (_selectedEvent == null) return;
             try
             {
-                // Fetch the raw list from the database
                 var attendees = await _database.GetEventAttendeesAsync(_selectedEvent.EventId);
-
-                // Store it in memory
                 _masterAttendeesList = new List<StudentRecord>(attendees);
-
-                // Apply any currently selected filters to the UI
                 ApplyViewFilters();
             }
             catch (Exception ex)
@@ -91,17 +85,22 @@ namespace NFC_System
 
             string? courseFilter = ViewFilterCourseComboBox.SelectedItem?.ToString();
             string? yearFilter = (ViewFilterYearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            string searchQuery = SearchAttendeeTextBox.Text?.Trim().ToLower() ?? "";
 
-            // Start with all attendees
             var filteredData = _masterAttendeesList.AsEnumerable();
 
-            // Apply Course Filter
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                filteredData = filteredData.Where(s =>
+                    (s.FullName != null && s.FullName.ToLower().Contains(searchQuery)) ||
+                    (s.StudentId != null && s.StudentId.ToLower().Contains(searchQuery)));
+            }
+
             if (!string.IsNullOrWhiteSpace(courseFilter))
             {
                 filteredData = filteredData.Where(s => s.Course == courseFilter);
             }
 
-            // Apply Year Filter
             if (!string.IsNullOrWhiteSpace(yearFilter))
             {
                 if (yearFilter == "5+")
@@ -114,21 +113,56 @@ namespace NFC_System
                 }
             }
 
-            // Force the UI to render the filtered subset
-            AttendeesListView.ItemsSource = new System.Collections.ObjectModel.ObservableCollection<StudentRecord>(filteredData);
+            // Sync the filtered data to BOTH the List view and the Grid view
+            var observableData = new System.Collections.ObjectModel.ObservableCollection<StudentRecord>(filteredData);
+            AttendeesListView.ItemsSource = observableData;
+            AttendeesGridView.ItemsSource = observableData;
         }
 
-        // 4. Filter Event Handlers
         private void ViewFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyViewFilters();
+        }
+
+        private void SearchAttendeeTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             ApplyViewFilters();
         }
 
         private void ClearViewFilters_Click(object sender, RoutedEventArgs e)
         {
+            SearchAttendeeTextBox.Text = "";
             ViewFilterCourseComboBox.SelectedIndex = -1;
             ViewFilterYearComboBox.SelectedIndex = -1;
             ApplyViewFilters();
+        }
+
+        // Overrides ContentDialog boundaries to enable horizontal scrolling grid
+        private void ExpandDialogToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (ExpandDialogToggle.IsChecked == true)
+            {
+                // Force the inner container to expand massively. 
+                // The ContentDialogMaxWidth resource we added in XAML allows this to work!
+                DialogContentContainer.Width = 1100;
+
+                // Swap UI elements
+                AttendeesListView.Visibility = Visibility.Collapsed;
+                AttendeesGridView.Visibility = Visibility.Visible;
+
+                ExpandDialogToggle.Content = "⮌ Collapse View";
+            }
+            else
+            {
+                // Return to default normal width
+                DialogContentContainer.Width = 600;
+
+                // Swap UI elements
+                AttendeesListView.Visibility = Visibility.Visible;
+                AttendeesGridView.Visibility = Visibility.Collapsed;
+
+                ExpandDialogToggle.Content = "⛶ Expand View";
+            }
         }
 
         private async void CreateEventButton_Click(object sender, RoutedEventArgs e)
@@ -166,18 +200,17 @@ namespace NFC_System
             }
         }
 
-        // Handles selection for enabling the "Close Event" button
         private void ActiveEventsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             _selectedEvent = ActiveEventsListView.SelectedItem as EventRecord;
             CloseEventButton.IsEnabled = _selectedEvent != null;
         }
 
-        // --- ATTENDEE POPUP DIALOG TRIGGERS ---
+        
 
-        private async void ActiveEventsListView_ItemClick(object sender, ItemClickEventArgs e)
+        private async void ActiveEventsListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
-            if (e.ClickedItem is EventRecord clickedEvent)
+            if (ActiveEventsListView.SelectedItem is EventRecord clickedEvent)
             {
                 if (!clickedEvent.IsRestricted)
                 {
@@ -187,23 +220,24 @@ namespace NFC_System
 
                 _selectedEvent = clickedEvent;
 
-                // Initialize the Dialog
                 AttendeeManagementDialog.XamlRoot = this.Content.XamlRoot;
                 AttendeeManagementDialog.Title = $"Manage Attendees: {clickedEvent.DisplayName}";
 
-                // Clear out any old inputs
+                // Reset all states and filters
                 CourseComboBox.SelectedIndex = -1;
                 YearComboBox.SelectedIndex = -1;
                 IndividualIdTextBox.Text = "";
+                SearchAttendeeTextBox.Text = "";
 
-                // Fetch the current list before showing
+                // Force collapse the dialog width on open
+                DialogContentContainer.Width = 600;
+                ExpandDialogToggle.IsChecked = false;
+                ExpandDialogToggle.Content = "⛶ Expand View";
+                AttendeesListView.Visibility = Visibility.Visible;
+                AttendeesGridView.Visibility = Visibility.Collapsed;
+
                 await RefreshAttendeesListAsync();
-
-                // Show the modal
                 await AttendeeManagementDialog.ShowAsync();
-
-                // Unselect so it can be clicked again later if needed
-                ActiveEventsListView.SelectedItem = null;
             }
         }
 
@@ -224,7 +258,6 @@ namespace NFC_System
             {
                 await _database.AddBatchToEventAsync(_selectedEvent.EventId, selectedCourse, selectedYear);
 
-                // Detailed Log Output
                 string filterDetails = $"Course: {(selectedCourse ?? "Any")}, Year: {(selectedYear ?? "Any")}";
                 LogMessage($"[SUCCESS] Batch approved for '{_selectedEvent.EventId}' [{filterDetails}].");
 
@@ -278,8 +311,6 @@ namespace NFC_System
                 }
             }
         }
-
-        // --- GENERAL MANAGEMENT ---
 
         private async void CloseEventButton_Click(object sender, RoutedEventArgs e)
         {

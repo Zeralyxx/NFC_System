@@ -50,6 +50,11 @@ namespace NFC_System
 
                 await LoadActiveEventsAsync();
                 AttendanceLogListView.Items.Insert(0, "[INFO] Event attendance monitor ready.");
+
+                if (!AppSession.IsAdmin)
+                {
+                    ManageEventsButton.Visibility = Visibility.Collapsed;
+                }
             }
             catch (Exception ex)
             {

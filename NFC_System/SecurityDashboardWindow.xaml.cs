@@ -13,6 +13,7 @@ namespace NFC_System
     public sealed partial class SecurityDashboardWindow : Window
     {
         private readonly DatabaseService _database = new();
+        private List<SystemAuditLog> _masterLogsCache = new(); // Holds the deep query for the popup
 
         public SecurityDashboardWindow()
         {
@@ -37,22 +38,19 @@ namespace NFC_System
             }
         }
 
-        // NEW: Expands the right column to 100% width for easier log reading
-        private void ExpandLogsToggle_Click(object sender, RoutedEventArgs e)
+        private async Task RefreshDashboardAsync()
         {
-            if (ExpandLogsToggle.IsChecked == true)
+            try
             {
-                // Collapse the left admin panel completely
-                LeftAdminColumn.Width = new GridLength(0);
-                AdminScrollViewer.Visibility = Visibility.Collapsed;
-                ExpandLogsToggle.Content = "⮌ Collapse";
+                // Load the 30 most recent items into the Live Activity Feed on the main screen
+                var recentLogs = await _database.GetMasterAuditLogsAsync(30);
+                RecentActivityListView.ItemsSource = recentLogs;
+
+                StatusTextBlock.Text = "Dashboard refreshed successfully.";
             }
-            else
+            catch (Exception ex)
             {
-                // Restore the split view
-                LeftAdminColumn.Width = new GridLength(4.5, GridUnitType.Star);
-                AdminScrollViewer.Visibility = Visibility.Visible;
-                ExpandLogsToggle.Content = "⛶ Expand Logs";
+                StatusTextBlock.Text = $"Could not refresh dashboard: {ex.Message}";
             }
         }
 
@@ -61,36 +59,88 @@ namespace NFC_System
             _ = RefreshDashboardAsync();
         }
 
-        private void LogDateFilter_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args)
+        // --- EXPANDABLE POPUP DIALOG LOGIC ---
+
+        private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            _ = RefreshDashboardAsync();
+            MasterLogsDialog.XamlRoot = this.Content.XamlRoot;
+
+            // Force dialog to start at standard width
+            DialogLogContainer.Width = 900;
+            PopupExpandToggle.IsChecked = false;
+            PopupExpandToggle.Content = "⛶ Expand View";
+
+            // Fetch a deep history (e.g., 2000 records) for the master explorer
+            _masterLogsCache = (await _database.GetMasterAuditLogsAsync(2000)).ToList();
+
+            ApplyPopupFilters();
+            await MasterLogsDialog.ShowAsync();
         }
 
-        private void LogTypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void PopupExpandToggle_Click(object sender, RoutedEventArgs e)
         {
-            _ = RefreshDashboardAsync();
+            if (PopupExpandToggle.IsChecked == true)
+            {
+                DialogLogContainer.Width = 1400;
+                PopupExpandToggle.Content = "⮌ Collapse View";
+            }
+            else
+            {
+                DialogLogContainer.Width = 900;
+                PopupExpandToggle.Content = "⛶ Expand View";
+            }
         }
 
-        private void ClearFiltersButton_Click(object sender, RoutedEventArgs e)
+        private void PopupFilter_Changed(object sender, RoutedEventArgs e)
         {
-            LogDateFilter.DateChanged -= LogDateFilter_DateChanged;
-            if (LogTypeFilter != null) LogTypeFilter.SelectionChanged -= LogTypeFilter_SelectionChanged;
-
-            LogDateFilter.Date = null;
-            if (LogTypeFilter != null) LogTypeFilter.SelectedIndex = 0;
-
-            LogDateFilter.DateChanged += LogDateFilter_DateChanged;
-            if (LogTypeFilter != null) LogTypeFilter.SelectionChanged += LogTypeFilter_SelectionChanged;
-
-            _ = RefreshDashboardAsync();
+            ApplyPopupFilters();
         }
 
-        private void BackButton_Click(object sender, RoutedEventArgs e)
+        private void PopupClear_Click(object sender, RoutedEventArgs e)
         {
-            var dashboard = new MainWindow();
-            dashboard.Activate();
-            this.Close();
+            PopupSearchBox.Text = "";
+            PopupTypeFilter.SelectedIndex = 0;
+            PopupStatusFilter.SelectedIndex = 0;
+            ApplyPopupFilters();
         }
+
+        private void ApplyPopupFilters()
+        {
+            if (_masterLogsCache == null || PopupLogsListView == null) return;
+
+            var filtered = _masterLogsCache.AsEnumerable();
+
+            // 1. Text Search
+            string query = PopupSearchBox.Text?.Trim().ToLower() ?? "";
+            if (!string.IsNullOrEmpty(query))
+            {
+                filtered = filtered.Where(l =>
+                    (l.Subject != null && l.Subject.ToLower().Contains(query)) ||
+                    (l.Details != null && l.Details.ToLower().Contains(query)));
+            }
+
+            // 2. Type Dropdown
+            string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
+            if (type != "All Types")
+            {
+                filtered = filtered.Where(l => l.LogType == type);
+            }
+
+            // 3. Status Dropdown
+            string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
+            if (status == "Granted / Resolved")
+            {
+                filtered = filtered.Where(l => l.Status == "GRANTED" || l.Status == "RESOLVED");
+            }
+            else if (status == "Denied / Flagged")
+            {
+                filtered = filtered.Where(l => l.Status == "DENIED" || l.Status == "FLAGGED");
+            }
+
+            PopupLogsListView.ItemsSource = filtered.ToList();
+        }
+
+        // --- ADMINISTRATIVE ACTIONS ---
 
         private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
         {
@@ -170,6 +220,7 @@ namespace NFC_System
                 };
 
                 await successDialog.ShowAsync();
+                await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
@@ -186,77 +237,11 @@ namespace NFC_System
             }
         }
 
-        private async Task RefreshDashboardAsync()
+        private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                var allAlerts = await _database.GetRecentAlertsAsync();
-                var allLogs = await _database.GetRecentLogsAsync();
-
-                // 1. FILTER THE JUNK: Strip out intermediate PIN failures from BOTH lists.
-                // By filtering out "PIN_FAILURE", we hide attempts 1 and 2, but we keep the final "PIN_LOCKED" event.
-                allAlerts = allAlerts.Where(a => !a.Contains("PIN_FAILURE", StringComparison.OrdinalIgnoreCase)).ToList();
-                allLogs = allLogs.Where(l => !l.Contains("PIN_FAILURE", StringComparison.OrdinalIgnoreCase)).ToList();
-
-                // 2. Apply Date Filtering
-                DateTime? filterDate = LogDateFilter.Date?.DateTime;
-                if (filterDate.HasValue)
-                {
-                    string targetDateString = filterDate.Value.ToString("yyyy-MM-dd");
-                    allAlerts = allAlerts.Where(a => a.Contains(targetDateString)).ToList();
-                    allLogs = allLogs.Where(l => l.Contains(targetDateString)).ToList();
-                }
-
-                // 3. Apply Event Type Filtering via Keyword Mapping
-                string selectedType = (LogTypeFilter?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Events";
-                if (selectedType != "All Events")
-                {
-                    List<string> filterKeywords = new List<string>();
-
-                    switch (selectedType)
-                    {
-                        case "PIN Lockouts":
-                            filterKeywords.AddRange(new[] { "PIN_LOCKED", "lockout" });
-                            break;
-                        case "Unauthorized Attempts":
-                            filterKeywords.AddRange(new[] { "UNAUTHORIZED", "NOT_REGISTERED", "TAILGATING", "DENIED", "INACTIVE" });
-                            break;
-                        case "Bad Reads":
-                            filterKeywords.AddRange(new[] { "BAD_READ", "BAD_NFC_READ", "INVALID" });
-                            break;
-                        case "Admin Overrides":
-                            filterKeywords.AddRange(new[] { "ADMIN_OVERRIDE", "SECURITY OVERRIDE" });
-                            break;
-                    }
-
-                    if (filterKeywords.Count > 0)
-                    {
-                        allAlerts = allAlerts.Where(a => filterKeywords.Any(k => a.Contains(k, StringComparison.OrdinalIgnoreCase))).ToList();
-                        allLogs = allLogs.Where(l => filterKeywords.Any(k => l.Contains(k, StringComparison.OrdinalIgnoreCase))).ToList();
-                    }
-                }
-
-                // 4. Bind the processed and filtered data back to the UI
-                AlertsListView.Items.Clear();
-                foreach (string alert in allAlerts)
-                {
-                    AlertsListView.Items.Add(alert);
-                }
-
-                AuditLogsListView.Items.Clear();
-                foreach (string log in allLogs)
-                {
-                    AuditLogsListView.Items.Add(log);
-                }
-
-                StatusTextBlock.Text = filterDate.HasValue
-                    ? $"Dashboard filtered for {filterDate.Value:MMM dd, yyyy}."
-                    : "Dashboard refreshed successfully.";
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"Could not refresh dashboard: {ex.Message}";
-            }
+            var dashboard = new MainWindow();
+            dashboard.Activate();
+            this.Close();
         }
 
         private void MaximizeWindow()
@@ -264,11 +249,7 @@ namespace NFC_System
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-
-            if (appWindow.Presenter is OverlappedPresenter presenter)
-            {
-                presenter.Maximize();
-            }
+            if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
     }
 }

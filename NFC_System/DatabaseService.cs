@@ -24,6 +24,18 @@ public sealed class VerificationLogRecord
             : new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
 }
 
+public sealed class SystemAuditLog
+{
+    public DateTime Timestamp { get; set; }
+    public string DisplayTime { get; set; } = "";
+    public string LogType { get; set; } = "";
+    public string Subject { get; set; } = "";
+    public string Action { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string Details { get; set; } = "";
+    public Microsoft.UI.Xaml.Media.Brush StatusColor { get; set; } = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray);
+}
+
 public sealed class AttendanceLog
 {
     public string Timestamp { get; set; } = "";
@@ -44,6 +56,83 @@ public sealed class DatabaseService
     {
         // Table structures are safely maintained inside phpMyAdmin to prevent runtime structural lag.
         return Task.CompletedTask;
+    }
+
+    public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(int limit = 1000)
+    {
+        var masterLogs = new List<SystemAuditLog>();
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // 1. Get Verification Logs
+        using (var cmd1 = new MySqlCommand("SELECT timestamp, student_id, nfc_uid, transaction_type, is_granted, error_code, remarks FROM verification_logs ORDER BY timestamp DESC LIMIT @limit", connection))
+        {
+            cmd1.Parameters.AddWithValue("@limit", limit);
+            using var reader = await cmd1.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
+                string status = isGranted ? "GRANTED" : "DENIED";
+                string type = Value(reader["transaction_type"]);
+                string error = Value(reader["error_code"]);
+                string details = Value(reader["remarks"]);
+
+                // Format detailed breakdown for failures
+                if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
+                    details = $"[{error}] {details}";
+
+                string subject = Value(reader["student_id"]);
+                if (string.IsNullOrWhiteSpace(subject)) subject = $"UID: {Value(reader["nfc_uid"])}";
+
+                masterLogs.Add(new SystemAuditLog
+                {
+                    Timestamp = Convert.ToDateTime(reader["timestamp"]),
+                    LogType = "GATE LOG",
+                    Subject = subject,
+                    Action = type,
+                    Status = status,
+                    Details = details
+                });
+            }
+        }
+
+        // 2. Get Security & System Alerts
+        using (var cmd2 = new MySqlCommand("SELECT timestamp, student_id, alert_type, message FROM alerts ORDER BY timestamp DESC LIMIT @limit", connection))
+        {
+            cmd2.Parameters.AddWithValue("@limit", limit);
+            using var reader = await cmd2.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                string alertType = Value(reader["alert_type"]);
+                string status = alertType.Contains("OVERRIDE") ? "RESOLVED" : "FLAGGED";
+
+                masterLogs.Add(new SystemAuditLog
+                {
+                    Timestamp = Convert.ToDateTime(reader["timestamp"]),
+                    LogType = alertType == "ADMIN_OVERRIDE" ? "ADMIN ACTION" : "SECURITY ALERT",
+                    Subject = Value(reader["student_id"]),
+                    Action = alertType,
+                    Status = status,
+                    Details = Value(reader["message"])
+                });
+            }
+        }
+
+        // 3. Sort completely by Timestamp and dynamically apply UI colors
+        var sorted = masterLogs.OrderByDescending(l => l.Timestamp).Take(limit).ToList();
+        foreach (var log in sorted)
+        {
+            log.DisplayTime = log.Timestamp.ToString("MMM dd, yyyy - hh:mm:ss tt");
+
+            if (log.Status == "GRANTED" || log.Status == "RESOLVED")
+                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
+            else if (log.Status == "DENIED" || log.Status == "FLAGGED")
+                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+            else
+                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160)); // Gray
+        }
+
+        return sorted;
     }
 
     public async Task<(int TotalScansToday, int CurrentlyInside, int DeniedToday)> GetUniversityMetricsAsync()
@@ -647,10 +736,11 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
+        // UPDATED: Now inserts is_active = TRUE, and reactivates it if updated
         using var command = new MySqlCommand(@"
-            INSERT INTO events (event_id, event_name, event_date, verification_mode, is_restricted)
-            VALUES (@event_id, @event_name, NOW(), @mode, @is_restricted)
-            ON DUPLICATE KEY UPDATE event_name = @event_name, verification_mode = @mode, is_restricted = @is_restricted, event_date = NOW()", connection);
+            INSERT INTO events (event_id, event_name, event_date, verification_mode, is_restricted, is_active)
+            VALUES (@event_id, @event_name, NOW(), @mode, @is_restricted, TRUE)
+            ON DUPLICATE KEY UPDATE event_name = @event_name, verification_mode = @mode, is_restricted = @is_restricted, event_date = NOW(), is_active = TRUE", connection);
         command.Parameters.AddWithValue("@event_id", eventId);
         command.Parameters.AddWithValue("@event_name", eventName);
         command.Parameters.AddWithValue("@mode", ToStorageValue(mode));
@@ -658,7 +748,7 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
-    
+
 
     public async Task RemoveEventAttendeeAsync(string eventId, string studentId)
     {
@@ -755,10 +845,11 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // UPDATED: Now fetches verification_mode and is_restricted
+        // UPDATED: Added WHERE is_active = TRUE so closed events disappear from the management window
         using var command = new MySqlCommand(@"
             SELECT event_id, event_name, event_date, verification_mode, is_restricted
             FROM events
+            WHERE is_active = TRUE
             LIMIT @limit", connection);
         command.Parameters.AddWithValue("@limit", limit);
 
@@ -770,9 +861,7 @@ public sealed class DatabaseService
             {
                 EventId = Value(reader["event_id"]),
                 EventName = Value(reader["event_name"]),
-                // UPDATED: Dynamically parses the stored enum, falls back to Standard if undefined
                 VerificationMode = Enum.TryParse<VerificationMode>(Value(reader["verification_mode"]), out var vMode) ? vMode : VerificationMode.Standard,
-                // UPDATED: Correctly maps the TINYINT(1) from MySQL to the boolean property
                 IsRestricted = reader["is_restricted"] != DBNull.Value && Convert.ToBoolean(reader["is_restricted"]),
                 Status = "Active",
                 EventDate = reader["event_date"] != DBNull.Value ? Convert.ToDateTime(reader["event_date"]) : null
@@ -878,35 +967,14 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var transaction = await connection.BeginTransactionAsync();
-
-        try
-        {
-            // 1. Clean up pre-approved attendee list allocations for this event first
-            using (var clearAttendeesCmd = new MySqlCommand("DELETE FROM event_approved_students WHERE event_id = @event_id;", connection, transaction))
-            {
-                clearAttendeesCmd.Parameters.AddWithValue("@event_id", eventId);
-                await clearAttendeesCmd.ExecuteNonQueryAsync();
-            }
-
-            // 2. Shut down and remove the main event tracking record
-            using (var deleteEventCmd = new MySqlCommand("DELETE FROM events WHERE event_id = @event_id;", connection, transaction))
-            {
-                deleteEventCmd.Parameters.AddWithValue("@event_id", eventId);
-                await deleteEventCmd.ExecuteNonQueryAsync();
-            }
-
-            // Commit changes safely to MySQL
-            await transaction.CommitAsync();
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+        // UPDATED: We no longer DELETE anything. We preserve the approved attendees for historical turnout reporting, 
+        // and simply toggle the event's active state to FALSE.
+        using var closeEventCmd = new MySqlCommand("UPDATE events SET is_active = FALSE WHERE event_id = @event_id;", connection);
+        closeEventCmd.Parameters.AddWithValue("@event_id", eventId);
+        await closeEventCmd.ExecuteNonQueryAsync();
     }
 
-   
+
 
     // Add these methods into the DatabaseService class:
     public async Task<IReadOnlyList<EventRecord>> GetAllEventsAsync()
@@ -914,7 +982,7 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Gets ALL events for reporting, sorted by newest first
+        // Preserved: This deliberately grabs ALL events (Active and Closed) for the Reports dropdown
         using var command = new MySqlCommand(@"
             SELECT event_id, event_name, event_date, verification_mode, is_restricted
             FROM events

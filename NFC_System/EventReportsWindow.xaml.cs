@@ -18,6 +18,26 @@ namespace NFC_System
         public string SubValue { get; set; } = "";
     }
 
+    // View Model used to display custom UI logic without altering the database schema
+    public class EventAttendanceViewModel
+    {
+        public string Timestamp { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public string StudentId { get; set; } = "";
+        public string Course { get; set; } = "";
+        public string Section { get; set; } = "";
+        public string Action { get; set; } = "";
+        public string CompletionStatus { get; set; } = "";
+        public SolidColorBrush? CompletionColor { get; set; }
+    }
+
+    // Wrapper to attach LIVE/CLOSED tags to the dropdown without altering the database
+    public class EventDropdownItem
+    {
+        public EventRecord Event { get; set; } = null!;
+        public string DisplayText { get; set; } = "";
+    }
+
     public sealed partial class EventReportsWindow : Window
     {
         private readonly DatabaseService _database = new();
@@ -26,6 +46,10 @@ namespace NFC_System
         private List<AttendanceLog> _eventMasterLogs = new();
         private List<string> _completedStudentIds = new();
         private List<string> _incompleteStudentIds = new();
+        private List<EventDropdownItem> _allEventDropdownItems = new();
+
+        // NEW: Manually tracks the selected event since AutoSuggestBox doesn't have .SelectedItem
+        private EventDropdownItem? _currentSelectedEvent = null;
 
         // Caching for University filtering
         private List<VerificationLogRecord> _univMasterLogs = new();
@@ -43,9 +67,21 @@ namespace NFC_System
             {
                 await _database.EnsureSchemaAsync();
 
-                // 1. Load Event Dropdown
+                // 1. Load Event Search Box with LIVE/CLOSED Tags
                 IReadOnlyList<EventRecord> allEvents = await _database.GetAllEventsAsync();
-                EventComboBox.ItemsSource = allEvents;
+                IReadOnlyList<EventRecord> activeEvents = await _database.GetActiveEventsAsync(9999);
+
+                _allEventDropdownItems = allEvents.Select(e => new EventDropdownItem
+                {
+                    Event = e,
+                    DisplayText = activeEvents.Any(a => a.EventId == e.EventId)
+                        ? $"🟢 LIVE  -  {e.DisplayName}"
+                        : $"🔴 CLOSED  -  {e.DisplayName}"
+                })
+                .OrderByDescending(x => x.DisplayText.StartsWith("🟢"))
+                .ToList();
+
+                EventSearchBox.ItemsSource = _allEventDropdownItems;
 
                 // 2. Load General University Analytics
                 var metrics = await _database.GetUniversityMetricsAsync();
@@ -56,14 +92,12 @@ namespace NFC_System
                 var dailyStats = await _database.GetDailyEntryStatsAsync();
                 DailyEntriesItemsControl.ItemsSource = dailyStats;
 
-                // Load Historical Security Extremes
                 var alertExtremes = await _database.GetSecurityAlertExtremesAsync();
                 HighAlertDateText.Text = alertExtremes.HighDayLabel;
                 HighAlertCountText.Text = alertExtremes.HighCount.ToString();
                 LowAlertDateText.Text = alertExtremes.LowDayLabel;
                 LowAlertCountText.Text = alertExtremes.LowCount.ToString();
 
-                // ---> NEW: Load Full Historical Threat Log <---
                 var allTimeThreats = await _database.GetDailySecurityAlertsAsync();
                 HistoricalThreatsListView.ItemsSource = allTimeThreats;
 
@@ -79,7 +113,7 @@ namespace NFC_System
                 sections.Insert(0, "All Sections");
                 UnivFilterSection.ItemsSource = sections;
 
-                ClearUnivFilters_Click(null, null); // Applies default full list
+                ClearUnivFilters_Click(null, null);
             }
             catch { }
         }
@@ -159,107 +193,193 @@ namespace NFC_System
             UniversityAuditListView.ItemsSource = filtered.ToList();
         }
 
+        // --- SMART SEARCH DROPDOWN LOGIC ---
 
-        // --- EVENT LOGIC ---
-
-        private async void EventComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void EventSearchBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            if (EventComboBox.SelectedItem is EventRecord selectedEvent)
+            if (string.IsNullOrWhiteSpace(EventSearchBox.Text))
             {
-                ExportButton.IsEnabled = true;
-
-                try
-                {
-                    var logs = await _database.GetEventAttendanceLogsAsync(selectedEvent.EventId);
-                    _eventMasterLogs = logs.ToList();
-
-                    var enteredStudents = logs.Where(l => l.Status == "PRESENT").Select(l => l.StudentId).Distinct().ToList();
-                    var exitedStudents = logs.Where(l => l.Status == "DEPARTED").Select(l => l.StudentId).Distinct().ToList();
-
-                    _completedStudentIds = enteredStudents.Intersect(exitedStudents).ToList();
-                    _incompleteStudentIds = enteredStudents.Except(exitedStudents).ToList();
-
-                    int totalEntered = enteredStudents.Count;
-                    int totalCompleted = _completedStudentIds.Count;
-
-                    AttendedCountText.Text = totalEntered.ToString();
-
-                    if (totalEntered > 0)
-                    {
-                        double retention = ((double)totalCompleted / totalEntered) * 100;
-                        RetentionRateText.Text = $"{retention:F1}%";
-                        RetentionSubText.Text = $"{totalCompleted} out of {totalEntered} attendees checked out";
-
-                        var arrivalsOnly = logs.Where(l => l.Status == "PRESENT").ToList();
-
-                        var courseStats = arrivalsOnly
-                            .GroupBy(l => string.IsNullOrWhiteSpace(l.Course) ? "Unregistered Course" : l.Course)
-                            .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
-                            .OrderByDescending(x => int.Parse(x.Value)).ToList();
-                        CourseBreakdownItemsControl.ItemsSource = courseStats;
-
-                        var sectionStats = arrivalsOnly
-                            .GroupBy(l => string.IsNullOrWhiteSpace(l.Section) ? "Unassigned" : l.Section)
-                            .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
-                            .OrderByDescending(x => int.Parse(x.Value)).Take(5).ToList();
-                        SectionBreakdownItemsControl.ItemsSource = sectionStats;
-
-                        var modeStats = arrivalsOnly
-                            .GroupBy(l => string.IsNullOrWhiteSpace(l.Mode) ? "Unknown" : l.Mode)
-                            .Select(g => new StatItem { Label = g.Key + " Mode", Value = g.Count().ToString() })
-                            .OrderByDescending(x => int.Parse(x.Value)).ToList();
-                        AuthModesItemsControl.ItemsSource = modeStats;
-                    }
-                    else
-                    {
-                        RetentionRateText.Text = "0%";
-                        RetentionSubText.Text = "No arrivals recorded";
-                        CourseBreakdownItemsControl.ItemsSource = null;
-                        SectionBreakdownItemsControl.ItemsSource = null;
-                        AuthModesItemsControl.ItemsSource = null;
-                    }
-
-                    if (selectedEvent.IsRestricted)
-                    {
-                        var approvedList = await _database.GetEventAttendeesAsync(selectedEvent.EventId);
-                        int expected = approvedList.Count;
-                        ExpectedCountText.Text = $"{expected} Registered Students";
-
-                        if (expected > 0)
-                        {
-                            double rate = ((double)totalEntered / expected) * 100;
-                            TurnoutRateText.Text = $"{rate:F1}%";
-                            TurnoutRateText.Foreground = rate > 75
-                                ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153))
-                                : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                        }
-                        else
-                        {
-                            TurnoutRateText.Text = "0%";
-                        }
-                    }
-                    else
-                    {
-                        ExpectedCountText.Text = "Open Event (No Restrictions)";
-                        TurnoutRateText.Text = "N/A";
-                        TurnoutRateText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
-                    }
-
-                    var courses = _eventMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
-                    courses.Insert(0, "All Courses");
-                    FilterCourseComboBox.ItemsSource = courses;
-
-                    var sections = _eventMasterLogs.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
-                    sections.Insert(0, "All Sections");
-                    FilterSectionComboBox.ItemsSource = sections;
-
-                    ClearFilters_Click(null, null);
-                }
-                catch { }
+                EventSearchBox.ItemsSource = _allEventDropdownItems.Take(50).ToList();
+                EventSearchBox.IsSuggestionListOpen = true;
             }
         }
 
+        // NEW: Closes the popup if the user clicks on blank empty spaces (like the left panel)
+        private void Background_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+        {
+            if (EventSearchBox.IsSuggestionListOpen)
+            {
+                EventSearchBox.IsSuggestionListOpen = false;
+            }
+        }
+
+        // NEW: Closes the popup if the user clicks another interactive element (like the right panel)
+        private void EventSearchBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            EventSearchBox.IsSuggestionListOpen = false;
+        }
+
+        // NEW: Closes the popup instantly if the user tries to scroll the mouse wheel
+        private void EventLeftScrollViewer_ViewChanging(object sender, ScrollViewerViewChangingEventArgs e)
+        {
+            if (EventSearchBox.IsSuggestionListOpen)
+            {
+                EventSearchBox.IsSuggestionListOpen = false;
+            }
+        }
+
+        private void EventSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+        {
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+            {
+                string query = sender.Text.ToLower().Trim();
+
+                if (string.IsNullOrWhiteSpace(query))
+                {
+                    sender.ItemsSource = _allEventDropdownItems.Take(50).ToList();
+                }
+                else
+                {
+                    sender.ItemsSource = _allEventDropdownItems
+                        .Where(x => x.DisplayText.ToLower().Contains(query))
+                        .ToList();
+                }
+            }
+        }
+
+        private async void EventSearchBox_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+        {
+            if (args.SelectedItem is EventDropdownItem selectedWrapper)
+            {
+                sender.Text = selectedWrapper.DisplayText;
+                _currentSelectedEvent = selectedWrapper;
+                await ProcessEventSelectionAsync(selectedWrapper);
+            }
+        }
+
+        // --- EVENT DATA LOADING LOGIC ---
+
+        private async Task ProcessEventSelectionAsync(EventDropdownItem selectedWrapper)
+        {
+            EventRecord selectedEvent = selectedWrapper.Event;
+            ExportButton.IsEnabled = true;
+
+            try
+            {
+                var logs = await _database.GetEventAttendanceLogsAsync(selectedEvent.EventId);
+                _eventMasterLogs = logs.ToList();
+
+                var allAttendees = logs.Where(l => l.Status == "PRESENT").Select(l => l.StudentId).Distinct().ToList();
+
+                var latestStudentLogs = logs.GroupBy(l => l.StudentId)
+                                            .Select(g => g.First())
+                                            .ToList();
+
+                bool isEventLive = selectedWrapper.DisplayText.Contains("🟢 LIVE");
+
+                if (isEventLive)
+                {
+                    _completedStudentIds = latestStudentLogs.Where(l => l.Status == "PRESENT").Select(l => l.StudentId).ToList();
+                    _incompleteStudentIds = latestStudentLogs.Where(l => l.Status == "DEPARTED").Select(l => l.StudentId).ToList();
+                }
+                else
+                {
+                    _completedStudentIds = allAttendees.ToList();
+                    _incompleteStudentIds = new List<string>();
+                }
+
+                int totalEntered = allAttendees.Count;
+                int totalCompleted = _completedStudentIds.Count;
+
+                AttendedCountText.Text = totalEntered.ToString();
+
+                if (totalEntered > 0)
+                {
+                    double retention = ((double)totalCompleted / totalEntered) * 100;
+                    RetentionRateText.Text = $"{retention:F1}%";
+                    RetentionSubText.Text = $"{totalCompleted} out of {totalEntered} attendees completed the event";
+
+                    var arrivalsOnly = logs.Where(l => l.Status == "PRESENT").ToList();
+
+                    var courseStats = arrivalsOnly
+                        .GroupBy(l => string.IsNullOrWhiteSpace(l.Course) ? "Unregistered Course" : l.Course)
+                        .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
+                        .OrderByDescending(x => int.Parse(x.Value)).ToList();
+                    CourseBreakdownItemsControl.ItemsSource = courseStats;
+
+                    var sectionStats = arrivalsOnly
+                        .GroupBy(l => string.IsNullOrWhiteSpace(l.Section) ? "Unassigned" : l.Section)
+                        .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
+                        .OrderByDescending(x => int.Parse(x.Value)).Take(5).ToList();
+                    SectionBreakdownItemsControl.ItemsSource = sectionStats;
+
+                    var modeStats = arrivalsOnly
+                        .GroupBy(l => string.IsNullOrWhiteSpace(l.Mode) ? "Unknown" : l.Mode)
+                        .Select(g => new StatItem { Label = g.Key + " Mode", Value = g.Count().ToString() })
+                        .OrderByDescending(x => int.Parse(x.Value)).ToList();
+                    AuthModesItemsControl.ItemsSource = modeStats;
+                }
+                else
+                {
+                    RetentionRateText.Text = "0%";
+                    RetentionSubText.Text = "No arrivals recorded";
+                    CourseBreakdownItemsControl.ItemsSource = new List<StatItem>();
+                    SectionBreakdownItemsControl.ItemsSource = new List<StatItem>();
+                    AuthModesItemsControl.ItemsSource = new List<StatItem>();
+                }
+
+                if (selectedEvent.IsRestricted)
+                {
+                    var approvedList = await _database.GetEventAttendeesAsync(selectedEvent.EventId);
+                    int expected = approvedList.Count;
+                    ExpectedCountText.Text = $"{expected} Registered Students";
+
+                    if (expected > 0)
+                    {
+                        double rate = ((double)totalEntered / expected) * 100;
+                        TurnoutRateText.Text = $"{rate:F1}%";
+                        TurnoutRateText.Foreground = rate > 75
+                            ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153))
+                            : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    }
+                    else
+                    {
+                        TurnoutRateText.Text = "0%";
+                    }
+                }
+                else
+                {
+                    ExpectedCountText.Text = "Open Event (No Restrictions)";
+                    TurnoutRateText.Text = "N/A";
+                    TurnoutRateText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
+                }
+
+                var courses = _eventMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+                courses.Insert(0, "All Courses");
+                FilterCourseComboBox.ItemsSource = courses;
+
+                var sections = _eventMasterLogs.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                sections.Insert(0, "All Sections");
+                FilterSectionComboBox.ItemsSource = sections;
+
+                if (FilterStatusComboBox.Items.Count > 1 && FilterStatusComboBox.Items[1] is ComboBoxItem statusItem)
+                {
+                    statusItem.Content = isEventLive ? "Ongoing" : "Completed Event";
+                }
+
+                ClearFilters_Click(null, null);
+            }
+            catch { }
+        }
+
+        // --- EVENT LEDGER FILTERING ---
+
         private void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyLedgerFilters();
+        }
+
+        private void SearchEventNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             ApplyLedgerFilters();
         }
@@ -267,6 +387,9 @@ namespace NFC_System
         private void ClearFilters_Click(object sender, RoutedEventArgs e)
         {
             if (FilterTimeComboBox == null || FilterStatusComboBox == null) return;
+
+            SearchEventNameTextBox.Text = "";
+            FilterSortNameComboBox.SelectedIndex = 0;
 
             if (FilterCourseComboBox.Items.Count > 0) FilterCourseComboBox.SelectedIndex = 0;
             if (FilterSectionComboBox.Items.Count > 0) FilterSectionComboBox.SelectedIndex = 0;
@@ -283,7 +406,21 @@ namespace NFC_System
                 AttendanceListView == null)
                 return;
 
+            bool isEventLive = false;
+            if (_currentSelectedEvent != null)
+            {
+                isEventLive = _currentSelectedEvent.DisplayText.Contains("🟢 LIVE");
+            }
+
             var filtered = _eventMasterLogs.AsEnumerable();
+
+            string searchQuery = SearchEventNameTextBox.Text?.Trim().ToLower() ?? "";
+            if (!string.IsNullOrEmpty(searchQuery))
+            {
+                filtered = filtered.Where(l =>
+                    (l.FullName != null && l.FullName.ToLower().Contains(searchQuery)) ||
+                    (l.StudentId != null && l.StudentId.ToLower().Contains(searchQuery)));
+            }
 
             string course = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
             string section = FilterSectionComboBox.SelectedItem?.ToString() ?? "All Sections";
@@ -296,7 +433,7 @@ namespace NFC_System
             if (section != "All Sections")
                 filtered = filtered.Where(l => l.Section == section);
 
-            if (status == "Completed Event")
+            if (status == "Completed Event" || status == "Ongoing")
                 filtered = filtered.Where(l => _completedStudentIds.Contains(l.StudentId));
             else if (status == "Incomplete / Left Early")
                 filtered = filtered.Where(l => _incompleteStudentIds.Contains(l.StudentId));
@@ -306,12 +443,44 @@ namespace NFC_System
             else if (time == "Afternoon (PM)")
                 filtered = filtered.Where(l => l.Timestamp.Contains("PM"));
 
-            AttendanceListView.ItemsSource = filtered.ToList();
+            var viewModels = filtered.Select(l => {
+                bool isCompleted = _completedStudentIds.Contains(l.StudentId);
+
+                string statusText = isCompleted ? (isEventLive ? "Ongoing" : "Completed") : "Incomplete";
+                SolidColorBrush statusColor = isCompleted
+                    ? (isEventLive
+                        ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250)) // Blue for Ongoing
+                        : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153))) // Green for Completed
+                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red for Incomplete
+
+                return new EventAttendanceViewModel
+                {
+                    Timestamp = l.Timestamp,
+                    FullName = l.FullName ?? "Unknown",
+                    StudentId = l.StudentId ?? "",
+                    Course = l.Course ?? "",
+                    Section = l.Section ?? "",
+                    Action = l.Status ?? "", // Maps the "PRESENT/DEPARTED" state
+                    CompletionStatus = statusText,
+                    CompletionColor = statusColor
+                };
+            }).ToList();
+
+            string sortOrder = (FilterSortNameComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default (Time)";
+
+            if (sortOrder == "Name (A-Z)")
+                viewModels = viewModels.OrderBy(v => v.FullName).ToList();
+            else if (sortOrder == "Name (Z-A)")
+                viewModels = viewModels.OrderByDescending(v => v.FullName).ToList();
+
+            AttendanceListView.ItemsSource = viewModels;
         }
+
+        // --- EXPORT LOGIC ---
 
         private async void ExportButton_Click(object sender, RoutedEventArgs e)
         {
-            var logsToExport = AttendanceListView.ItemsSource as IEnumerable<AttendanceLog>;
+            var logsToExport = AttendanceListView.ItemsSource as IEnumerable<EventAttendanceViewModel>;
 
             if (logsToExport == null || !logsToExport.Any())
             {
@@ -333,7 +502,17 @@ namespace NFC_System
 
             picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
             picker.FileTypeChoices.Add("Excel CSV Document", new List<string>() { ".csv" });
-            picker.SuggestedFileName = $"Attendance_Report_{DateTime.Now:yyyyMMdd}";
+
+            string stateTag = "_Report";
+            string eventPrefix = "Attendance";
+
+            if (_currentSelectedEvent != null)
+            {
+                eventPrefix = _currentSelectedEvent.Event.EventId;
+                stateTag = _currentSelectedEvent.DisplayText.Contains("🟢 LIVE") ? "_LIVE" : "_CLOSED";
+            }
+
+            picker.SuggestedFileName = $"{eventPrefix}_Attendance{stateTag}_{DateTime.Now:yyyyMMdd}";
 
             Windows.Storage.StorageFile file = await picker.PickSaveFileAsync();
 
@@ -341,11 +520,11 @@ namespace NFC_System
             {
                 var csvData = new System.Text.StringBuilder();
 
-                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Auth Mode");
+                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Event Completion Status");
 
                 foreach (var log in logsToExport)
                 {
-                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Status}\",\"{log.Mode}\"");
+                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.CompletionStatus}\"");
                 }
 
                 Windows.Storage.CachedFileManager.DeferUpdates(file);
@@ -365,6 +544,8 @@ namespace NFC_System
                 }
             }
         }
+
+        // --- WINDOW MANAGEMENT ---
 
         private void DashboardButton_Click(object sender, RoutedEventArgs e)
         {

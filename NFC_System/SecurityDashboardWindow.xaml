@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:local="using:NFC_System"
     mc:Ignorable="d"
     Title="Security Administration">
 
@@ -38,9 +39,8 @@
         <!-- Main Content -->
         <Grid Grid.Row="1" ColumnSpacing="24">
             <Grid.ColumnDefinitions>
-                <!-- NEW: Named Column Definitions so we can resize them dynamically -->
-                <ColumnDefinition x:Name="LeftAdminColumn" Width="4.5*"/>
-                <ColumnDefinition x:Name="RightLogsColumn" Width="5.5*"/>
+                <ColumnDefinition Width="4.5*"/>
+                <ColumnDefinition Width="5.5*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Left Column: Administration Modules -->
@@ -64,7 +64,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 1. PIN Lockout Recovery & Reset -->
+                    <!-- PIN Lockout Recovery & Reset -->
                     <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                         <StackPanel Spacing="16">
                             <TextBlock Text="Change Student PIN" Style="{StaticResource CardTitleStyle}" Margin="0"/>
@@ -80,7 +80,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 2. Academic Course Management -->
+                    <!-- Academic Course Management -->
                     <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                         <StackPanel Spacing="16">
                             <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
@@ -99,41 +99,22 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- Right Column: Logs & Alerts -->
+            <!-- Right Column: Live Feed & Explorer Trigger -->
             <Grid Grid.Column="1" RowSpacing="24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="1*"/>
-                    <RowDefinition Height="1*"/>
+                    <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Unified Audit Filter Toolbar -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
-
-                    <!-- NEW: Expand Logs Toggle Button -->
-                    <ToggleButton x:Name="ExpandLogsToggle" Content="⛶ Expand Logs" Click="ExpandLogsToggle_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-
-                    <Rectangle Width="2" Height="20" Fill="#30FFFFFF" Margin="8,0"/>
-
-                    <TextBlock Text="Filters:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" Margin="0,0,4,0"/>
-
-                    <ComboBox x:Name="LogTypeFilter" SelectedIndex="0" Width="190" SelectionChanged="LogTypeFilter_SelectionChanged">
-                        <ComboBoxItem Content="All Events"/>
-                        <ComboBoxItem Content="PIN Lockouts"/>
-                        <ComboBoxItem Content="Unauthorized Attempts"/>
-                        <ComboBoxItem Content="Bad Reads"/>
-                        <ComboBoxItem Content="Admin Overrides"/>
-                    </ComboBox>
-
-                    <CalendarDatePicker x:Name="LogDateFilter" PlaceholderText="Select Date" DateChanged="LogDateFilter_DateChanged" Width="150"/>
-
-                    <Button x:Name="ClearFiltersButton" Content="Clear" Click="ClearFiltersButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                    <Button x:Name="OpenPopupLogsButton" Content="⛶ Open Master Audit Explorer" Click="OpenPopupLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="40" Padding="24,0"/>
                 </StackPanel>
 
-                <!-- Security Alerts -->
+                <!-- Live System Activity Feed -->
                 <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
@@ -143,37 +124,43 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Security Alerts" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1AF87171" BorderBrush="#30F87171" BorderThickness="1" VerticalAlignment="Center">
-                                <TextBlock Text="Flagged" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#F87171"/>
+                            <TextBlock Text="Recent System Activity" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" VerticalAlignment="Center">
+                                <TextBlock Text="Live Feed" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#60A5FA"/>
                             </Border>
                         </Grid>
 
-                        <ListView Grid.Row="1" x:Name="AlertsListView" Background="Transparent" Padding="0,0,16,0" SelectionMode="None">
-                            <!-- NEW: ItemTemplate forces the text to wrap instead of cut off -->
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,8" FontSize="14" Foreground="#F87171"/>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </Grid>
-                </Border>
+                        <!-- List Headers -->
+                        <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="3*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="1" Text="Action Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="2" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="3" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            </Grid>
+                        </Border>
 
-                <!-- Verification Audit Trail -->
-                <Border Grid.Row="2" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Verification Audit Trail" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,16"/>
-
-                        <ListView Grid.Row="1" x:Name="AuditLogsListView" Background="Transparent" Padding="0,0,16,0" SelectionMode="None">
-                            <!-- NEW: ItemTemplate forces the text to wrap instead of cut off -->
+                        <ListView Grid.Row="2" x:Name="RecentActivityListView" Background="Transparent" Padding="0,8,16,0" SelectionMode="None">
                             <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,8" FontSize="14"/>
+                                <DataTemplate x:DataType="local:SystemAuditLog">
+                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="3*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="3" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                    </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
@@ -181,5 +168,106 @@
                 </Border>
             </Grid>
         </Grid>
+
+        <!-- ========================================================= -->
+        <!-- THE MAGIC FIX: Expandable Popup Dialog for Deep Inspection-->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="MasterLogsDialog"
+                       CloseButtonText="Close"
+                       DefaultButton="Close"
+                       CornerRadius="8">
+
+            <ContentDialog.Resources>
+                <x:Double x:Key="ContentDialogMaxWidth">1600</x:Double>
+            </ContentDialog.Resources>
+
+            <Grid x:Name="DialogLogContainer" Width="900" Margin="0,16,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Master System Audit Log" FontWeight="SemiBold" FontSize="18" VerticalAlignment="Center"/>
+                    <ToggleButton x:Name="PopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="PopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                </Grid>
+
+                <!-- Filters -->
+                <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PopupSearchBox" Grid.Column="0" PlaceholderText="Search ID, Subject, or Details..." TextChanged="PopupFilter_Changed"/>
+                    <ComboBox x:Name="PopupTypeFilter" Grid.Column="1" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+                        <ComboBoxItem Content="All Types"/>
+                        <ComboBoxItem Content="GATE LOG"/>
+                        <ComboBoxItem Content="SECURITY ALERT"/>
+                        <ComboBoxItem Content="ADMIN ACTION"/>
+                    </ComboBox>
+                    <ComboBox x:Name="PopupStatusFilter" Grid.Column="2" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+                        <ComboBoxItem Content="All Statuses"/>
+                        <ComboBoxItem Content="Granted / Resolved"/>
+                        <ComboBoxItem Content="Denied / Flagged"/>
+                    </ComboBox>
+                    <Button Grid.Column="3" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                </Grid>
+
+                <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="3*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="1" Text="Log Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="4" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            </Grid>
+                        </Border>
+
+                        <ListView Grid.Row="1" x:Name="PopupLogsListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="local:SystemAuditLog">
+                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1*"/>
+                                            <ColumnDefinition Width="3*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="4" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+            </Grid>
+        </ContentDialog>
     </Grid>
 </Window>

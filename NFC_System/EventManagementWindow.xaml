@@ -93,7 +93,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Spacing="4">
                                 <TextBlock Text="Active Events" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Click any restricted event to manage its attendee list." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                <TextBlock Text="Single-click to select and close an event. Double-click a restricted event to manage its attendee list." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
                             </StackPanel>
                             <Button x:Name="CloseEventButton" Grid.Column="1" Content="Close Selected Event" Click="CloseEventButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" IsEnabled="False" VerticalAlignment="Top"/>
                         </Grid>
@@ -113,10 +113,10 @@
                             </Grid>
                         </Border>
 
-                        <ListView x:Name="ActiveEventsListView" SelectionChanged="ActiveEventsListView_SelectionChanged" IsItemClickEnabled="True" ItemClick="ActiveEventsListView_ItemClick" Background="Transparent" CornerRadius="8" MaxHeight="200">
+                        <ListView x:Name="ActiveEventsListView" SelectionChanged="ActiveEventsListView_SelectionChanged" DoubleTapped="ActiveEventsListView_DoubleTapped" Background="Transparent" CornerRadius="8" MaxHeight="200">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="local:EventRecord">
-                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" Background="Transparent">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1.5*"/>
                                             <ColumnDefinition Width="2.5*"/>
@@ -159,97 +159,166 @@
         <ContentDialog x:Name="AttendeeManagementDialog"
                        CloseButtonText="Done"
                        DefaultButton="Close"
-                       CornerRadius="8"
-                       MaxWidth="800">
+                       CornerRadius="8">
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,16,0,0" Padding="0,0,16,0">
+            <!-- THE MAGIC FIX: Overrides the strict default Windows width limits -->
+            <ContentDialog.Resources>
+                <x:Double x:Key="ContentDialogMaxWidth">1400</x:Double>
+            </ContentDialog.Resources>
 
-                <StackPanel HorizontalAlignment="Stretch" Spacing="24">
+            <!-- Base width set to 600. The C# code will dynamically bump this to 1100 when expanding -->
+            <Grid x:Name="DialogContentContainer" Width="600" Margin="0,16,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Add by Filter (Batch)" FontWeight="SemiBold" FontSize="16"/>
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                <!-- SECTION 1: Add by Filter -->
+                <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,24">
+                    <TextBlock Text="Add by Filter (Batch)" FontWeight="SemiBold" FontSize="16"/>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="1.5*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-                            <ComboBox x:Name="CourseComboBox" Grid.Column="0" Header="Course" HorizontalAlignment="Stretch" PlaceholderText="Any Course"/>
-                            <ComboBox x:Name="YearComboBox" Grid.Column="1" Header="Year Level" HorizontalAlignment="Stretch" PlaceholderText="Any Year">
-                                <ComboBoxItem Content="1"/>
-                                <ComboBoxItem Content="2"/>
-                                <ComboBoxItem Content="3"/>
-                                <ComboBoxItem Content="4"/>
-                                <ComboBoxItem Content="5+"/>
-                            </ComboBox>
+                        <ComboBox x:Name="CourseComboBox" Grid.Column="0" Header="Course" HorizontalAlignment="Stretch" PlaceholderText="Any Course"/>
+                        <ComboBox x:Name="YearComboBox" Grid.Column="1" Header="Year Level" HorizontalAlignment="Stretch" PlaceholderText="Any Year">
+                            <ComboBoxItem Content="1"/>
+                            <ComboBoxItem Content="2"/>
+                            <ComboBoxItem Content="3"/>
+                            <ComboBoxItem Content="4"/>
+                            <ComboBoxItem Content="5+"/>
+                        </ComboBox>
 
-                            <Button Content="Add Batch" Grid.Column="2" Click="AddBatchButton_Click" VerticalAlignment="Bottom" Height="55" Background="{StaticResource PrimaryAccentBrush}" Foreground="White"/>
-                        </Grid>
-                    </StackPanel>
+                        <Button Content="Add Batch" Grid.Column="2" Click="AddBatchButton_Click" VerticalAlignment="Bottom" Height="55" Background="{StaticResource PrimaryAccentBrush}" Foreground="White"/>
+                    </Grid>
+                </StackPanel>
 
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Add Individual Student" FontWeight="SemiBold" FontSize="16"/>
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="IndividualIdTextBox" Grid.Column="0" PlaceholderText="Enter Student ID..." HorizontalAlignment="Stretch"/>
-                            <Button Content="Add Student" Grid.Column="1" Click="AddIndividualButton_Click" Width="120" Height="32"/>
-                        </Grid>
-                    </StackPanel>
+                <!-- SECTION 2: Add Individual -->
+                <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,24">
+                    <TextBlock Text="Add Individual Student" FontWeight="SemiBold" FontSize="16"/>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="IndividualIdTextBox" Grid.Column="0" PlaceholderText="Enter Student ID..." HorizontalAlignment="Stretch"/>
+                        <Button Content="Add Student" Grid.Column="1" Click="AddIndividualButton_Click" Width="120" Height="32"/>
+                    </Grid>
+                </StackPanel>
 
-                    <Border BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF" Padding="16">
-                        <StackPanel Spacing="12">
-                            <Grid RowSpacing="12">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+                <!-- SECTION 3: The Attendee List / Grid (This part scrolls internally) -->
+                <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF" Padding="16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Text="Approved Attendees" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
+                        <!-- Header & Filters -->
+                        <Grid Grid.Row="0" Margin="0,0,0,16">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-                                    <ComboBox x:Name="ViewFilterCourseComboBox" PlaceholderText="Filter Course" Width="140" SelectionChanged="ViewFilter_SelectionChanged"/>
-                                    <ComboBox x:Name="ViewFilterYearComboBox" PlaceholderText="Filter Year" MinWidth="110" SelectionChanged="ViewFilter_SelectionChanged">
-                                        <ComboBoxItem Content="1"/>
-                                        <ComboBoxItem Content="2"/>
-                                        <ComboBoxItem Content="3"/>
-                                        <ComboBoxItem Content="4"/>
-                                        <ComboBoxItem Content="5+"/>
-                                    </ComboBox>
-                                    <Button Content="Clear" Click="ClearViewFilters_Click" Padding="8,4" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
-                                </StackPanel>
+                            <Grid Grid.Row="0" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Approved Attendees" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
+                                <ToggleButton x:Name="ExpandDialogToggle" Grid.Column="1" Content="⛶ Expand View" Click="ExpandDialogToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                             </Grid>
 
-                            <ListView x:Name="AttendeesListView" MaxHeight="300" Background="Transparent" CornerRadius="8" HorizontalAlignment="Stretch">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="local:StudentRecord">
-                                        <Grid Padding="0,8" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="Wrap"/>
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                                    <TextBlock Text="•" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                                    <TextBlock Text="{x:Bind Course}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
-                                                </StackPanel>
+                            <!-- Proportional Search Bar -->
+                            <Grid Grid.Row="1" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="SearchAttendeeTextBox" Grid.Column="0" PlaceholderText="Search name or ID..." TextChanged="SearchAttendeeTextBox_TextChanged" HorizontalAlignment="Stretch"/>
+                                <Rectangle Grid.Column="1" Width="1" Height="20" Fill="#30FFFFFF"/>
+                                <ComboBox x:Name="ViewFilterCourseComboBox" Grid.Column="2" PlaceholderText="Filter Course" HorizontalAlignment="Stretch" SelectionChanged="ViewFilter_SelectionChanged"/>
+                                <ComboBox x:Name="ViewFilterYearComboBox" Grid.Column="3" PlaceholderText="Filter Year" HorizontalAlignment="Stretch" SelectionChanged="ViewFilter_SelectionChanged">
+                                    <ComboBoxItem Content="1"/>
+                                    <ComboBoxItem Content="2"/>
+                                    <ComboBoxItem Content="3"/>
+                                    <ComboBoxItem Content="4"/>
+                                    <ComboBoxItem Content="5+"/>
+                                </ComboBox>
+                                <Button Grid.Column="4" Content="Clear" Click="ClearViewFilters_Click" Padding="8,4" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                            </Grid>
+                        </Grid>
+
+                        <!-- COLLAPSED VIEW: Standard Vertical List -->
+                        <ListView x:Name="AttendeesListView" Grid.Row="1" MaxHeight="350" Background="Transparent" CornerRadius="8" HorizontalAlignment="Stretch" Visibility="Visible">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="local:StudentRecord">
+                                    <Grid Padding="0,8" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="Wrap"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                                <TextBlock Text="•" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                                <TextBlock Text="{x:Bind Course}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Tag="{x:Bind StudentId}" Click="RemoveAttendeeButton_Click" Background="Transparent" BorderThickness="0" Padding="8">
-                                                <FontIcon Glyph="&#xE74D;" Foreground="#F87171" FontSize="14"/>
-                                            </Button>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </ScrollViewer>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Tag="{x:Bind StudentId}" Click="RemoveAttendeeButton_Click" Background="Transparent" BorderThickness="0" Padding="8">
+                                            <FontIcon Glyph="&#xE74D;" Foreground="#F87171" FontSize="14"/>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <!-- EXPANDED VIEW: Horizontal 5-Row Column Grid -->
+                        <GridView x:Name="AttendeesGridView" Grid.Row="1" Height="350" Background="Transparent" CornerRadius="8" HorizontalAlignment="Stretch" Visibility="Collapsed"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                  ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.VerticalScrollMode="Disabled">
+                            <GridView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <!-- Forces exactly 5 per column, then flows horizontally -->
+                                    <ItemsWrapGrid Orientation="Vertical" MaximumRowsOrColumns="5" />
+                                </ItemsPanelTemplate>
+                            </GridView.ItemsPanel>
+                            <GridView.ItemTemplate>
+                                <DataTemplate x:DataType="local:StudentRecord">
+                                    <!-- Using Border to create the neat line separation between grid items -->
+                                    <Grid Width="250" Padding="12,8" BorderBrush="#20FFFFFF" BorderThickness="0,0,1,1" Margin="0,0,8,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" FontSize="14"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                                <TextBlock Text="-" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                                <TextBlock Text="{x:Bind Course}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="100"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Tag="{x:Bind StudentId}" Click="RemoveAttendeeButton_Click" Background="Transparent" BorderThickness="0" Padding="8">
+                                            <FontIcon Glyph="&#xE74D;" Foreground="#F87171" FontSize="14"/>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </GridView.ItemTemplate>
+                        </GridView>
+
+                    </Grid>
+                </Border>
+            </Grid>
         </ContentDialog>
     </Grid>
 </Window>

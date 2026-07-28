@@ -12,7 +12,6 @@ public sealed class VerificationEngine
         _database = database;
     }
 
-    // NEW: Added the 'isQrFallback' parameter to securely control the flow
     public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null, bool isQrFallback = false)
     {
         StudentRecord? student = await _database.GetStudentByUidAsync(uid);
@@ -69,10 +68,10 @@ public sealed class VerificationEngine
             Mode = mode,
             TransactionType = transactionType,
             EventId = eventId,
-            IsQrFallback = isQrFallback // NEW: Save the flag to the session
+            IsQrFallback = isQrFallback
         };
 
-        // NEW: If this is a QR Fallback, we MUST force a PIN check and skip Fast Mode granting
+        // If this is a QR Fallback, we MUST force a PIN check and skip Fast Mode granting
         if (isQrFallback)
         {
             return new VerificationOutcome
@@ -87,9 +86,14 @@ public sealed class VerificationEngine
             };
         }
 
-        if (mode == VerificationMode.Fast)
+        // ---> NEW LOGIC: Exit transactions bypass PIN and QR requirements entirely <---
+        if (mode == VerificationMode.Fast || transactionType == TransactionType.Exit)
         {
-            return await GrantAsync(session, "NFC validation passed in Fast Mode.");
+            string bypassRemarks = transactionType == TransactionType.Exit
+                ? "NFC validation passed (Exit transactions bypass PIN/QR requirements)."
+                : "NFC validation passed in Fast Mode.";
+
+            return await GrantAsync(session, bypassRemarks);
         }
 
         if (student.PinLocked)
@@ -123,13 +127,19 @@ public sealed class VerificationEngine
         {
             int failedAttempts = student.FailedPinAttempts + 1;
             bool locked = failedAttempts >= 3;
+
+            student.FailedPinAttempts = failedAttempts;
+            student.PinLocked = locked;
+
             await _database.UpdatePinFailureAsync(student.StudentId, failedAttempts, locked);
 
             string error = locked ? "PIN_LOCKED" : "PIN_FAILURE";
             await _database.LogVerificationAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, error, $"Failed PIN attempt {failedAttempts}/3.");
+
             string alertMessage = locked
                 ? $"{student.FullName} reached three failed PIN attempts and has been locked."
                 : $"{student.FullName} entered an incorrect PIN ({failedAttempts}/3).";
+
             await _database.AddAlertAsync(student.StudentId, error, alertMessage);
 
             return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}");
@@ -139,7 +149,6 @@ public sealed class VerificationEngine
         student.FailedPinAttempts = 0;
         student.PinLocked = false;
 
-        // NEW: If they already used a QR code to start this process, don't ask for it again!
         if (session.Mode == VerificationMode.HighSecurity && !session.IsQrFallback)
         {
             return new VerificationOutcome
@@ -154,7 +163,6 @@ public sealed class VerificationEngine
             };
         }
 
-        // Dynamically adjust the log remarks based on what method they used
         string logRemarks = session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.";
         return await GrantAsync(session, logRemarks);
     }
@@ -221,7 +229,6 @@ public sealed class VerificationEngine
 
     public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId)
     {
-        // 1. Validate the payload (Expected: Just the StudentID)
         string extractedStudentId = qrPayload.Trim();
 
         if (string.IsNullOrWhiteSpace(extractedStudentId))
@@ -235,7 +242,6 @@ public sealed class VerificationEngine
             };
         }
 
-        // 2. Fetch the student by ID to retrieve their assigned NFC UID
         StudentRecord? student = await _database.GetStudentByIdAsync(extractedStudentId);
 
         if (student == null)
@@ -249,7 +255,6 @@ public sealed class VerificationEngine
             };
         }
 
-        // 3. Feed their registered NFC UID into the security pipeline, explicitly flagging it as a QR Fallback
         return await BeginNfcVerificationAsync(student.NfcUid, mode, transactionType, eventId, isQrFallback: true);
     }
 
