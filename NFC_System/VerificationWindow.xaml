@@ -51,6 +51,7 @@
                             <ComboBoxItem Content="Fast (NFC Only)"/>
                             <ComboBoxItem Content="Standard (NFC + PIN)"/>
                             <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
+
                         </ComboBox>
                     </StackPanel>
                 </Border>

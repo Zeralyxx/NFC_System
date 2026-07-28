@@ -34,30 +34,24 @@ namespace NFC_System
 
     public sealed partial class KioskModeWindow : Window
     {
-        // ====================================================================
-        // LIVE EVENT BRIDGE: Streams logs to the Guard Window in real-time
-        // ====================================================================
         public static event Action<VerificationOutcome>? OnKioskOutcome;
         public static event Action<string>? OnKioskLog;
 
         private readonly string _originatingMode;
         private readonly string _contextDetails;
 
-        // Hardware Connection
-        private SerialPort? _serialPort;
+        // FIX: The Kiosk now stores the actual Database ID
+        private readonly string? _eventId;
 
-        // Backend Integration
+        private SerialPort? _serialPort;
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
         private VerificationSession? _activeSession;
 
-        // State Machine Properties
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
-
         private readonly DispatcherTimer _inactivityTimer = new();
 
-        // Camera & QR Tracking
         private MediaFrameReader? _frameReader;
         private readonly SoftwareBitmapSource _previewSource = new();
         private MediaCapture? _mediaCapture;
@@ -75,28 +69,24 @@ namespace NFC_System
         private readonly BarcodeReaderGeneric _barcodeReader = new()
         {
             AutoRotate = true,
-            Options = new DecodingOptions
-            {
-                PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.QR_CODE },
-                TryHarder = true
-            }
+            Options = new DecodingOptions { PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.QR_CODE }, TryHarder = true }
         };
 
-        // PIN Tracking
         private string _currentPinBuffer = "";
         private bool _isVerifyingPin = false;
 
-        // Dynamic UI Text Storage
         private string _tempStudentName = "";
         private string _tempStudentId = "";
         private string _outcomeTitle = "";
         private string _outcomeMessage = "";
 
-        public KioskModeWindow(string originatingMode, string contextDetails)
+        // FIX: Constructor updated to accept the Event ID
+        public KioskModeWindow(string originatingMode, string contextDetails, string? eventId = null)
         {
             this.InitializeComponent();
             _originatingMode = originatingMode;
             _contextDetails = contextDetails;
+            _eventId = eventId;
 
             _engine = new VerificationEngine(_database);
 
@@ -143,7 +133,7 @@ namespace NFC_System
             }
             catch { }
         }
-        //Attempt to fix the issue with the keypad not responding by adding a check for the serial port being open before reading data. This should prevent any exceptions from being thrown when the serial port is closed or unavailable.
+
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
             try
@@ -161,13 +151,10 @@ namespace NFC_System
                 }
                 else if (line.StartsWith("KEY="))
                 {
-                    // Force uppercase to prevent any case-sensitivity issues from the hardware
                     string key = line.Substring(4).Trim().ToUpper();
 
                     DispatcherQueue.TryEnqueue(() =>
                     {
-                        // 1. GLOBAL TRIGGER: "D" overrides to QR Fallback from Idle or PIN stages.
-                        // Using .Contains() prevents invisible hardware characters from breaking the logic.
                         if (key.Contains("D"))
                         {
                             if (_currentStage == AuthenticationStage.Idle || _currentStage == AuthenticationStage.WaitingForPIN)
@@ -177,7 +164,6 @@ namespace NFC_System
                             return;
                         }
 
-                        // 2. STANDARD PIN ENTRY (Only active during WaitingForPIN stage)
                         if (_currentStage == AuthenticationStage.WaitingForPIN && !string.IsNullOrEmpty(key))
                         {
                             bool isEnter = key.Contains("A");
@@ -185,8 +171,6 @@ namespace NFC_System
                             bool isCancel = key.Contains("C");
 
                             string digit = "";
-
-                            // Safely extract just the number if one was pressed
                             foreach (char c in key)
                             {
                                 if (char.IsDigit(c))
@@ -212,9 +196,9 @@ namespace NFC_System
                 {
                     _serialPort.DataReceived -= SerialPort_DataReceived;
                     _serialPort.Close();
+                    _serialPort.Dispose();
+                    _serialPort = null;
                 }
-                _serialPort?.Dispose();
-                _serialPort = null;
             }
             catch { }
         }
@@ -223,11 +207,22 @@ namespace NFC_System
         {
             try
             {
-                string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
+                if (_originatingMode == "Event")
+                {
+                    _currentMode = KioskStateController.CurrentMode;
 
-                if (savedMode == "Fast") { _currentMode = VerificationMode.Fast; DebugSecurityLevel.SelectedIndex = 0; }
-                else if (savedMode == "High-Security") { _currentMode = VerificationMode.HighSecurity; DebugSecurityLevel.SelectedIndex = 2; }
-                else { _currentMode = VerificationMode.Standard; DebugSecurityLevel.SelectedIndex = 1; }
+                    if (_currentMode == VerificationMode.Fast) DebugSecurityLevel.SelectedIndex = 0;
+                    else if (_currentMode == VerificationMode.HighSecurity) DebugSecurityLevel.SelectedIndex = 2;
+                    else DebugSecurityLevel.SelectedIndex = 1;
+                }
+                else
+                {
+                    string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
+
+                    if (savedMode == "Fast") { _currentMode = VerificationMode.Fast; DebugSecurityLevel.SelectedIndex = 0; }
+                    else if (savedMode == "High-Security") { _currentMode = VerificationMode.HighSecurity; DebugSecurityLevel.SelectedIndex = 2; }
+                    else { _currentMode = VerificationMode.Standard; DebugSecurityLevel.SelectedIndex = 1; }
+                }
 
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
                 TryConnectSerial(nfcPort);
@@ -295,10 +290,17 @@ namespace NFC_System
             else
                 _inactivityTimer.Stop();
 
-            if (newState == AuthenticationStage.AccessGranted || newState == AuthenticationStage.AccessDenied)
+            // UPDATED: Split the reset delay to allow faster throughput for successful entries
+            if (newState == AuthenticationStage.AccessGranted)
             {
-                await Task.Delay(3500);
-                if (_currentStage == AuthenticationStage.AccessGranted || _currentStage == AuthenticationStage.AccessDenied)
+                await Task.Delay(1000); // 1-second delay for approvals
+                if (_currentStage == AuthenticationStage.AccessGranted)
+                    SetState(AuthenticationStage.Idle);
+            }
+            else if (newState == AuthenticationStage.AccessDenied)
+            {
+                await Task.Delay(2000); // 2-second delay for denials so users can read the error
+                if (_currentStage == AuthenticationStage.AccessDenied)
                     SetState(AuthenticationStage.Idle);
             }
         }
@@ -364,8 +366,11 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.Idle) return;
 
-            var transType = _originatingMode == "Event" ? TransactionType.EventAttendance : KioskStateController.CurrentType;
-            string? eventId = _originatingMode == "Event" ? _contextDetails : null;
+            var transType = KioskStateController.CurrentType;
+            if (_originatingMode == "Event" && transType == TransactionType.Entry)
+            {
+                transType = TransactionType.EventAttendance;
+            }
 
             if (IsInvalidUid(uid))
             {
@@ -381,11 +386,10 @@ namespace NFC_System
                 return;
             }
 
-            VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(uid, _currentMode, transType, eventId);
+            VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(uid, _currentMode, transType, _eventId);
 
             if (outcome.Session != null) _activeSession = outcome.Session;
 
-            // STREAM TO GUARD WINDOW
             OnKioskOutcome?.Invoke(outcome);
 
             DispatcherQueue.TryEnqueue(async () =>
@@ -453,11 +457,9 @@ namespace NFC_System
 
                     VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer);
 
-                    // FIX 1: UPDATE THE SESSION SO PROGRESS IS NOT STUCK!
                     if (outcome.Session != null)
                         _activeSession = outcome.Session;
 
-                    // STREAM TO GUARD WINDOW
                     OnKioskOutcome?.Invoke(outcome);
 
                     if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
@@ -522,13 +524,15 @@ namespace NFC_System
 
             if (_activeSession == null)
             {
-                var transType = _originatingMode == "Event" ? TransactionType.EventAttendance : KioskStateController.CurrentType;
-                string? eventId = _originatingMode == "Event" ? _contextDetails : null;
+                var transType = KioskStateController.CurrentType;
+                if (_originatingMode == "Event" && transType == TransactionType.Entry)
+                {
+                    transType = TransactionType.EventAttendance;
+                }
 
-                outcome = await _engine.BeginQrFallbackVerificationAsync(payload, _currentMode, transType, eventId);
+                outcome = await _engine.BeginQrFallbackVerificationAsync(payload, _currentMode, transType, _eventId);
                 if (outcome.Session != null) _activeSession = outcome.Session;
 
-                // STREAM TO GUARD WINDOW
                 OnKioskOutcome?.Invoke(outcome);
 
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
@@ -556,7 +560,6 @@ namespace NFC_System
             outcome = await _engine.SubmitQrAsync(_activeSession, payload);
             if (outcome.Session != null) _activeSession = outcome.Session;
 
-            // STREAM TO GUARD WINDOW
             OnKioskOutcome?.Invoke(outcome);
 
             _outcomeTitle = outcome.ResultTitle;
@@ -673,17 +676,12 @@ namespace NFC_System
 
             if (appWindow != null)
             {
-                // 1. Detect all physically connected monitors
                 var displayAreas = DisplayArea.FindAll();
-
-                // 2. If a 2nd screen is connected (Student Kiosk), auto-move this window to Screen 2
                 if (displayAreas.Count > 1)
                 {
-                    var secondScreen = displayAreas[1]; // Index 1 is the 2nd monitor
+                    var secondScreen = displayAreas[1];
                     appWindow.MoveAndResize(secondScreen.WorkArea);
                 }
-
-                // 3. Lock it into full screen
                 appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
             }
         }

@@ -58,11 +58,12 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <TextBox x:Name="SearchBox" Grid.Column="0" PlaceholderText="Search by ID, Name, or UID..." Height="40" TextChanged="SearchBox_TextChanged"/>
+                        <!-- FIX: Added Header to align perfectly with the comboboxes -->
+                        <TextBox x:Name="SearchBox" Grid.Column="0" Header="Search Directory" PlaceholderText="Search by ID, Name, or UID..." TextChanged="SearchBox_TextChanged" VerticalAlignment="Stretch"/>
 
-                        <ComboBox x:Name="CourseFilterComboBox" Grid.Column="1" Header="Course" Width="180" SelectionChanged="Filter_SelectionChanged"/>
+                        <ComboBox x:Name="CourseFilterComboBox" Grid.Column="1" Header="Course" Width="180" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch"/>
 
-                        <ComboBox x:Name="StatusFilterComboBox" Grid.Column="2" Header="Filter Status" SelectedIndex="0" Width="160" SelectionChanged="Filter_SelectionChanged">
+                        <ComboBox x:Name="StatusFilterComboBox" Grid.Column="2" Header="Filter Status" SelectedIndex="0" Width="160" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch">
                             <ComboBoxItem Content="All Students"/>
                             <ComboBoxItem Content="Active Only"/>
                             <ComboBoxItem Content="Locked Out"/>
@@ -99,8 +100,8 @@
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Grid.Column="3" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
                                 </Grid>
                             </DataTemplate>
@@ -117,46 +118,32 @@
             </Border>
 
             <!-- Right Column: Edit Panel -->
+            <!-- Right Column: Edit Panel -->
             <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="24">
 
                         <StackPanel Spacing="8">
                             <TextBlock Text="Configuration Panel" Style="{StaticResource CardTitleStyle}"/>
-                            <TextBlock Text="Select a student from the directory to edit their profile and security access." Style="{StaticResource BodyTextStyle}"/>
+                            <TextBlock Text="Manage individual security access or perform global batch status updates." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
                         </StackPanel>
 
-                        <!-- Selected Profile Overview -->
-                        <Border Padding="20" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                            <Grid ColumnSpacing="16" RowSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+                        <!-- MOVED UP: Batch Operations Trigger -->
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Advanced Global Operations" Style="{StaticResource DataValueStyle}" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                            <Button x:Name="OpenBatchDialogButton" Content="Batch Update Status (Graduation / Expulsion)" Click="OpenBatchDialogButton_Click" HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                        </StackPanel>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="EditNameText" Grid.Row="0" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}" TextWrapping="Wrap"/>
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="EditIdText" Grid.Row="1" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
-
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="NFC UID" Style="{StaticResource DataLabelStyle}"/>
-                                <TextBlock x:Name="EditUidText" Grid.Row="2" Grid.Column="1" Text="-" Style="{StaticResource DataValueStyle}"/>
-                            </Grid>
-                        </Border>
+                        <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
 
                         <!-- Edit Controls -->
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Security &amp; Enrollment" Style="{StaticResource DataValueStyle}"/>
+                            <TextBlock Text="Individual Security &amp; Enrollment" Style="{StaticResource DataValueStyle}"/>
 
                             <ComboBox x:Name="EditStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch" IsEnabled="False">
                                 <ComboBoxItem Content="Active"/>
                                 <ComboBoxItem Content="Inactive"/>
+                                <ComboBoxItem Content="Graduated"/>
                                 <ComboBoxItem Content="Expelled"/>
                             </ComboBox>
 
@@ -175,11 +162,41 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- Save Actions -->
-                        <Button x:Name="SaveChangesButton" Content="Save Security Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Margin="0,16,0,0"/>
+                        <Button x:Name="SaveChangesButton" Content="Save Security Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Margin="0,8,0,0"/>
+
                     </StackPanel>
                 </ScrollViewer>
             </Border>
         </Grid>
+
+        <!-- ========================================================= -->
+        <!-- POPUP: BATCH OPERATIONS                                   -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="BatchUpdateDialog" Title="Batch Status Update" CloseButtonText="Cancel" CornerRadius="8">
+            <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
+                <TextBlock Text="Warning: This will permanently change the enrollment status of multiple students in the selected bracket. This action will be logged." Foreground="#F87171" TextWrapping="Wrap" FontSize="13"/>
+
+                <ComboBox x:Name="BatchCourseComboBox" Header="Target Course" HorizontalAlignment="Stretch"/>
+
+                <ComboBox x:Name="BatchYearComboBox" Header="Target Year Level" HorizontalAlignment="Stretch" SelectedIndex="0">
+                    <ComboBoxItem Content="All Years"/>
+                    <ComboBoxItem Content="1"/>
+                    <ComboBoxItem Content="2"/>
+                    <ComboBoxItem Content="3"/>
+                    <ComboBoxItem Content="4"/>
+                    <ComboBoxItem Content="5+"/>
+                </ComboBox>
+
+                <ComboBox x:Name="BatchNewStatusComboBox" Header="New Status to Apply" HorizontalAlignment="Stretch" SelectedIndex="2">
+                    <ComboBoxItem Content="Active"/>
+                    <ComboBoxItem Content="Inactive"/>
+                    <ComboBoxItem Content="Graduated"/>
+                    <ComboBoxItem Content="Expelled"/>
+                </ComboBox>
+
+                <Button x:Name="ConfirmBatchButton" Content="Apply Batch Update" Click="ConfirmBatchButton_Click" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Height="44" Margin="0,16,0,0"/>
+                <TextBlock x:Name="BatchDialogStatusText" Foreground="{StaticResource PrimaryAccentBrush}" HorizontalAlignment="Center" FontWeight="SemiBold" Visibility="Collapsed"/>
+            </StackPanel>
+        </ContentDialog>
     </Grid>
 </Window>

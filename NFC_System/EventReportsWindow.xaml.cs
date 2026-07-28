@@ -18,7 +18,6 @@ namespace NFC_System
         public string SubValue { get; set; } = "";
     }
 
-    // View Model used to display custom UI logic without altering the database schema
     public class EventAttendanceViewModel
     {
         public string Timestamp { get; set; } = "";
@@ -31,7 +30,6 @@ namespace NFC_System
         public SolidColorBrush? CompletionColor { get; set; }
     }
 
-    // Wrapper to attach LIVE/CLOSED tags to the dropdown without altering the database
     public class EventDropdownItem
     {
         public EventRecord Event { get; set; } = null!;
@@ -42,16 +40,13 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
 
-        // Caching for Event filtering
         private List<AttendanceLog> _eventMasterLogs = new();
         private List<string> _completedStudentIds = new();
         private List<string> _incompleteStudentIds = new();
         private List<EventDropdownItem> _allEventDropdownItems = new();
 
-        // NEW: Manually tracks the selected event since AutoSuggestBox doesn't have .SelectedItem
         private EventDropdownItem? _currentSelectedEvent = null;
 
-        // Caching for University filtering
         private List<VerificationLogRecord> _univMasterLogs = new();
 
         public EventReportsWindow()
@@ -67,7 +62,6 @@ namespace NFC_System
             {
                 await _database.EnsureSchemaAsync();
 
-                // 1. Load Event Search Box with LIVE/CLOSED Tags
                 IReadOnlyList<EventRecord> allEvents = await _database.GetAllEventsAsync();
                 IReadOnlyList<EventRecord> activeEvents = await _database.GetActiveEventsAsync(9999);
 
@@ -83,7 +77,6 @@ namespace NFC_System
 
                 EventSearchBox.ItemsSource = _allEventDropdownItems;
 
-                // 2. Load General University Analytics
                 var metrics = await _database.GetUniversityMetricsAsync();
                 UnivTotalScansText.Text = metrics.TotalScansToday.ToString("N0");
                 UnivInsideText.Text = metrics.CurrentlyInside.ToString("N0");
@@ -101,7 +94,6 @@ namespace NFC_System
                 var allTimeThreats = await _database.GetDailySecurityAlertsAsync();
                 HistoricalThreatsListView.ItemsSource = allTimeThreats;
 
-                // 3. Load General University Ledger & Dropdowns
                 var univLogs = await _database.GetGeneralLedgerAsync();
                 _univMasterLogs = univLogs.ToList();
 
@@ -190,7 +182,8 @@ namespace NFC_System
             if (status != "All Statuses")
                 filtered = filtered.Where(l => l.Status == status);
 
-            UniversityAuditListView.ItemsSource = filtered.ToList();
+            var finalData = filtered.ToList();
+            UniversityAuditListView.ItemsSource = finalData;
         }
 
         // --- SMART SEARCH DROPDOWN LOGIC ---
@@ -204,7 +197,6 @@ namespace NFC_System
             }
         }
 
-        // NEW: Closes the popup if the user clicks on blank empty spaces (like the left panel)
         private void Background_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
         {
             if (EventSearchBox.IsSuggestionListOpen)
@@ -213,13 +205,11 @@ namespace NFC_System
             }
         }
 
-        // NEW: Closes the popup if the user clicks another interactive element (like the right panel)
         private void EventSearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
             EventSearchBox.IsSuggestionListOpen = false;
         }
 
-        // NEW: Closes the popup instantly if the user tries to scroll the mouse wheel
         private void EventLeftScrollViewer_ViewChanging(object sender, ScrollViewerViewChangingEventArgs e)
         {
             if (EventSearchBox.IsSuggestionListOpen)
@@ -473,7 +463,141 @@ namespace NFC_System
             else if (sortOrder == "Name (Z-A)")
                 viewModels = viewModels.OrderByDescending(v => v.FullName).ToList();
 
-            AttendanceListView.ItemsSource = viewModels;
+            var finalData = viewModels;
+            AttendanceListView.ItemsSource = finalData;
+
+            // Automatically sync the popup if it is open
+            if (EventPopupListView != null)
+                EventPopupListView.ItemsSource = finalData;
+        }
+
+        // --- MASTER EXPLORER POPUPS ---
+
+        private async void OpenUnivExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            UnivExplorerDialog.XamlRoot = this.Content.XamlRoot;
+            UnivDialogContainer.Width = 1000;
+            UnivPopupExpandToggle.IsChecked = false;
+            UnivPopupExpandToggle.Content = "⛶ Expand View";
+
+            // Populate the dropdown filters dynamically based on the current data pool
+            var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+            courses.Insert(0, "All Courses");
+            UnivPopupCourseFilter.ItemsSource = courses;
+
+            var sections = _univMasterLogs.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+            sections.Insert(0, "All Sections");
+            UnivPopupSectionFilter.ItemsSource = sections;
+
+            UnivPopupClear_Click(null, null);
+
+            await UnivExplorerDialog.ShowAsync();
+        }
+
+        private void UnivPopupExpandToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (UnivPopupExpandToggle.IsChecked == true)
+            {
+                UnivDialogContainer.Width = 1400;
+                UnivPopupExpandToggle.Content = "⮌ Collapse View";
+            }
+            else
+            {
+                UnivDialogContainer.Width = 1000;
+                UnivPopupExpandToggle.Content = "⛶ Expand View";
+            }
+        }
+
+        // --- NEW: DEDICATED UNIVERSITY POPUP FILTERING LOGIC ---
+
+        private void UnivPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyUnivPopupFilters();
+
+        private void UnivPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyUnivPopupFilters();
+
+        private void UnivPopupClear_Click(object sender, RoutedEventArgs e)
+        {
+            UnivPopupSearchBox.Text = "";
+            UnivPopupDatePicker.Date = null;
+            UnivPopupSortBox.SelectedIndex = 0;
+
+            if (UnivPopupCourseFilter.Items.Count > 0) UnivPopupCourseFilter.SelectedIndex = 0;
+            if (UnivPopupSectionFilter.Items.Count > 0) UnivPopupSectionFilter.SelectedIndex = 0;
+            UnivPopupStatusFilter.SelectedIndex = 0;
+
+            ApplyUnivPopupFilters();
+        }
+
+        private void ApplyUnivPopupFilters()
+        {
+            if (_univMasterLogs == null || UnivPopupListView == null) return;
+
+            var filtered = _univMasterLogs.AsEnumerable();
+
+            string query = UnivPopupSearchBox.Text?.Trim().ToLower() ?? "";
+            if (!string.IsNullOrEmpty(query))
+            {
+                filtered = filtered.Where(l =>
+                    (l.FullName != null && l.FullName.ToLower().Contains(query)) ||
+                    (l.StudentId != null && l.StudentId.ToLower().Contains(query)));
+            }
+
+            if (UnivPopupDatePicker.Date.HasValue)
+            {
+                string targetDateStr = UnivPopupDatePicker.Date.Value.ToString("MMM dd"); // Log format is "MMM dd - hh:mm tt"
+                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.StartsWith(targetDateStr));
+            }
+
+            string course = UnivPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+            string section = UnivPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
+            string status = (UnivPopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
+
+            if (course != "All Courses") filtered = filtered.Where(l => l.Course == course);
+            if (section != "All Sections") filtered = filtered.Where(l => l.Section == section);
+            if (status != "All Statuses") filtered = filtered.Where(l => l.Status == status);
+
+            string sortOrder = (UnivPopupSortBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Newest First";
+            if (sortOrder == "Oldest First")
+            {
+                filtered = filtered.Reverse(); // Original db pull is strictly DESC, so reverse gives exact ASC order
+            }
+            else if (sortOrder == "Name (A-Z)")
+            {
+                filtered = filtered.OrderBy(l => l.FullName);
+            }
+            else if (sortOrder == "Name (Z-A)")
+            {
+                filtered = filtered.OrderByDescending(l => l.FullName);
+            }
+
+            UnivPopupListView.ItemsSource = filtered.ToList();
+        }
+
+        // --- EVENT POPUP EXPLORER ---
+
+        private async void OpenEventExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            EventExplorerDialog.XamlRoot = this.Content.XamlRoot;
+            EventDialogContainer.Width = 1000;
+            EventPopupExpandToggle.IsChecked = false;
+            EventPopupExpandToggle.Content = "⛶ Expand View";
+
+            EventPopupListView.ItemsSource = AttendanceListView.ItemsSource;
+
+            await EventExplorerDialog.ShowAsync();
+        }
+
+        private void EventPopupExpandToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventPopupExpandToggle.IsChecked == true)
+            {
+                EventDialogContainer.Width = 1400;
+                EventPopupExpandToggle.Content = "⮌ Collapse View";
+            }
+            else
+            {
+                EventDialogContainer.Width = 1000;
+                EventPopupExpandToggle.Content = "⛶ Expand View";
+            }
         }
 
         // --- EXPORT LOGIC ---

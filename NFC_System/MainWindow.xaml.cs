@@ -19,6 +19,7 @@ namespace NFC_System
     public sealed partial class MainWindow : Window
     {
         private SerialPort? _serialPort;
+        private readonly DatabaseService _database = new();
 
         public MainWindow()
         {
@@ -65,42 +66,77 @@ namespace NFC_System
                 {
                     string uid = line.Substring(4).Trim();
 
-                    // Route back to the main UI thread to process the login
-                    DispatcherQueue.TryEnqueue(() => ProcessLoginScan(uid));
+                    // Route back to the main UI thread to process the database login query
+                    DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
                 }
             }
             catch { }
         }
 
-        private void ProcessLoginScan(string uid)
+        private async Task ProcessLoginScanAsync(string uid)
         {
             LoginStatusText.Text = "Authenticating...";
             LoginLoadingRing.IsActive = true;
             LoginLoadingRing.Visibility = Visibility.Visible;
 
-            // MOCK DATABASE AUTHENTICATION: 
-            // In a real setup, you would query "SELECT Role FROM Staff WHERE Uid = @uid"
-            // For the prototype, we assume UID "04:A1:B2:C3" is the Admin, and anything else valid is Personnel.
+            string? role = null;
 
-            if (uid == "04:A1:B2:C3")
+            try
+            {
+                role = await _database.GetStaffRoleAsync(uid);
+            }
+            catch
+            {
+                LoginStatusText.Text = "Database connection error.";
+                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                LoginLoadingRing.IsActive = false;
+                LoginLoadingRing.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            if (role == "Administrator")
             {
                 AppSession.IsAdmin = true;
                 AppSession.IsLoggedIn = true;
+
+                await _database.AddAlertAsync(null, "ADMIN_LOGIN", $"Administrator logged in (NFC UID: {uid})");
+
                 ApplyRoleBasedAccess();
             }
-            else if (!string.IsNullOrWhiteSpace(uid) && uid != "00:00:00:00") // Assuming any valid card is normal personnel
+            else if (role == "Security Personnel")
             {
                 AppSession.IsAdmin = false;
                 AppSession.IsLoggedIn = true;
+
+                await _database.AddAlertAsync(null, "STAFF_LOGIN", $"Security Personnel logged in (NFC UID: {uid})");
+
                 ApplyRoleBasedAccess();
             }
             else
             {
-                LoginStatusText.Text = "Invalid ID. Please try again.";
-                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                LoginLoadingRing.IsActive = false;
-                LoginLoadingRing.Visibility = Visibility.Collapsed;
+                // Fallback prototype master-key (prevents lockout before the first admin is registered)
+                if (uid == "04:A1:B2:C3")
+                {
+                    AppSession.IsAdmin = true;
+                    AppSession.IsLoggedIn = true;
+
+                    await _database.AddAlertAsync(null, "ADMIN_LOGIN", $"Master Administrator logged in via fallback key.");
+
+                    ApplyRoleBasedAccess();
+                }
+                else
+                {
+                    LoginStatusText.Text = "Access Denied. Card not registered for Staff Access.";
+                    LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    LoginLoadingRing.IsActive = false;
+                    LoginLoadingRing.Visibility = Visibility.Collapsed;
+                }
             }
+        }
+
+        private void ProcessLoginScan(string uid)
+        {
+            _ = ProcessLoginScanAsync(uid);
         }
 
         private void ApplyRoleBasedAccess()
@@ -115,6 +151,10 @@ namespace NFC_System
             if (AppSession.IsAdmin)
             {
                 ActiveRoleText.Text = "Administrator";
+
+                // FIX: Explicitly reset card columns back to default 3-column Admin layout
+                EventAttendanceCard.SetValue(Grid.ColumnProperty, 1);
+                VerificationCard.SetValue(Grid.ColumnProperty, 2);
 
                 // Show all cards
                 RegistrationCard.Visibility = Visibility.Visible;
@@ -139,11 +179,17 @@ namespace NFC_System
                 // Center the two remaining cards dynamically
                 EventAttendanceCard.SetValue(Grid.ColumnProperty, 0);
                 VerificationCard.SetValue(Grid.ColumnProperty, 1);
+
+                EventAttendanceCard.Visibility = Visibility.Visible;
+                VerificationCard.Visibility = Visibility.Visible;
             }
         }
 
         private void SignOut_Click(object sender, RoutedEventArgs e)
         {
+            string activeRole = AppSession.IsAdmin ? "Administrator" : "Security Personnel";
+            _ = _database.AddAlertAsync(null, "STAFF_LOGOUT", $"{activeRole} signed out of the system.");
+
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
 

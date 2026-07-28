@@ -277,7 +277,7 @@
                     <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
                 </Viewbox>
 
-                <TextBlock Text="SYSTEM SECURED" FontSize="48" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" CharacterSpacing="150"/>
+                <TextBlock Text="Risk-Based NFC Verification System" FontSize="48" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" CharacterSpacing="150"/>
                 <TextBlock x:Name="LoginStatusText" Text="Please tap your Staff or Admin NFC ID to log in." FontSize="18" Foreground="#A0A0A0" HorizontalAlignment="Center" Margin="0,0,0,32"/>
 
                 <ProgressRing x:Name="LoginLoadingRing" IsActive="False" Visibility="Collapsed" HorizontalAlignment="Center" Width="40" Height="40" Margin="0,0,0,24"/>

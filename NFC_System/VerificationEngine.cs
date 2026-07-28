@@ -41,7 +41,8 @@ public sealed class VerificationEngine
             return Denied(uid, student, "ACCESS DENIED", "Anti-tailgating rule blocked repeated entry", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | TAILGATING");
         }
 
-        if (transactionType == TransactionType.Exit && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
+        // Only enforce Exit Tailgating if they are leaving the Main Gate (Not an event)
+        if (transactionType == TransactionType.Exit && string.IsNullOrWhiteSpace(eventId) && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
         {
             string error = "IRREGULAR_EXIT_SEQUENCE";
             await _database.LogVerificationAsync(student, uid, transactionType, mode, false, error, error, "Exit attempted while student is already marked OUTSIDE.");
@@ -71,7 +72,6 @@ public sealed class VerificationEngine
             IsQrFallback = isQrFallback
         };
 
-        // If this is a QR Fallback, we MUST force a PIN check and skip Fast Mode granting
         if (isQrFallback)
         {
             return new VerificationOutcome
@@ -86,11 +86,10 @@ public sealed class VerificationEngine
             };
         }
 
-        // ---> NEW LOGIC: Exit transactions bypass PIN and QR requirements entirely <---
         if (mode == VerificationMode.Fast || transactionType == TransactionType.Exit)
         {
             string bypassRemarks = transactionType == TransactionType.Exit
-                ? "NFC validation passed (Exit transactions bypass PIN/QR requirements)."
+                ? "NFC validation passed."
                 : "NFC validation passed in Fast Mode.";
 
             return await GrantAsync(session, bypassRemarks);
@@ -198,17 +197,22 @@ public sealed class VerificationEngine
         }
         else if (session.TransactionType == TransactionType.Exit)
         {
-            await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
-            student.EntryState = "OUTSIDE";
-
+            // FIX: Ensure Event Checkouts do NOT mark the student as OUTSIDE the whole University
             if (!string.IsNullOrWhiteSpace(session.EventId))
             {
                 await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
+            }
+            else
+            {
+                await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
+                student.EntryState = "OUTSIDE";
             }
         }
         else if (session.TransactionType == TransactionType.EventAttendance)
         {
             await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
+
+            // Mark them as inside the university if they weren't already
             await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
             student.EntryState = "INSIDE";
         }
@@ -233,26 +237,14 @@ public sealed class VerificationEngine
 
         if (string.IsNullOrWhiteSpace(extractedStudentId))
         {
-            return new VerificationOutcome
-            {
-                IsGranted = false,
-                Step = VerificationStep.Completed,
-                ResultTitle = "INVALID CREDENTIAL",
-                ResultMessage = "QR code payload is empty or unreadable."
-            };
+            return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "QR code payload is empty or unreadable." };
         }
 
         StudentRecord? student = await _database.GetStudentByIdAsync(extractedStudentId);
 
         if (student == null)
         {
-            return new VerificationOutcome
-            {
-                IsGranted = false,
-                Step = VerificationStep.Completed,
-                ResultTitle = "INVALID CREDENTIAL",
-                ResultMessage = "Student ID not found in the database."
-            };
+            return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "Student ID not found in the database." };
         }
 
         return await BeginNfcVerificationAsync(student.NfcUid, mode, transactionType, eventId, isQrFallback: true);
@@ -260,15 +252,6 @@ public sealed class VerificationEngine
 
     private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)
     {
-        return new VerificationOutcome
-        {
-            Step = VerificationStep.Completed,
-            IsGranted = false,
-            ResultTitle = title,
-            ResultMessage = message,
-            ErrorCategory = errorCategory,
-            Student = student,
-            LogLine = logLine
-        };
+        return new VerificationOutcome { Step = VerificationStep.Completed, IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory, Student = student, LogLine = logLine };
     }
 }

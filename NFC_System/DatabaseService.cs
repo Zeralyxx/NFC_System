@@ -17,7 +17,6 @@ public sealed class VerificationLogRecord
     public string Status { get; set; } = "";
     public string Mode { get; set; } = "";
 
-    // NEW: Bypasses the XAML Converter bug by assigning the color directly in the data model!
     public Microsoft.UI.Xaml.Media.Brush StatusColor =>
         Status == "GRANTED"
             ? new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)) // Green
@@ -42,10 +41,9 @@ public sealed class AttendanceLog
     public string StudentId { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Course { get; set; } = "";
-    public string Section { get; set; } = ""; // NEW
+    public string Section { get; set; } = "";
     public string Mode { get; set; } = "";
-
-    public string Status { get; set; } = ""; // NEW: Catches "PRESENT" or "DEPARTED"
+    public string Status { get; set; } = "";
 }
 
 public sealed class DatabaseService
@@ -54,7 +52,6 @@ public sealed class DatabaseService
 
     public Task EnsureSchemaAsync()
     {
-        // Table structures are safely maintained inside phpMyAdmin to prevent runtime structural lag.
         return Task.CompletedTask;
     }
 
@@ -64,8 +61,7 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // 1. Get Verification Logs
-        using (var cmd1 = new MySqlCommand("SELECT timestamp, student_id, nfc_uid, transaction_type, is_granted, error_code, remarks FROM verification_logs ORDER BY timestamp DESC LIMIT @limit", connection))
+        using (var cmd1 = new MySqlCommand("SELECT timestamp, student_id, nfc_uid, transaction_type, is_granted, error_code, remarks FROM verification_logs WHERE transaction_type != 'EventAttendance' ORDER BY timestamp DESC LIMIT @limit", connection))
         {
             cmd1.Parameters.AddWithValue("@limit", limit);
             using var reader = await cmd1.ExecuteReaderAsync();
@@ -77,7 +73,6 @@ public sealed class DatabaseService
                 string error = Value(reader["error_code"]);
                 string details = Value(reader["remarks"]);
 
-                // Format detailed breakdown for failures
                 if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
                     details = $"[{error}] {details}";
 
@@ -96,7 +91,6 @@ public sealed class DatabaseService
             }
         }
 
-        // 2. Get Security & System Alerts
         using (var cmd2 = new MySqlCommand("SELECT timestamp, student_id, alert_type, message FROM alerts ORDER BY timestamp DESC LIMIT @limit", connection))
         {
             cmd2.Parameters.AddWithValue("@limit", limit);
@@ -104,12 +98,17 @@ public sealed class DatabaseService
             while (await reader.ReadAsync())
             {
                 string alertType = Value(reader["alert_type"]);
-                string status = alertType.Contains("OVERRIDE") ? "RESOLVED" : "FLAGGED";
+
+                // NEW: Dynamically detects any Admin or Staff action
+                bool isAdminAction = alertType.StartsWith("ADMIN") || alertType.StartsWith("STAFF");
+
+                string status = isAdminAction ? "RESOLVED" : "FLAGGED";
+                string logType = isAdminAction ? "ADMIN ACTION" : "SECURITY ALERT";
 
                 masterLogs.Add(new SystemAuditLog
                 {
                     Timestamp = Convert.ToDateTime(reader["timestamp"]),
-                    LogType = alertType == "ADMIN_OVERRIDE" ? "ADMIN ACTION" : "SECURITY ALERT",
+                    LogType = logType,
                     Subject = Value(reader["student_id"]),
                     Action = alertType,
                     Status = status,
@@ -118,18 +117,17 @@ public sealed class DatabaseService
             }
         }
 
-        // 3. Sort completely by Timestamp and dynamically apply UI colors
         var sorted = masterLogs.OrderByDescending(l => l.Timestamp).Take(limit).ToList();
         foreach (var log in sorted)
         {
             log.DisplayTime = log.Timestamp.ToString("MMM dd, yyyy - hh:mm:ss tt");
 
             if (log.Status == "GRANTED" || log.Status == "RESOLVED")
-                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
+                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
             else if (log.Status == "DENIED" || log.Status == "FLAGGED")
-                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
             else
-                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160)); // Gray
+                log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
         }
 
         return sorted;
@@ -144,13 +142,13 @@ public sealed class DatabaseService
         int inside = 0;
         int denied = 0;
 
-        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE DATE(timestamp) = CURDATE()", connection))
+        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE transaction_type != 'EventAttendance' AND DATE(timestamp) = CURDATE()", connection))
             totalScans = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
         using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE entry_state = 'INSIDE'", connection))
             inside = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
-        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
+        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
             denied = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
         return (totalScans, inside, denied);
@@ -161,11 +159,10 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Gets the total blocked/denied entries for every day in system history
         using var command = new MySqlCommand(@"
             SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
             FROM verification_logs 
-            WHERE is_granted = 0 
+            WHERE transaction_type != 'EventAttendance' AND is_granted = 0 
             GROUP BY DATE(timestamp), DateLbl 
             ORDER BY DATE(timestamp) DESC", connection);
 
@@ -186,11 +183,10 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Fetches daily denied counts for the last 30 days, ordered highest to lowest
         using var command = new MySqlCommand(@"
             SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
             FROM verification_logs 
-            WHERE is_granted = 0 AND timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
             GROUP BY DATE(timestamp), DateLbl
             ORDER BY Total DESC", connection);
 
@@ -201,11 +197,10 @@ public sealed class DatabaseService
             list.Add((Value(reader["DateLbl"]), Convert.ToInt32(reader["Total"])));
         }
 
-        // Return placeholders if there are no logs at all
         if (list.Count == 0) return ("No Data", 0, "No Data", 0);
 
-        var high = list.First(); // Highest count
-        var low = list.Last();   // Lowest count
+        var high = list.First();
+        var low = list.Last();
 
         return (high.DateLbl, high.Count, low.DateLbl, low.Count);
     }
@@ -215,7 +210,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Gets the total successful entries per day for the last 7 active days
         using var command = new MySqlCommand(@"
             SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
             FROM verification_logs 
@@ -247,6 +241,7 @@ public sealed class DatabaseService
                    vl.transaction_type, vl.is_granted, vl.verification_mode
             FROM verification_logs vl
             LEFT JOIN students s ON vl.student_id = s.student_id
+            WHERE vl.transaction_type != 'EventAttendance'
             ORDER BY vl.timestamp DESC
             LIMIT 500", connection);
 
@@ -286,7 +281,6 @@ public sealed class DatabaseService
         string? salt = null;
         string? hash = null;
 
-        // Only generate a new secure hash if the guard actually typed a new PIN
         if (!string.IsNullOrWhiteSpace(pin))
         {
             var hashedResult = PinHasher.HashPin(pin);
@@ -294,7 +288,6 @@ public sealed class DatabaseService
             hash = hashedResult.Hash;
         }
 
-        // 1. Check if the student already exists in the database
         bool exists = false;
         using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
         {
@@ -304,10 +297,8 @@ public sealed class DatabaseService
 
         string sql;
 
-        // 2. Dynamically build the correct SQL query
         if (exists)
         {
-            // If they exist AND provided a new PIN, update everything including the PIN
             if (salt != null && hash != null)
             {
                 sql = @"
@@ -320,7 +311,6 @@ public sealed class DatabaseService
             }
             else
             {
-                // If they left the PIN blank, update everything EXCEPT the PIN
                 sql = @"
                 UPDATE students 
                 SET full_name = @full_name, course = @course, year_level = @year_level, 
@@ -331,7 +321,6 @@ public sealed class DatabaseService
         }
         else
         {
-            // If it's a brand new student, run a standard INSERT
             sql = @"
             INSERT INTO students
             (student_id, full_name, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
@@ -342,6 +331,9 @@ public sealed class DatabaseService
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered or updated student profile for {student.FullName}.");
     }
 
     public async Task<StudentRecord?> GetStudentByUidAsync(string uid)
@@ -501,7 +493,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Pulls the official list of courses you created in the Dashboard
         using var command = new MySqlCommand("SELECT course_name FROM courses ORDER BY course_name ASC", connection);
 
         var courses = new List<string>();
@@ -512,15 +503,18 @@ public sealed class DatabaseService
         }
         return courses;
     }
+
     public async Task AddCourseAsync(string courseName)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // INSERT IGNORE prevents a crash if you try to add the exact same course twice
         using var command = new MySqlCommand("INSERT IGNORE INTO courses (course_name) VALUES (@name)", connection);
         command.Parameters.AddWithValue("@name", courseName.Trim());
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(null, "ADMIN_ACTION", $"Added new academic course to database: {courseName}");
     }
 
     public async Task UpdateStudentStatusAsync(string studentId, string status)
@@ -533,6 +527,9 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(studentId, "ADMIN_ACTION", $"Updated student status to '{status}'.");
     }
 
     public async Task UnlockAccountAsync(string studentId)
@@ -649,6 +646,7 @@ public sealed class DatabaseService
         using var command = new MySqlCommand(@"
             SELECT timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks
             FROM verification_logs
+            WHERE transaction_type != 'EventAttendance'
             ORDER BY timestamp DESC
             LIMIT @limit", connection);
         command.Parameters.AddWithValue("@limit", limit);
@@ -736,7 +734,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // UPDATED: Now inserts is_active = TRUE, and reactivates it if updated
         using var command = new MySqlCommand(@"
             INSERT INTO events (event_id, event_name, event_date, verification_mode, is_restricted, is_active)
             VALUES (@event_id, @event_name, NOW(), @mode, @is_restricted, TRUE)
@@ -746,6 +743,9 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@mode", ToStorageValue(mode));
         command.Parameters.AddWithValue("@is_restricted", isRestricted ? 1 : 0);
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(null, "ADMIN_ACTION", $"Created or updated Event Profile '{eventName}' ({eventId}).");
     }
 
 
@@ -759,6 +759,9 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@event_id", eventId);
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(studentId, "ADMIN_ACTION", $"Manually removed student from event roster for '{eventId}'.");
     }
 
     public async Task AddBatchToEventAsync(string eventId, string? courseName, string? yearLevel)
@@ -766,7 +769,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Dynamically build the WHERE clause based on what the user selected
         var whereClauses = new List<string>();
         if (!string.IsNullOrWhiteSpace(courseName)) whereClauses.Add("course = @course");
         if (!string.IsNullOrWhiteSpace(yearLevel)) whereClauses.Add("year_level = @year");
@@ -784,9 +786,12 @@ public sealed class DatabaseService
             command.Parameters.AddWithValue("@course", courseName);
 
         if (!string.IsNullOrWhiteSpace(yearLevel))
-            command.Parameters.AddWithValue("@year", yearLevel.Replace("Year ", "").Trim()); // Handles "Year 1" -> "1"
+            command.Parameters.AddWithValue("@year", yearLevel.Replace("Year ", "").Trim());
 
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(null, "ADMIN_ACTION", $"Executed batch approval for Event '{eventId}'. Filter constraints applied.");
     }
 
     public async Task AddEventAttendeeAsync(string eventId, string studentId)
@@ -794,13 +799,15 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // FIX: Changed to INSERT IGNORE for consistency
         using var command = new MySqlCommand(@"
             INSERT IGNORE INTO event_approved_students (event_id, student_id)
             VALUES (@event_id, @student_id)", connection);
         command.Parameters.AddWithValue("@event_id", eventId);
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(studentId, "ADMIN_ACTION", $"Manually approved student for Event '{eventId}'.");
     }
 
     public async Task<IReadOnlyList<StudentRecord>> GetEventAttendeesAsync(string eventId)
@@ -808,9 +815,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // FIX: Switched to a LEFT JOIN and selected 'eas.student_id' directly. 
-        // Now, even if a student isn't formally registered in the main system yet, 
-        // their ID will still show up on the Event list!
         using var command = new MySqlCommand(@"
             SELECT eas.student_id, s.full_name, s.course, s.year_level, s.section_name, s.status, s.nfc_uid, 
                    s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp
@@ -826,8 +830,6 @@ public sealed class DatabaseService
         {
             var student = ReadStudent(reader);
 
-            // If the student ID was added but they have no name in the database yet, 
-            // give them a placeholder so the UI doesn't look blank.
             if (string.IsNullOrWhiteSpace(student.FullName))
             {
                 student.FullName = "Unregistered Student";
@@ -838,14 +840,11 @@ public sealed class DatabaseService
         return attendees;
     }
 
-
-
     public async Task<IReadOnlyList<EventRecord>> GetActiveEventsAsync(int limit = 50)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // UPDATED: Added WHERE is_active = TRUE so closed events disappear from the management window
         using var command = new MySqlCommand(@"
             SELECT event_id, event_name, event_date, verification_mode, is_restricted
             FROM events
@@ -876,6 +875,14 @@ public sealed class DatabaseService
 
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
+
+        using var checkEventCmd = new MySqlCommand("SELECT is_restricted FROM events WHERE event_id = @event_id", connection);
+        checkEventCmd.Parameters.AddWithValue("@event_id", eventId);
+        var isRestrictedObj = await checkEventCmd.ExecuteScalarAsync();
+
+        bool isRestricted = isRestrictedObj != DBNull.Value && Convert.ToBoolean(isRestrictedObj);
+
+        if (!isRestricted) return true;
 
         using var attendeeCommand = new MySqlCommand(@"
             SELECT COUNT(*)
@@ -967,22 +974,19 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // UPDATED: We no longer DELETE anything. We preserve the approved attendees for historical turnout reporting, 
-        // and simply toggle the event's active state to FALSE.
         using var closeEventCmd = new MySqlCommand("UPDATE events SET is_active = FALSE WHERE event_id = @event_id;", connection);
         closeEventCmd.Parameters.AddWithValue("@event_id", eventId);
         await closeEventCmd.ExecuteNonQueryAsync();
+
+        // NEW: Log the Admin Action!
+        await AddAlertAsync(null, "ADMIN_ACTION", $"Closed Event Profile '{eventId}'. It was removed from active scanning.");
     }
 
-
-
-    // Add these methods into the DatabaseService class:
     public async Task<IReadOnlyList<EventRecord>> GetAllEventsAsync()
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Preserved: This deliberately grabs ALL events (Active and Closed) for the Reports dropdown
         using var command = new MySqlCommand(@"
             SELECT event_id, event_name, event_date, verification_mode, is_restricted
             FROM events
@@ -1004,12 +1008,95 @@ public sealed class DatabaseService
         return events;
     }
 
+    /* =========================================================================
+     * ROLE-BASED ACCESS CONTROL (RBAC) & STAFF ACCOUNTS
+     * ========================================================================= */
+
+    public async Task RegisterStaffAsync(string uid, string fullName, string role)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            INSERT INTO staff (nfc_uid, full_name, role)
+            VALUES (@uid, @name, @role)
+            ON DUPLICATE KEY UPDATE full_name = @name, role = @role", connection);
+
+        command.Parameters.AddWithValue("@uid", uid);
+        command.Parameters.AddWithValue("@name", fullName);
+        command.Parameters.AddWithValue("@role", role);
+
+        await command.ExecuteNonQueryAsync();
+
+        // Note: The UI layer (SecurityDashboardWindow) logs this action directly to include the specific role formatting.
+    }
+
+    public async Task<int> BatchUpdateStudentStatusAsync(string? course, string? yearLevel, string newStatus)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        var whereClauses = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(course) && course != "All Courses")
+            whereClauses.Add("course = @course");
+
+        if (!string.IsNullOrWhiteSpace(yearLevel) && yearLevel != "All Years")
+        {
+            if (yearLevel == "5+")
+            {
+                whereClauses.Add("year_level >= 5");
+            }
+            else
+            {
+                whereClauses.Add("year_level = @year");
+            }
+        }
+
+        string whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
+
+        // Security failsafe: Prevent accidental full database overwrite
+        if (string.IsNullOrEmpty(whereSql))
+            throw new InvalidOperationException("You must select at least one filter (Course or Year Level) to perform a batch update.");
+
+        string sql = $"UPDATE students SET status = @status {whereSql}";
+        using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@status", newStatus);
+
+        if (!string.IsNullOrWhiteSpace(course) && course != "All Courses")
+            command.Parameters.AddWithValue("@course", course);
+
+        if (!string.IsNullOrWhiteSpace(yearLevel) && yearLevel != "All Years" && yearLevel != "5+")
+            command.Parameters.AddWithValue("@year", yearLevel.Replace("Year ", "").Trim());
+
+        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+        // Log the admin action to the Master Explorer
+        if (rowsAffected > 0)
+        {
+            await AddAlertAsync(null, "ADMIN_ACTION", $"Batch updated {rowsAffected} students to '{newStatus}' (Course: {course ?? "All"}, Year: {yearLevel ?? "All"}).");
+        }
+
+        return rowsAffected;
+    }
+
+    public async Task<string?> GetStaffRoleAsync(string uid)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("SELECT role FROM staff WHERE nfc_uid = @uid LIMIT 1", connection);
+        command.Parameters.AddWithValue("@uid", uid);
+
+        var result = await command.ExecuteScalarAsync();
+        return result?.ToString();
+    }
+
     public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // NEW: Added 'ea.status' to the SELECT statement
         using var command = new MySqlCommand(@"
             SELECT ea.timestamp, ea.student_id, s.full_name, s.course, s.section_name, ea.verification_mode, ea.status
             FROM event_attendance ea
@@ -1031,7 +1118,7 @@ public sealed class DatabaseService
                 Course = Value(reader["course"]),
                 Section = Value(reader["section_name"]),
                 Mode = Value(reader["verification_mode"]),
-                Status = Value(reader["status"]) // NEW: Maps the Check-in/Check-out status
+                Status = Value(reader["status"])
             });
         }
         return list;

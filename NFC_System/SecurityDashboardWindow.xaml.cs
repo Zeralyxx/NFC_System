@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.Collections.Generic;
+using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
@@ -13,13 +14,15 @@ namespace NFC_System
     public sealed partial class SecurityDashboardWindow : Window
     {
         private readonly DatabaseService _database = new();
-        private List<SystemAuditLog> _masterLogsCache = new(); // Holds the deep query for the popup
+        private List<SystemAuditLog> _masterLogsCache = new();
+        private SerialPort? _serialPort;
 
         public SecurityDashboardWindow()
         {
             this.InitializeComponent();
             MaximizeWindow();
 
+            this.Closed += Window_Closed;
             ResetPinButton.Click += ResetPinButton_Click;
 
             _ = InitializeAsync();
@@ -31,6 +34,10 @@ namespace NFC_System
             {
                 await _database.EnsureSchemaAsync();
                 await RefreshDashboardAsync();
+
+                // Connect NFC reader to capture new staff cards
+                string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+                TryConnectSerial(nfcPort);
             }
             catch (Exception ex)
             {
@@ -38,14 +45,74 @@ namespace NFC_System
             }
         }
 
+        // --- NFC SERIAL PORT LOGIC FOR STAFF REGISTRATION ---
+
+        private void TryConnectSerial(string portName)
+        {
+            try
+            {
+                _serialPort = new SerialPort(portName, 115200);
+                _serialPort.NewLine = "\n";
+                _serialPort.DataReceived += SerialPort_DataReceived;
+                _serialPort.Open();
+                StatusTextBlock.Text = $"Ready. NFC connected on {portName}";
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"NFC disconnected: {ex.Message}";
+            }
+        }
+
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            try
+            {
+                if (_serialPort == null || !_serialPort.IsOpen) return;
+                string line = _serialPort.ReadLine().Trim();
+
+                if (line.StartsWith("UID="))
+                {
+                    string uid = line.Substring(4).Trim();
+
+                    // Auto-fill the staff registration text box when a card is tapped!
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        StaffNfcUidTextBox.Text = uid;
+                        StatusTextBlock.Text = "Card scanned. Ready to register staff.";
+                    });
+                }
+            }
+            catch { }
+        }
+
+        private void CloseSerialPort()
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    _serialPort.DataReceived -= SerialPort_DataReceived;
+                    _serialPort.Close();
+                    _serialPort.Dispose();
+                    _serialPort = null;
+                }
+            }
+            catch { }
+        }
+
+        private void Window_Closed(object sender, WindowEventArgs args)
+        {
+            CloseSerialPort();
+        }
+
+        // --- DASHBOARD DATA ---
+
         private async Task RefreshDashboardAsync()
         {
             try
             {
-                // Load the 30 most recent items into the Live Activity Feed on the main screen
                 var recentLogs = await _database.GetMasterAuditLogsAsync(30);
                 RecentActivityListView.ItemsSource = recentLogs;
-
                 StatusTextBlock.Text = "Dashboard refreshed successfully.";
             }
             catch (Exception ex)
@@ -64,13 +131,10 @@ namespace NFC_System
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
             MasterLogsDialog.XamlRoot = this.Content.XamlRoot;
-
-            // Force dialog to start at standard width
             DialogLogContainer.Width = 900;
             PopupExpandToggle.IsChecked = false;
             PopupExpandToggle.Content = "⛶ Expand View";
 
-            // Fetch a deep history (e.g., 2000 records) for the master explorer
             _masterLogsCache = (await _database.GetMasterAuditLogsAsync(2000)).ToList();
 
             ApplyPopupFilters();
@@ -91,10 +155,7 @@ namespace NFC_System
             }
         }
 
-        private void PopupFilter_Changed(object sender, RoutedEventArgs e)
-        {
-            ApplyPopupFilters();
-        }
+        private void PopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyPopupFilters();
 
         private void PopupClear_Click(object sender, RoutedEventArgs e)
         {
@@ -110,7 +171,6 @@ namespace NFC_System
 
             var filtered = _masterLogsCache.AsEnumerable();
 
-            // 1. Text Search
             string query = PopupSearchBox.Text?.Trim().ToLower() ?? "";
             if (!string.IsNullOrEmpty(query))
             {
@@ -119,28 +179,48 @@ namespace NFC_System
                     (l.Details != null && l.Details.ToLower().Contains(query)));
             }
 
-            // 2. Type Dropdown
             string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
-            if (type != "All Types")
-            {
-                filtered = filtered.Where(l => l.LogType == type);
-            }
+            if (type != "All Types") filtered = filtered.Where(l => l.LogType == type);
 
-            // 3. Status Dropdown
             string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
-            if (status == "Granted / Resolved")
-            {
-                filtered = filtered.Where(l => l.Status == "GRANTED" || l.Status == "RESOLVED");
-            }
-            else if (status == "Denied / Flagged")
-            {
-                filtered = filtered.Where(l => l.Status == "DENIED" || l.Status == "FLAGGED");
-            }
+            if (status == "Granted / Resolved") filtered = filtered.Where(l => l.Status == "GRANTED" || l.Status == "RESOLVED");
+            else if (status == "Denied / Flagged") filtered = filtered.Where(l => l.Status == "DENIED" || l.Status == "FLAGGED");
 
             PopupLogsListView.ItemsSource = filtered.ToList();
         }
 
         // --- ADMINISTRATIVE ACTIONS ---
+
+        private async void RegisterStaffButton_Click(object sender, RoutedEventArgs e)
+        {
+            string fullName = StaffNameTextBox.Text.Trim();
+            string uid = StaffNfcUidTextBox.Text.Trim();
+            string role = (StaffRoleComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Security Personnel";
+
+            if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(uid))
+            {
+                StatusTextBlock.Text = "Staff Name and NFC UID are strictly required.";
+                return;
+            }
+
+            try
+            {
+                await _database.RegisterStaffAsync(uid, fullName, role);
+
+                await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Registered new {role} credentials for: {fullName}");
+
+                StaffNameTextBox.Text = "";
+                StaffNfcUidTextBox.Text = "";
+                StaffRoleComboBox.SelectedIndex = 0;
+                StatusTextBlock.Text = $"Successfully registered {role}: {fullName}";
+
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Registration failed: {ex.Message}";
+            }
+        }
 
         private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
         {
@@ -180,11 +260,7 @@ namespace NFC_System
                 ResetStudentIdTextBox.Text = "";
                 StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
 
-                try
-                {
-                    await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Security personnel manually unlocked account and reset PIN for {studentId}.");
-                }
-                catch { }
+                try { await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Security personnel manually unlocked account and reset PIN for {studentId}."); } catch { }
 
                 await RefreshDashboardAsync();
             }
@@ -225,20 +301,14 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Could not add course: {ex.Message}";
-
-                ContentDialog errorDialog = new ContentDialog
-                {
-                    Title = "Database Error",
-                    Content = $"Failed to add the course.\n\nDetails: {ex.Message}",
-                    CloseButtonText = "OK",
-                    XamlRoot = this.Content.XamlRoot
-                };
+                ContentDialog errorDialog = new ContentDialog { Title = "Database Error", Content = $"Failed to add the course.\n\nDetails: {ex.Message}", CloseButtonText = "OK", XamlRoot = this.Content.XamlRoot };
                 await errorDialog.ShowAsync();
             }
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
+            CloseSerialPort();
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();

@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
-using MySqlConnector;
 
 namespace NFC_System
 {
@@ -30,39 +29,23 @@ namespace NFC_System
         {
             try
             {
-                using var connection = new MySqlConnection(DatabaseService.ConnectionString);
-                await connection.OpenAsync();
+                // Fetch the full list dynamically
+                var result = await _database.SearchStudentsAsync("", "All Students", "All Courses", "All Years", 1, 99999);
+                _allStudents = result.Students.ToList();
 
-                string sql = "SELECT * FROM students";
-                using var command = new MySqlCommand(sql, connection);
-                using var reader = await command.ExecuteReaderAsync();
-
-                var students = new List<StudentRecord>();
-                while (await reader.ReadAsync())
-                {
-                    students.Add(new StudentRecord
-                    {
-                        StudentId = reader["student_id"].ToString() ?? "",
-                        FullName = reader["full_name"].ToString() ?? "",
-                        Course = reader["course"].ToString() ?? "",
-                        Status = reader["status"].ToString() ?? "Active",
-                        NfcUid = reader["nfc_uid"].ToString() ?? "",
-                        PinLocked = reader["pin_locked"] != DBNull.Value && Convert.ToBoolean(reader["pin_locked"]),
-                        FailedPinAttempts = reader["failed_pin_attempts"] != DBNull.Value ? Convert.ToInt32(reader["failed_pin_attempts"]) : 0
-                    });
-                }
-
-                _allStudents = students;
-
-                // Dynamically populate the Course Filter based on existing data
+                // Dynamically populate the Course Filters based on existing data
                 var courses = _allStudents.Select(s => s.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+
                 CourseFilterComboBox.Items.Clear();
                 CourseFilterComboBox.Items.Add("All Courses");
-                foreach (var course in courses)
-                {
-                    CourseFilterComboBox.Items.Add(course);
-                }
+                foreach (var course in courses) CourseFilterComboBox.Items.Add(course);
                 CourseFilterComboBox.SelectedIndex = 0;
+
+                // Populate the Batch Dialog course dropdown as well
+                BatchCourseComboBox.Items.Clear();
+                BatchCourseComboBox.Items.Add("All Courses");
+                foreach (var course in courses) BatchCourseComboBox.Items.Add(course);
+                BatchCourseComboBox.SelectedIndex = 0;
 
                 RefreshDataGrid();
             }
@@ -119,26 +102,24 @@ namespace NFC_System
 
             if (StudentListView.SelectedItem is StudentRecord selectedStudent)
             {
-                EditNameText.Text = selectedStudent.FullName;
-                EditIdText.Text = selectedStudent.StudentId;
-                EditUidText.Text = selectedStudent.NfcUid;
-
+                // Maps exactly to: Active (0), Inactive (1), Graduated (2), Expelled (3)
                 EditStatusComboBox.SelectedIndex = selectedStudent.Status switch
                 {
                     "Active" => 0,
                     "Inactive" => 1,
-                    _ => 2
+                    "Graduated" => 2,
+                    _ => 3
                 };
 
                 if (selectedStudent.PinLocked)
                 {
-                    LockoutStatusText.Text = "ACCOUNT LOCKED (Too many PIN failures)";
+                    LockoutStatusText.Text = $"LOCKED: {selectedStudent.FullName}";
                     LockoutStatusText.Foreground = new SolidColorBrush(Colors.DarkOrange);
                     UnlockAccountButton.IsEnabled = true;
                 }
                 else
                 {
-                    LockoutStatusText.Text = "Account is secure (No active flags)";
+                    LockoutStatusText.Text = $"Secure: {selectedStudent.FullName}";
                     LockoutStatusText.Foreground = new SolidColorBrush(Colors.ForestGreen);
                     UnlockAccountButton.IsEnabled = false;
                 }
@@ -148,9 +129,6 @@ namespace NFC_System
             }
             else
             {
-                EditNameText.Text = "-";
-                EditIdText.Text = "-";
-                EditUidText.Text = "-";
                 LockoutStatusText.Text = "Select a student";
                 LockoutStatusText.Foreground = new SolidColorBrush(Colors.Gray);
                 EditStatusComboBox.IsEnabled = false;
@@ -194,6 +172,50 @@ namespace NFC_System
             }
         }
 
+        // --- BATCH OPERATIONS ---
+
+        private async void OpenBatchDialogButton_Click(object sender, RoutedEventArgs e)
+        {
+            BatchUpdateDialog.XamlRoot = this.Content.XamlRoot;
+            BatchDialogStatusText.Visibility = Visibility.Collapsed;
+            ConfirmBatchButton.IsEnabled = true;
+            await BatchUpdateDialog.ShowAsync();
+        }
+
+        private async void ConfirmBatchButton_Click(object sender, RoutedEventArgs e)
+        {
+            string course = BatchCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
+            string year = (BatchYearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Years";
+            string status = (BatchNewStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Active";
+
+            ConfirmBatchButton.IsEnabled = false;
+            BatchDialogStatusText.Text = "Applying updates...";
+            BatchDialogStatusText.Foreground = new SolidColorBrush(Colors.White);
+            BatchDialogStatusText.Visibility = Visibility.Visible;
+
+            try
+            {
+                int affectedRows = await _database.BatchUpdateStudentStatusAsync(course, year, status);
+
+                BatchDialogStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
+                BatchDialogStatusText.Text = $"Success! {affectedRows} students updated to {status}.";
+
+                // Refresh the master list so the changes appear immediately
+                await LoadDataAsync();
+
+                await Task.Delay(2000);
+                BatchUpdateDialog.Hide();
+            }
+            catch (Exception ex)
+            {
+                BatchDialogStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                BatchDialogStatusText.Text = ex.Message;
+                ConfirmBatchButton.IsEnabled = true;
+            }
+        }
+
+        // --- WINDOW HELPERS ---
+
         private void MaximizeWindow()
         {
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
@@ -210,14 +232,14 @@ namespace NFC_System
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            _currentPage = 1; // Reset to page 1 on new search
+            _currentPage = 1;
             RefreshDataGrid();
         }
 
         private void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (StudentListView == null) return;
-            _currentPage = 1; // Reset to page 1 on new filter
+            _currentPage = 1;
             RefreshDataGrid();
         }
     }

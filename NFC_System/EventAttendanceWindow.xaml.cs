@@ -123,19 +123,21 @@ namespace NFC_System
             this.Close();
         }
 
-        // 1. UPDATE THIS METHOD
         private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
         {
             CloseSerialPort();
+
+            // NEW: Re-broadcast the state right before launch to guarantee the Kiosk controller is perfectly synced!
+            BroadcastStateToKiosk();
 
             EventRecord? selectedEvent = ActiveEventComboBox.SelectedItem as EventRecord;
             string activeEventName = selectedEvent != null ? selectedEvent.DisplayName : "No Event Selected";
             string mode = selectedEvent != null ? selectedEvent.VerificationMode.ToString() : "Standard";
             string type = (DirectionComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Entry";
 
-            var kiosk = new KioskModeWindow("Event", $"{activeEventName} | {type} ({mode})");
+            // FIX: We now explicitly pass the real Database Event ID to the Kiosk Window
+            var kiosk = new KioskModeWindow("Event", $"{activeEventName} | {type} ({mode})", selectedEvent?.EventId);
 
-            // Subscribe to the Kiosk's live event bridge
             KioskModeWindow.OnKioskOutcome -= ApplyOutcomeFromKiosk;
             KioskModeWindow.OnKioskOutcome += ApplyOutcomeFromKiosk;
 
@@ -145,8 +147,6 @@ namespace NFC_System
             kiosk.Closed += (s, args) =>
             {
                 TryConnectSerial("COM3");
-
-                // Unsubscribe when Kiosk closes to prevent memory leaks
                 KioskModeWindow.OnKioskOutcome -= ApplyOutcomeFromKiosk;
                 KioskModeWindow.OnKioskLog -= AddKioskLog;
             };
@@ -154,7 +154,6 @@ namespace NFC_System
             kiosk.Activate();
         }
 
-        // NEW: Handles live logs directly from the active Kiosk
         private void ApplyOutcomeFromKiosk(VerificationOutcome outcome)
         {
             DispatcherQueue.TryEnqueue(() =>
@@ -163,7 +162,6 @@ namespace NFC_System
             });
         }
 
-        // NEW: Handles manual bad read texts from the Kiosk
         private void AddKioskLog(string msg)
         {
             DispatcherQueue.TryEnqueue(() =>
@@ -172,16 +170,13 @@ namespace NFC_System
             });
         }
 
-        // 2. UPDATE THIS METHOD
         private void PlaySecurityAlert()
         {
-            // Bypasses the Windows Volume Mixer and forces a loud hardware beep.
-            // Runs on a background thread so it doesn't freeze your UI.
             System.Threading.Tasks.Task.Run(() =>
             {
                 for (int i = 0; i < 3; i++)
                 {
-                    Console.Beep(2500, 300); // 2500hz frequency (high pitch), 300ms duration
+                    Console.Beep(2500, 300);
                     System.Threading.Thread.Sleep(100);
                 }
             });
@@ -194,17 +189,14 @@ namespace NFC_System
 
             try
             {
-                // 1. Unlock the account
                 await _database.UpdatePinFailureAsync(studentId, 0, false);
 
-                // 2. PERMANENTLY LOG IT TO THE DATABASE FOR THE ADMIN DASHBOARD
                 try
                 {
                     await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Event Guard manually cleared 2FA lockout for {studentId}.");
                 }
                 catch { }
 
-                // 3. Update the local UI
                 AttendanceLogListView.Items.Insert(0, $"[SECURITY OVERRIDE] Guard cleared lockout for {studentId}.");
                 OverrideStudentIdBox.Text = "";
             }
@@ -214,8 +206,6 @@ namespace NFC_System
             }
         }
 
-
-
         private void ApplyOutcome(VerificationOutcome outcome)
         {
             if (!string.IsNullOrWhiteSpace(outcome.LogLine))
@@ -223,7 +213,6 @@ namespace NFC_System
                 AttendanceLogListView.Items.Insert(0, outcome.LogLine);
             }
 
-            // Trigger loud siren for severe security violations
             string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
             if (severeErrors.Contains(outcome.ErrorCategory))
             {
@@ -276,7 +265,7 @@ namespace NFC_System
 
             if (IsInvalidUid(uid))
             {
-                PlaySecurityAlert(); // Trigger siren on bad/corrupted read
+                PlaySecurityAlert();
                 await LogInvalidUidAsync(uid, tType, selectedEvent.VerificationMode);
                 DisplayInvalidUid(uid);
                 return;
@@ -368,8 +357,12 @@ namespace NFC_System
             {
                 if (_serialPort != null)
                 {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
+                    if (_serialPort.IsOpen)
+                    {
+                        _serialPort.DataReceived -= SerialPort_DataReceived;
+                        _serialPort.Close();
+                    }
+
                     _serialPort.Dispose();
                     _serialPort = null;
                 }

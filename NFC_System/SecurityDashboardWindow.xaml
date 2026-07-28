@@ -95,6 +95,34 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Staff Access & RBAC Registration -->
+                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                            <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                            <Grid ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
+                                <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="Security Personnel"/>
+                                    <ComboBoxItem Content="Administrator"/>
+                                </ComboBox>
+
+                                <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
+                                <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="1" Content="Register Staff Member" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock x:Name="StatusTextBlock" Text="Ready" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
                 </StackPanel>
             </ScrollViewer>
