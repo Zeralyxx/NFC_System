@@ -50,9 +50,108 @@ public sealed class DatabaseService
 {
     public const string ConnectionString = "Server=127.0.0.1;Port=3306;Database=nfc_system;User ID=root;Password=;";
 
-    public Task EnsureSchemaAsync()
+    // Attempt at making a plug-and-play database service for future database engine changes (e.g., PostgreSQL, SQLite, etc.)
+    public async Task EnsureSchemaAsync()
     {
-        return Task.CompletedTask;
+        // 1. Connect to the base server WITHOUT specifying a database, so it doesn't crash if it doesn't exist
+        string baseConnection = "Server=127.0.0.1;Port=3306;User ID=root;Password=;";
+        using var connection = new MySqlConnection(baseConnection);
+        await connection.OpenAsync();
+
+        // 2. Safely create the root database
+        using (var createDbCmd = new MySqlCommand("CREATE DATABASE IF NOT EXISTS nfc_system;", connection))
+        {
+            await createDbCmd.ExecuteNonQueryAsync();
+        }
+
+        // 3. Switch connection context to the newly created database
+        await connection.ChangeDatabaseAsync("nfc_system");
+
+        // 4. Execute the master schema build
+        string schemaSql = @"
+            CREATE TABLE IF NOT EXISTS students (
+                student_id VARCHAR(50) PRIMARY KEY,
+                full_name VARCHAR(100) NOT NULL,
+                course VARCHAR(100),
+                year_level VARCHAR(20),
+                section_name VARCHAR(50),
+                status VARCHAR(20) DEFAULT 'Active',
+                nfc_uid VARCHAR(50) UNIQUE,
+                pin_salt VARCHAR(255),
+                pin_hash VARCHAR(255),
+                qr_credential VARCHAR(255),
+                entry_state VARCHAR(20) DEFAULT 'OUTSIDE',
+                failed_pin_attempts INT DEFAULT 0,
+                pin_locked BOOLEAN DEFAULT FALSE,
+                last_scan_timestamp DATETIME NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS courses (
+                course_name VARCHAR(100) PRIMARY KEY
+            );
+
+            CREATE TABLE IF NOT EXISTS verification_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                student_id VARCHAR(50),
+                nfc_uid VARCHAR(50),
+                transaction_type VARCHAR(50),
+                verification_mode VARCHAR(50),
+                is_granted BOOLEAN,
+                error_code VARCHAR(100),
+                error_message TEXT,
+                remarks TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                student_id VARCHAR(50) NULL,
+                alert_type VARCHAR(100),
+                message TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                setting_key VARCHAR(100) PRIMARY KEY,
+                setting_value VARCHAR(255)
+            );
+
+            CREATE TABLE IF NOT EXISTS events (
+                event_id VARCHAR(50) PRIMARY KEY,
+                event_name VARCHAR(150),
+                event_date DATETIME,
+                verification_mode VARCHAR(50),
+                is_restricted BOOLEAN DEFAULT FALSE,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+
+            CREATE TABLE IF NOT EXISTS event_approved_students (
+                event_id VARCHAR(50),
+                student_id VARCHAR(50),
+                PRIMARY KEY (event_id, student_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_attendance (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                event_id VARCHAR(50),
+                student_id VARCHAR(50),
+                verification_mode VARCHAR(50),
+                status VARCHAR(50),
+                remarks TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS staff (
+                nfc_uid VARCHAR(50) PRIMARY KEY,
+                full_name VARCHAR(100),
+                role VARCHAR(50)
+            );
+        ";
+
+        using (var schemaCmd = new MySqlCommand(schemaSql, connection))
+        {
+            await schemaCmd.ExecuteNonQueryAsync();
+        }
     }
 
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(int limit = 1000)

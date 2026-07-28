@@ -127,7 +127,6 @@ namespace NFC_System
         {
             CloseSerialPort();
 
-            // NEW: Re-broadcast the state right before launch to guarantee the Kiosk controller is perfectly synced!
             BroadcastStateToKiosk();
 
             EventRecord? selectedEvent = ActiveEventComboBox.SelectedItem as EventRecord;
@@ -135,7 +134,6 @@ namespace NFC_System
             string mode = selectedEvent != null ? selectedEvent.VerificationMode.ToString() : "Standard";
             string type = (DirectionComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Entry";
 
-            // FIX: We now explicitly pass the real Database Event ID to the Kiosk Window
             var kiosk = new KioskModeWindow("Event", $"{activeEventName} | {type} ({mode})", selectedEvent?.EventId);
 
             KioskModeWindow.OnKioskOutcome -= ApplyOutcomeFromKiosk;
@@ -189,15 +187,24 @@ namespace NFC_System
 
             try
             {
+                // GUARDRAIL: Verify the student actually exists in the database
+                var student = await _database.GetStudentByIdAsync(studentId);
+                if (student == null)
+                {
+                    AttendanceLogListView.Items.Insert(0, $"[ERROR] Unlock Aborted: Student ID '{studentId}' does not exist in the database.");
+                    PlaySecurityAlert();
+                    return;
+                }
+
                 await _database.UpdatePinFailureAsync(studentId, 0, false);
 
                 try
                 {
-                    await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Event Guard manually cleared 2FA lockout for {studentId}.");
+                    await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Event Guard manually cleared 2FA lockout for {student.FullName} ({studentId}).");
                 }
                 catch { }
 
-                AttendanceLogListView.Items.Insert(0, $"[SECURITY OVERRIDE] Guard cleared lockout for {studentId}.");
+                AttendanceLogListView.Items.Insert(0, $"[SECURITY OVERRIDE] Guard cleared lockout for {student.FullName} ({studentId}).");
                 OverrideStudentIdBox.Text = "";
             }
             catch (Exception ex)

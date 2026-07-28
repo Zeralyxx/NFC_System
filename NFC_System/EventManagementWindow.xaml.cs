@@ -281,6 +281,14 @@ namespace NFC_System
 
             try
             {
+                // GUARDRAIL: Verify the student actually exists in the database first!
+                var student = await _database.GetStudentByIdAsync(studentId);
+                if (student == null)
+                {
+                    LogMessage($"[WARNING] Cannot add: Student ID '{studentId}' does not exist in the database.");
+                    return;
+                }
+
                 await _database.AddEventAttendeeAsync(_selectedEvent.EventId, studentId);
                 LogMessage($"[SUCCESS] Added student '{studentId}' to '{_selectedEvent.EventId}'.");
 
