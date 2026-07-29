@@ -4,9 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
-using System.IO.Ports;
 using WinRT.Interop;
-using System.Media;
 using Windows.Devices.Enumeration;
 using System.Linq;
 
@@ -16,7 +14,6 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
-        private SerialPort? _serialPort;
 
         public VerificationWindow()
         {
@@ -24,10 +21,8 @@ namespace NFC_System
             _engine = new VerificationEngine(_database);
 
             MaximizeWindow();
-            this.Closed += Window_Closed;
 
             _ = InitializeAsync();
-            TryConnectSerial("COM3");
         }
 
         private async System.Threading.Tasks.Task InitializeAsync()
@@ -74,8 +69,6 @@ namespace NFC_System
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
-
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
@@ -93,15 +86,8 @@ namespace NFC_System
             }
         }
 
-        private void Window_Closed(object sender, WindowEventArgs args)
-        {
-            CloseSerialPort();
-        }
-
         private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
-
             var mode = (SecurityModeComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Standard";
             var type = (DirectionComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Entry";
 
@@ -115,8 +101,6 @@ namespace NFC_System
 
             kiosk.Closed += (s, args) =>
             {
-                TryConnectSerial("COM3");
-
                 KioskModeWindow.OnKioskOutcome -= ApplyOutcomeFromKiosk;
                 KioskModeWindow.OnKioskLog -= AddKioskLog;
             };
@@ -190,82 +174,6 @@ namespace NFC_System
             }
         }
 
-        private void TryConnectSerial(string portName)
-        {
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-
-                VerificationLogListView.Items.Insert(0, $"[INFO] Connected to {portName}");
-            }
-            catch (Exception ex)
-            {
-                VerificationLogListView.Items.Insert(0, $"[ERROR] Could not connect: {ex.Message}");
-            }
-        }
-
-        private async void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen)
-                {
-                    return;
-                }
-
-                string line = _serialPort.ReadLine().Trim();
-                if (line.StartsWith("UID="))
-                {
-                    string uid = line.Substring(4).Trim();
-                    await DispatcherQueue.TryEnqueueAsync(() => ProcessUidAsync(uid));
-                }
-            }
-            catch (Exception ex)
-            {
-                await DispatcherQueue.TryEnqueueAsync(() =>
-                {
-                    VerificationLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
-                });
-            }
-        }
-
-        private async System.Threading.Tasks.Task ProcessUidAsync(string uid)
-        {
-            if (string.IsNullOrWhiteSpace(uid))
-            {
-                VerificationLogListView.Items.Insert(0, "[ERROR] NFC UID is required.");
-                return;
-            }
-
-            if (IsInvalidUid(uid))
-            {
-                PlaySecurityAlert();
-                await LogInvalidUidAsync(uid, GetSelectedTransactionType(), GetSelectedMode());
-                DisplayInvalidUid(uid);
-                return;
-            }
-
-            TransactionType transactionType = GetSelectedTransactionType();
-
-            try
-            {
-                VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(
-                    uid,
-                    GetSelectedMode(),
-                    transactionType,
-                    "");
-
-                ApplyOutcome(outcome);
-            }
-            catch (Exception ex)
-            {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
-            }
-        }
-
         private void ApplyOutcome(VerificationOutcome outcome)
         {
             if (outcome.Student != null)
@@ -286,25 +194,6 @@ namespace NFC_System
             if (severeErrors.Contains(outcome.ErrorCategory))
             {
                 PlaySecurityAlert();
-            }
-        }
-
-        private void DisplayInvalidUid(string uid)
-        {
-            OverrideStudentIdBox.Text = "";
-            string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
-            VerificationLogListView.Items.Insert(0, $"{logTime} | UID {uid} | BAD READ: Please tap again");
-        }
-
-        private async System.Threading.Tasks.Task LogInvalidUidAsync(string uid, TransactionType transactionType, VerificationMode mode)
-        {
-            try
-            {
-                await _database.LogVerificationAsync(null, uid, transactionType, mode, false, "BAD_NFC_READ", "BAD_READ", "Card couldn't be read properly. User prompted to tap again.");
-            }
-            catch (Exception ex)
-            {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] Could not log bad read: {ex.Message}");
             }
         }
 
@@ -351,63 +240,6 @@ namespace NFC_System
                 1 => TransactionType.Exit,
                 _ => TransactionType.Entry
             };
-        }
-
-        private static bool IsInvalidUid(string uid)
-        {
-            if (string.IsNullOrWhiteSpace(uid)) return true;
-
-            string[] parts = uid.Split(':');
-            if (parts.Length != 4 && parts.Length != 7) return true;
-
-            bool allZero = true;
-            foreach (string part in parts)
-            {
-                if (part != "00")
-                {
-                    allZero = false;
-                    break;
-                }
-            }
-
-            if (allZero) return true;
-
-            if (parts.Length >= 4)
-            {
-                int start = parts.Length - 4;
-                bool trailingZeros = true;
-                for (int i = start; i < parts.Length; i++)
-                {
-                    if (parts[i] != "00")
-                    {
-                        trailingZeros = false;
-                        break;
-                    }
-                }
-
-                if (trailingZeros) return true;
-            }
-
-            return false;
-        }
-
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null)
-                {
-                    if (_serialPort.IsOpen)
-                    {
-                        _serialPort.DataReceived -= SerialPort_DataReceived;
-                        _serialPort.Close();
-                    }
-
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
         }
     }
 }

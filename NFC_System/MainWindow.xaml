@@ -269,6 +269,26 @@
                        Margin="0,12,0,0"/>
         </Grid>
 
+        <!-- FIRST TIME SETUP OVERLAY -->
+        <Grid x:Name="SetupOverlay" Background="#0A0A0A" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24" Width="400">
+                <Viewbox MaxHeight="80" Margin="0,0,0,8">
+                    <FontIcon Glyph="&#xE713;" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                </Viewbox>
+                <TextBlock Text="System Initialization" FontSize="36" FontWeight="Black" Foreground="White" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="SetupInstructionText" Text="Please tap an NFC card to register as the Master Administrator." FontSize="16" Foreground="#A0A0A0" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,16"/>
+
+                <StackPanel x:Name="SetupFormPanel" Spacing="16" Visibility="Collapsed">
+                    <TextBox x:Name="SetupFirstNameBox" Header="First Name" PlaceholderText="e.g. Jane" />
+                    <TextBox x:Name="SetupLastNameBox" Header="Last Name" PlaceholderText="e.g. Doe" />
+                    <Button x:Name="CompleteSetupButton" Content="Register Master Key" Click="CompleteSetupButton_Click" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" Height="48" Margin="0,16,0,0"/>
+                </StackPanel>
+
+                <!-- Setup Simulator Button -->
+                <Button x:Name="SimulateSetupButton" Content="Simulate NFC Tap" Click="SimulateAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF" HorizontalAlignment="Center" Opacity="0.5"/>
+            </StackPanel>
+        </Grid>
+
         <!-- LOGIN OVERLAY -->
         <Grid x:Name="LoginOverlay" Background="#0A0A0A" Visibility="Visible">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24">

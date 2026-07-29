@@ -1191,6 +1191,22 @@ public sealed class DatabaseService
         return result?.ToString();
     }
 
+    public async Task<(string? Role, string? FullName)> GetStaffDetailsAsync(string uid)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("SELECT role, full_name FROM staff WHERE nfc_uid = @uid LIMIT 1", connection);
+        command.Parameters.AddWithValue("@uid", uid);
+
+        using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return (reader["role"]?.ToString(), reader["full_name"]?.ToString());
+        }
+        return (null, null);
+    }
+
     public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)
     {
         using var connection = new MySqlConnection(ConnectionString);

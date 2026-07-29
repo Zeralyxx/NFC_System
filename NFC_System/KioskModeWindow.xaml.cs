@@ -41,7 +41,6 @@ namespace NFC_System
 
         private readonly string _originatingMode;
         private readonly string _contextDetails;
-
         private readonly string? _eventId;
 
         private SerialPort? _serialPort;
@@ -66,6 +65,12 @@ namespace NFC_System
 
         private string _lastScannedQr = string.Empty;
         private DateTime _lastQrScanTime = DateTime.MinValue;
+
+        // ====================================================================
+        // THE FIX: ANTI-PROXY MEMORY CACHE
+        // Temporarily stores UIDs and Student IDs to prevent double check-ins
+        // ====================================================================
+        private readonly HashSet<string> _eventAttendanceCache = new();
 
         private readonly BarcodeReaderGeneric _barcodeReader = new()
         {
@@ -301,6 +306,24 @@ namespace NFC_System
             });
         }
 
+        // Helper to map granted users to the cache, or clear them if they leave
+        private void RegisterSuccessfulEntry()
+        {
+            if (_activeSession?.TransactionType == TransactionType.EventAttendance)
+            {
+                if (!string.IsNullOrEmpty(_activeSession.Uid)) _eventAttendanceCache.Add(_activeSession.Uid);
+                if (_activeSession.Student != null && !string.IsNullOrEmpty(_activeSession.Student.StudentId))
+                    _eventAttendanceCache.Add(_activeSession.Student.StudentId);
+            }
+            else if (_activeSession?.TransactionType == TransactionType.Exit)
+            {
+                // If checking out, release the block so they can re-enter later
+                if (!string.IsNullOrEmpty(_activeSession.Uid)) _eventAttendanceCache.Remove(_activeSession.Uid);
+                if (_activeSession.Student != null && !string.IsNullOrEmpty(_activeSession.Student.StudentId))
+                    _eventAttendanceCache.Remove(_activeSession.Student.StudentId);
+            }
+        }
+
         private void SetState(AuthenticationStage newState)
         {
             if (DispatcherQueue.HasThreadAccess) ExecuteStateChange(newState);
@@ -392,15 +415,30 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.Idle) return;
 
-            // ====================================================================
-            // EVALUATION MODULE: START NFC RESPONSE TIMER
-            // ====================================================================
             Stopwatch nfcTimer = Stopwatch.StartNew();
 
             var transType = KioskStateController.CurrentType;
             if (_originatingMode == "Event" && transType == TransactionType.Entry)
             {
                 transType = TransactionType.EventAttendance;
+            }
+
+            // ====================================================================
+            // ANTI-PROXY GUARDRAIL (NFC)
+            // Immediately blocks duplicate entry attempts for the same event
+            // ====================================================================
+            if (transType == TransactionType.EventAttendance && _eventAttendanceCache.Contains(uid))
+            {
+                PlaySecurityAlert();
+                _outcomeTitle = "ANTI-PROXY TRIGGERED";
+                _outcomeMessage = "This credential has already checked into this event.";
+                ExecuteStateChange(AuthenticationStage.AccessDenied);
+
+                string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+                OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | DOUBLE ENTRY");
+
+                _ = Task.Run(() => _database.LogVerificationAsync(null, uid, transType, _currentMode, false, "ANTI_PROXY_VIOLATION", "DOUBLE_ENTRY", "Blocked attempt to scan into the same event multiple times."));
+                return;
             }
 
             if (IsInvalidUid(uid))
@@ -428,9 +466,7 @@ namespace NFC_System
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : uid;
 
-                // Stop the timer exactly before updating the UI state
                 nfcTimer.Stop();
-
                 string nfcResult = outcome.IsGranted ? "MATCH (Access Granted)" :
                                    (outcome.Step == VerificationStep.RequiresPin ? "MATCH (Proceeding to PIN)" : "DENIED");
                 LogPerformanceMetric("NFC Reader Response Time", nfcTimer.ElapsedMilliseconds, nfcResult);
@@ -454,8 +490,15 @@ namespace NFC_System
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
 
-                    if (outcome.IsGranted) ExecuteStateChange(AuthenticationStage.AccessGranted);
-                    else if (outcome.Step == VerificationStep.RequiresPin) ExecuteStateChange(AuthenticationStage.WaitingForPIN);
+                    if (outcome.IsGranted)
+                    {
+                        RegisterSuccessfulEntry(); // Map to anti-proxy cache
+                        ExecuteStateChange(AuthenticationStage.AccessGranted);
+                    }
+                    else if (outcome.Step == VerificationStep.RequiresPin)
+                    {
+                        ExecuteStateChange(AuthenticationStage.WaitingForPIN);
+                    }
                 }
             });
         }
@@ -491,18 +534,12 @@ namespace NFC_System
 
                 try
                 {
-                    await Task.Delay(400); // Artificial visual UI delay (excluded from metrics)
+                    await Task.Delay(400);
 
-                    // ====================================================================
-                    // EVALUATION MODULE: START PIN VERIFICATION TIMER
-                    // ====================================================================
                     Stopwatch pinTimer = Stopwatch.StartNew();
-
                     VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer);
-
                     pinTimer.Stop();
 
-                    // Parse out exact performance details
                     string pinResult = "MISMATCH";
                     if (outcome.ErrorCategory == "PIN_LOCKED") pinResult = "LOCKED";
                     else if (outcome.IsGranted) pinResult = "MATCH (Access Granted)";
@@ -543,6 +580,7 @@ namespace NFC_System
                         {
                             _outcomeTitle = outcome.ResultTitle;
                             _outcomeMessage = outcome.ResultMessage;
+                            RegisterSuccessfulEntry(); // Map to anti-proxy cache
                             SetState(AuthenticationStage.AccessGranted);
                         }
                         else if (outcome.Step == VerificationStep.RequiresQr)
@@ -577,14 +615,37 @@ namespace NFC_System
 
             VerificationOutcome outcome;
 
+            // Pre-calculate transaction type for QR specific routines
+            var transType = KioskStateController.CurrentType;
+            if (_originatingMode == "Event" && transType == TransactionType.Entry)
+            {
+                transType = TransactionType.EventAttendance;
+            }
+
+            // ====================================================================
+            // ANTI-PROXY GUARDRAIL (QR)
+            // Immediately blocks duplicate entry attempts for the same event
+            // ====================================================================
+            if (transType == TransactionType.EventAttendance && _eventAttendanceCache.Contains(payload.Trim()))
+            {
+                PlaySecurityAlert();
+                _outcomeTitle = "ANTI-PROXY TRIGGERED";
+                _outcomeMessage = "This credential has already checked into this event.";
+                LoadProfileData("UNKNOWN USER", payload.Trim());
+                ExecuteStateChange(AuthenticationStage.AccessDenied);
+
+                string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+                OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
+
+                _ = Task.Run(() => _database.LogVerificationAsync(null, payload.Trim(), transType, _currentMode, false, "ANTI_PROXY_VIOLATION", "DOUBLE_ENTRY", "Blocked attempt to scan into the same event multiple times."));
+
+                qrTimer.Stop();
+                LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / DOUBLE ENTRY");
+                return;
+            }
+
             if (_activeSession == null)
             {
-                var transType = KioskStateController.CurrentType;
-                if (_originatingMode == "Event" && transType == TransactionType.Entry)
-                {
-                    transType = TransactionType.EventAttendance;
-                }
-
                 outcome = await _engine.BeginQrFallbackVerificationAsync(payload, _currentMode, transType, _eventId);
                 if (outcome.Session != null) _activeSession = outcome.Session;
 
@@ -633,6 +694,7 @@ namespace NFC_System
                 qrTimer.Stop();
                 LogPerformanceMetric("QR Validation (High Security Match)", qrTimer.ElapsedMilliseconds, "MATCH (Access Granted)");
 
+                RegisterSuccessfulEntry(); // Map to anti-proxy cache
                 SetState(AuthenticationStage.AccessGranted);
             }
             else
