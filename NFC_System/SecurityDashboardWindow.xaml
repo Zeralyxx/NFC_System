@@ -115,6 +115,7 @@
                                 <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
                                     <ComboBoxItem Content="Security Personnel"/>
                                     <ComboBoxItem Content="Administrator"/>
+                                    <ComboBoxItem Content="Master Administrator"/>
                                 </ComboBox>
 
                                 <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
@@ -158,36 +159,49 @@
                             </Border>
                         </Grid>
 
+                        <!-- THE FIX: Widened Action Type and added ColumnSpacing -->
                         <!-- List Headers -->
                         <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
-                            <Grid>
+                            <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.8*"/>
+                                    <ColumnDefinition Width="1.7*"/>
                                     <ColumnDefinition Width="1.5*"/>
-                                    <ColumnDefinition Width="1*"/>
-                                    <ColumnDefinition Width="1*"/>
-                                    <ColumnDefinition Width="3*"/>
+                                    <ColumnDefinition Width="1.2*"/>
+                                    <ColumnDefinition Width="2.8*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="1" Text="Action Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="2" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="3" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="4" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             </Grid>
                         </Border>
 
-                        <ListView Grid.Row="2" x:Name="RecentActivityListView" Background="Transparent" Padding="0,8,16,0" SelectionMode="None">
+                        <ListView Grid.Row="2" x:Name="RecentActivityListView" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="16,0,16,0"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="local:SystemAuditLog">
-                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                    <!-- THE FIX: Added ColumnSpacing="12" to prevent text collision -->
+                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.8*"/>
+                                            <ColumnDefinition Width="1.7*"/>
                                             <ColumnDefinition Width="1.5*"/>
-                                            <ColumnDefinition Width="1*"/>
-                                            <ColumnDefinition Width="1*"/>
-                                            <ColumnDefinition Width="3*"/>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="2.8*"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="2" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="3" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
+                                        <TextBlock Grid.Column="4" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
@@ -197,9 +211,7 @@
             </Grid>
         </Grid>
 
-        <!-- ========================================================= -->
         <!-- THE MAGIC FIX: Expandable Popup Dialog for Deep Inspection-->
-        <!-- ========================================================= -->
         <ContentDialog x:Name="MasterLogsDialog"
                        CloseButtonText="Close"
                        DefaultButton="Close"
@@ -273,7 +285,14 @@
                             </Grid>
                         </Border>
 
-                        <ListView Grid.Row="1" x:Name="PopupLogsListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                        <ListView Grid.Row="1" x:Name="PopupLogsListView" Height="500" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="16,0,16,0"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="local:SystemAuditLog">
                                     <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
@@ -297,5 +316,22 @@
                 </Border>
             </Grid>
         </ContentDialog>
+
+        <!-- THE FIX: Administrator Authorization Intercept Popup -->
+        <ContentDialog x:Name="AdminAuthDialog"
+                       Title="Administrator Authorization"
+                       CloseButtonText="Cancel"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="350">
+                <TextBlock Text="To prevent unauthorized account creation, an Administrator must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ProgressRing IsActive="True" Width="24" Height="24"/>
+                        <TextBlock Text="Please tap your Admin NFC card..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ContentDialog>
+
     </Grid>
 </Window>

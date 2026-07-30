@@ -7,6 +7,7 @@ using System;
 using WinRT.Interop;
 using Windows.Devices.Enumeration;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace NFC_System
 {
@@ -14,6 +15,9 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
+
+        // Prevents the system from logging an audit simply because the window opened
+        private bool _isInitializing = true;
 
         public VerificationWindow()
         {
@@ -25,7 +29,7 @@ namespace NFC_System
             _ = InitializeAsync();
         }
 
-        private async System.Threading.Tasks.Task InitializeAsync()
+        private async Task InitializeAsync()
         {
             try
             {
@@ -51,6 +55,11 @@ namespace NFC_System
                 };
 
                 VerificationLogListView.Items.Insert(0, "[INFO] Risk-based verification engine ready.");
+
+                // THE FIX: Wait slightly for WinUI to finish drawing the comboboxes 
+                // before enabling active auditing to prevent ghost logs.
+                await Task.Delay(500);
+                _isInitializing = false;
             }
             catch (Exception ex)
             {
@@ -161,7 +170,7 @@ namespace NFC_System
 
                 try
                 {
-                    await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Gate Guard manually cleared 2FA lockout for {student.FullName} ({studentId}).");
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_OVERRIDE", $"Manually cleared 2FA lockout for {student.FullName} ({studentId}).");
                 }
                 catch { }
 
@@ -210,13 +219,39 @@ namespace NFC_System
                 _ => "Standard"
             };
 
-            try { await _database.SetSettingAsync("verification_mode", modeString); } catch { }
+            try
+            {
+                await _database.SetSettingAsync("verification_mode", modeString);
+
+                // THE FIX: Active UI Auditing for Mode Swapping
+                if (!_isInitializing)
+                {
+                    string staff = AppSession.CurrentStaffName;
+                    await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed global gate security mode to {modeString}.");
+                    VerificationLogListView.Items.Insert(0, $"[AUDIT] Security Mode changed to {modeString} by {staff}");
+                }
+            }
+            catch { }
         }
 
-        private void DirectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void DirectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (SecurityModeComboBox == null || DirectionComboBox == null) return;
             KioskStateController.BroadcastModeChange(GetSelectedMode(), GetSelectedTransactionType());
+
+            // THE FIX: Active UI Auditing for Direction Swapping
+            if (!_isInitializing)
+            {
+                string direction = DirectionComboBox.SelectedIndex == 1 ? "Exit" : "Entry";
+                string staff = AppSession.CurrentStaffName;
+
+                try
+                {
+                    await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed Gate Direction to {direction}.");
+                    VerificationLogListView.Items.Insert(0, $"[AUDIT] Gate Direction changed to {direction} by {staff}");
+                }
+                catch { }
+            }
         }
 
         private VerificationMode GetSelectedMode()

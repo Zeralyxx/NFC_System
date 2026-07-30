@@ -15,6 +15,7 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
+        private bool _isInitializing = true;
 
         public EventAttendanceWindow()
         {
@@ -50,6 +51,8 @@ namespace NFC_System
                 {
                     ManageEventsButton.Visibility = Visibility.Collapsed;
                 }
+
+                _isInitializing = false;
             }
             catch (Exception ex)
             {
@@ -81,14 +84,40 @@ namespace NFC_System
             await LoadActiveEventsAsync();
         }
 
-        private void ActiveEventComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void ActiveEventComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             BroadcastStateToKiosk();
+
+            if (!_isInitializing && ActiveEventComboBox.SelectedItem is EventRecord selectedEvent)
+            {
+                string staff = AppSession.CurrentStaffName;
+                try
+                {
+                    // Inside ActiveEventComboBox_SelectionChanged
+                    await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Set Event Terminal to monitor '{selectedEvent.EventName}'.");
+                }
+                catch { }
+                AttendanceLogListView.Items.Insert(0, $"[AUDIT] Terminal set to {selectedEvent.EventName} by {staff}");
+            }
         }
 
-        private void DirectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void DirectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             BroadcastStateToKiosk();
+
+            if (!_isInitializing)
+            {
+                string direction = DirectionComboBox.SelectedIndex == 1 ? "Exit" : "Entry";
+                string staff = AppSession.CurrentStaffName;
+
+                try
+                {
+                    // Inside DirectionComboBox_SelectionChanged
+                    await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed Event Terminal Direction to {direction}.");
+                }
+                catch { }
+                AttendanceLogListView.Items.Insert(0, $"[AUDIT] Direction changed to {direction} by {staff}");
+            }
         }
 
         private void BroadcastStateToKiosk()
@@ -190,7 +219,7 @@ namespace NFC_System
 
                 try
                 {
-                    await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Event Guard manually cleared 2FA lockout for {student.FullName} ({studentId}).");
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_OVERRIDE", $"Manually cleared 2FA lockout for {student.FullName} ({studentId}).");
                 }
                 catch { }
 

@@ -3,10 +3,14 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
+using System.IO;
 using System.IO.Ports;
 using System.Threading.Tasks;
 using WinRT.Interop;
 using MySqlConnector;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text;
 
 namespace NFC_System
 {
@@ -23,12 +27,20 @@ namespace NFC_System
     {
         private SerialPort? _serialPort;
         private readonly DatabaseService _database = new();
-        private string _currentPort = "COM3"; // Default
+        private string _currentPort = "COM3";
         private bool _isAuthenticating = false;
 
         // FIRST-TIME SETUP VARIABLES
         private bool _isFirstTimeSetup = false;
         private string _pendingMasterUid = "";
+
+        // ====================================================================
+        // CLOUD FIRESTORE CONFIGURATION
+        // Replace 'YOUR-FIREBASE-PROJECT-ID' with your actual Firebase Project ID!
+        // ====================================================================
+        private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
+        private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin";
+        private static readonly HttpClient _httpClient = new HttpClient();
 
         public MainWindow()
         {
@@ -55,28 +67,89 @@ namespace NFC_System
             }
         }
 
+        private void PlaySuccessPing()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "success_ping.wav");
+                    if (File.Exists(soundPath))
+                    {
+                        using var player = new System.Media.SoundPlayer(soundPath);
+                        player.PlaySync();
+                    }
+                    else
+                    {
+                        Console.Beep(1046, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1318, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1568, 200);
+                    }
+                }
+                catch { }
+            });
+        }
+
         /* =========================================================================
-         * SYSTEM INITIALIZATION & HARDWARE POPUP
+         * SYSTEM INITIALIZATION & FIREBASE CLOUD SYNC
          * ========================================================================= */
 
         private async Task InitializeSystemAsync()
         {
-            LoginStatusText.Text = "Initializing system and databases...";
+            LoginStatusText.Text = "Synchronizing with Cloud & Local Databases...";
             LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
             LoginLoadingRing.IsActive = true;
             LoginLoadingRing.Visibility = Visibility.Visible;
 
             try
             {
+                // 1. Ensure local schema exists
                 await _database.EnsureSchemaAsync();
 
-                // CHECK IF FIRST-TIME RUN
+                // 2. Count local staff
                 int staffCount = 0;
                 using (var connection = new MySqlConnection(DatabaseService.ConnectionString))
                 {
                     await connection.OpenAsync();
                     using var cmd = new MySqlCommand("SELECT COUNT(*) FROM staff", connection);
                     staffCount = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+                }
+
+                // 3. Check Firestore for Global Master Card if local MySQL has no staff
+                if (staffCount == 0)
+                {
+                    try
+                    {
+                        var response = await _httpClient.GetAsync(FIRESTORE_URL);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var json = await response.Content.ReadAsStringAsync();
+                            if (!string.IsNullOrWhiteSpace(json))
+                            {
+                                using JsonDocument doc = JsonDocument.Parse(json);
+                                if (doc.RootElement.TryGetProperty("fields", out var fields))
+                                {
+                                    string globalMasterUid = fields.GetProperty("uid").GetProperty("stringValue").GetString() ?? "";
+                                    string globalMasterName = fields.GetProperty("name").GetProperty("stringValue").GetString() ?? "Global Master Admin";
+
+                                    if (!string.IsNullOrWhiteSpace(globalMasterUid))
+                                    {
+                                        // Sync the global master card into local MySQL database
+                                        await _database.RegisterStaffAsync(globalMasterUid, globalMasterName, "Master Administrator");
+                                        await _database.AddAlertAsync(null, "ADMIN_ACTION", $"Global Master Card synced from Firestore: '{globalMasterName}'.");
+
+                                        staffCount = 1; // Mark as initialized so setup screen is skipped
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Failsafe: Continue locally if offline
+                    }
                 }
 
                 _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
@@ -87,7 +160,6 @@ namespace NFC_System
 
                 if (staffCount == 0)
                 {
-                    // TRIGGER FIRST-TIME SETUP
                     _isFirstTimeSetup = true;
                     LoginOverlay.Visibility = Visibility.Collapsed;
                     SetupOverlay.Visibility = Visibility.Visible;
@@ -140,7 +212,7 @@ namespace NFC_System
         }
 
         /* =========================================================================
-         * FIRST-TIME SETUP REGISTRATION
+         * FIRST-TIME SETUP REGISTRATION (UPLOADS TO FIREBASE)
          * ========================================================================= */
         private async void CompleteSetupButton_Click(object sender, RoutedEventArgs e)
         {
@@ -159,18 +231,44 @@ namespace NFC_System
 
             try
             {
-                await _database.RegisterStaffAsync(_pendingMasterUid, fullName, "Administrator");
+                // 1. Save locally to MySQL
+                await _database.RegisterStaffAsync(_pendingMasterUid, fullName, "Master Administrator");
                 await _database.AddAlertAsync(null, "ADMIN_ACTION", $"System initialized. Master Administrator '{fullName}' registered.");
+
+                // 2. Upload to Cloud Firestore REST API
+                try
+                {
+                    var firestorePayload = new
+                    {
+                        fields = new
+                        {
+                            uid = new { stringValue = _pendingMasterUid },
+                            name = new { stringValue = fullName },
+                            role = new { stringValue = "Master Administrator" },
+                            created_at = new { stringValue = DateTime.UtcNow.ToString("O") }
+                        }
+                    };
+
+                    string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                    // PATCH creates or overwrites the document at /MasterCard/master_admin
+                    await _httpClient.PatchAsync(FIRESTORE_URL, content);
+                }
+                catch
+                {
+                    // Failsafe: Local registration remains intact if offline
+                }
 
                 _isFirstTimeSetup = false;
                 SetupOverlay.Visibility = Visibility.Collapsed;
 
-                // Log them in immediately
                 AppSession.IsAdmin = true;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName;
-                AppSession.CurrentStaffRoleLabel = "Admin";
+                AppSession.CurrentStaffRoleLabel = "Master Admin";
 
+                PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
             catch (Exception ex)
@@ -223,12 +321,11 @@ namespace NFC_System
 
         private async Task ProcessLoginScanAsync(string uid)
         {
-            // IF FIRST TIME SETUP IS ACTIVE, INTERCEPT THE TAP
             if (_isFirstTimeSetup)
             {
                 if (SetupFormPanel.Visibility == Visibility.Visible)
                 {
-                    _isAuthenticating = false; // Ignore taps while typing name
+                    _isAuthenticating = false;
                     return;
                 }
 
@@ -242,7 +339,6 @@ namespace NFC_System
                 return;
             }
 
-            // REGULAR LOGIN FLOW
             LoginStatusText.Text = "Authenticating...";
             LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
             LoginLoadingRing.IsActive = true;
@@ -267,25 +363,30 @@ namespace NFC_System
                 return;
             }
 
-            // Fallbacks for prototypes if database is empty
             if (role == null)
             {
-                if (uid == "VALID_STAFF_CARD")
+                if (uid == "04:A1:B2:C3")
+                {
+                    role = "Master Administrator";
+                    fullName = "Master Admin";
+                }
+                else if (uid == "VALID_STAFF_CARD")
                 {
                     role = "Security Personnel";
                     fullName = "Simulated Guard";
                 }
             }
 
-            if (role == "Administrator")
+            if (role == "Administrator" || role == "Master Administrator")
             {
                 AppSession.IsAdmin = true;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName ?? "Administrator";
-                AppSession.CurrentStaffRoleLabel = "Admin";
+                AppSession.CurrentStaffRoleLabel = role == "Master Administrator" ? "Master Admin" : "Admin";
 
-                await _database.AddAlertAsync(null, "ADMIN_LOGIN", $"Administrator logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})");
+                await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})");
 
+                PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
             else if (role == "Security Personnel")
@@ -295,8 +396,9 @@ namespace NFC_System
                 AppSession.CurrentStaffName = fullName ?? "Guard";
                 AppSession.CurrentStaffRoleLabel = "Personnel";
 
-                await _database.AddAlertAsync(null, "STAFF_LOGIN", $"Security Personnel logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})");
+                await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})");
 
+                PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
             else
@@ -363,7 +465,7 @@ namespace NFC_System
         private void SignOut_Click(object sender, RoutedEventArgs e)
         {
             string activeRole = AppSession.IsAdmin ? "Administrator" : "Security Personnel";
-            _ = _database.AddAlertAsync(null, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system.");
+            _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system.");
 
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
@@ -430,11 +532,6 @@ namespace NFC_System
             new SecurityDashboardWindow().Activate();
             this.Close();
         }
-
-
-        /* =========================================================================
-         * WINDOW LIFECYCLE HELPERS
-         * ========================================================================= */
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {

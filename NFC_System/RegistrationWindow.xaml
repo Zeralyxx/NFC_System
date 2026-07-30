@@ -46,7 +46,8 @@
                     <StackPanel Spacing="20">
                         <TextBlock Text="Identity Information" Style="{StaticResource CardTitleStyle}"/>
 
-                        <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001"/>
+                        <!-- THE FIX: Int-only formatting applied via TextChanging -->
+                        <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 2600001" TextChanging="NumberOnly_TextChanging"/>
                         <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
                         <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
                         <Grid ColumnSpacing="16">
@@ -54,7 +55,8 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0" x:Name="YearLevelTextBox" Header="Year Level" PlaceholderText="e.g. 3"/>
+                            <!-- THE FIX: Int-only formatting applied via TextChanging -->
+                            <TextBox Grid.Column="0" x:Name="YearLevelTextBox" Header="Year Level" PlaceholderText="e.g. 3" TextChanging="NumberOnly_TextChanging"/>
                             <TextBox Grid.Column="1" x:Name="SectionTextBox" Header="Section" PlaceholderText="e.g. 3A"/>
                         </Grid>
 
@@ -90,6 +92,7 @@
                             </Grid.ColumnDefinitions>
                             <Button Grid.Column="0" x:Name="ScanUidButton" Content="Scan UID" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
                             <Button Grid.Column="1" x:Name="ClearButton" Content="Clear" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
+
                             <!-- Primary Call to Action -->
                             <Button Grid.Column="2" x:Name="SaveButton" Content="Save Student" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                         </Grid>
@@ -151,7 +154,6 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="System Audit Logs" Style="{StaticResource CardTitleStyle}"/>
-                        <!-- Minimal styling hook applied here; standard ListView is fine but container provides the bounds -->
                         <ListView Grid.Row="1" x:Name="UidLogListView" Background="Transparent" Margin="0,8,0,0"/>
                     </Grid>
                 </Border>

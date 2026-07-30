@@ -29,7 +29,7 @@
 
             <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                 <TextBlock Text="Student Directory &amp; Security State" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Search records, manage enrollment status, and review PIN lockout security flags." Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                <TextBlock Text="Search records, update IDs, and manage enrollment status." Style="{StaticResource BodyTextStyle}" FontSize="16"/>
             </StackPanel>
         </Grid>
 
@@ -46,23 +46,31 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Header & Enlarge Trigger -->
+                    <Grid Grid.Row="0" Margin="0,0,0,24">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Student Roster" Style="{StaticResource CardTitleStyle}" Margin="0" VerticalAlignment="Center"/>
+                        <Button x:Name="OpenPopupDirectoryButton" Grid.Column="1" Content="⛶ Full Screen Explorer" Click="OpenPopupDirectoryButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="36" Padding="16,0"/>
+                    </Grid>
+
                     <!-- Search and Filter Toolbar -->
-                    <Grid Grid.Row="0" Margin="0,0,0,24" ColumnSpacing="16">
+                    <Grid Grid.Row="1" Margin="0,0,0,24" ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- FIX: Added Header to align perfectly with the comboboxes -->
                         <TextBox x:Name="SearchBox" Grid.Column="0" Header="Search Directory" PlaceholderText="Search by ID, Name, or UID..." TextChanged="SearchBox_TextChanged" VerticalAlignment="Stretch"/>
-
                         <ComboBox x:Name="CourseFilterComboBox" Grid.Column="1" Header="Course" Width="180" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch"/>
-
                         <ComboBox x:Name="StatusFilterComboBox" Grid.Column="2" Header="Filter Status" SelectedIndex="0" Width="160" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch">
                             <ComboBoxItem Content="All Students"/>
                             <ComboBoxItem Content="Active Only"/>
@@ -72,44 +80,52 @@
                     </Grid>
 
                     <!-- Pseudo-DataGrid Header -->
-                    <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                    <Border Grid.Row="2" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.5*"/>
-                                <ColumnDefinition Width="2.5*"/>
-                                <ColumnDefinition Width="2*"/>
-                                <ColumnDefinition Width="1.5*"/>
+                                <ColumnDefinition Width="1.2*"/>
+                                <ColumnDefinition Width="2.0*"/>
+                                <ColumnDefinition Width="2.8*"/>
+                                <ColumnDefinition Width="0.6*"/>
+                                <ColumnDefinition Width="0.7*"/>
+                                <ColumnDefinition Width="1.0*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             <TextBlock Grid.Column="1" Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             <TextBlock Grid.Column="2" Text="Course" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                            <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="3" Text="Year" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="4" Text="Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            <TextBlock Grid.Column="5" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                         </Grid>
                     </Border>
 
                     <!-- Native DataGrid (ListView) -->
-                    <ListView x:Name="StudentListView" Grid.Row="2" SelectionChanged="StudentListView_SelectionChanged" Background="Transparent" CornerRadius="8">
+                    <ListView x:Name="StudentListView" Grid.Row="3" SelectionChanged="StudentListView_SelectionChanged" Background="Transparent" CornerRadius="8">
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="2.5*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="2.0*"/>
+                                        <ColumnDefinition Width="2.8*"/>
+                                        <ColumnDefinition Width="0.6*"/>
+                                        <ColumnDefinition Width="0.7*"/>
+                                        <ColumnDefinition Width="1.0*"/>
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding YearLevel}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding SectionName}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
 
                     <!-- Paging Controls -->
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="24" Margin="0,16,0,0">
+                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="24" Margin="0,16,0,0">
                         <Button x:Name="PrevBtn" Content="&#xE76B;" FontFamily="Segoe Fluent Icons" Click="PageChange_Click" IsEnabled="False" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF"/>
                         <TextBlock x:Name="PageInfoText" Text="Page 1 of 1" VerticalAlignment="Center" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold"/>
                         <Button x:Name="NextBtn" Content="&#xE76C;" FontFamily="Segoe Fluent Icons" Click="PageChange_Click" IsEnabled="False" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF"/>
@@ -117,7 +133,6 @@
                 </Grid>
             </Border>
 
-            <!-- Right Column: Edit Panel -->
             <!-- Right Column: Edit Panel -->
             <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -128,7 +143,7 @@
                             <TextBlock Text="Manage individual security access or perform global batch status updates." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
                         </StackPanel>
 
-                        <!-- MOVED UP: Batch Operations Trigger -->
+                        <!-- Batch Operations Trigger -->
                         <StackPanel Spacing="12">
                             <TextBlock Text="Advanced Global Operations" Style="{StaticResource DataValueStyle}" Foreground="{StaticResource PrimaryAccentBrush}"/>
                             <Button x:Name="OpenBatchDialogButton" Content="Batch Update Status (Graduation / Expulsion)" Click="OpenBatchDialogButton_Click" HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
@@ -138,7 +153,9 @@
 
                         <!-- Edit Controls -->
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Individual Security &amp; Enrollment" Style="{StaticResource DataValueStyle}"/>
+                            <TextBlock Text="Individual Profile Management" Style="{StaticResource DataValueStyle}"/>
+
+                            <TextBox x:Name="EditStudentIdBox" Header="Student ID (Editable)" PlaceholderText="Select a student to edit..." IsEnabled="False"/>
 
                             <ComboBox x:Name="EditStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch" IsEnabled="False">
                                 <ComboBoxItem Content="Active"/>
@@ -146,23 +163,16 @@
                                 <ComboBoxItem Content="Graduated"/>
                                 <ComboBoxItem Content="Expelled"/>
                             </ComboBox>
-
-                            <Border Padding="16" CornerRadius="12" Background="#1AFFFFFF" Margin="0,8,0,0">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
-                                        <TextBlock Text="2FA Lockout State" Style="{StaticResource DataValueStyle}"/>
-                                        <TextBlock x:Name="LockoutStatusText" Text="Select a student" Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <Button x:Name="UnlockAccountButton" Grid.Column="1" Content="Unlock Account" Click="UnlockAccountButton_Click" IsEnabled="False" CornerRadius="{StaticResource ButtonCornerRadius}" Margin="8,0,0,0"/>
-                                </Grid>
-                            </Border>
                         </StackPanel>
 
-                        <Button x:Name="SaveChangesButton" Content="Save Security Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Margin="0,8,0,0"/>
+                        <Grid ColumnSpacing="12" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="DeleteStudentButton" Grid.Column="0" Content="Delete Profile" Click="DeleteStudentButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#40FF0000" Foreground="#FF8888" BorderBrush="#80FF0000" BorderThickness="1"/>
+                            <Button x:Name="SaveChangesButton" Grid.Column="1" Content="Save Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                        </Grid>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -174,7 +184,7 @@
         <!-- ========================================================= -->
         <ContentDialog x:Name="BatchUpdateDialog" Title="Batch Status Update" CloseButtonText="Cancel" CornerRadius="8">
             <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
-                <TextBlock Text="Warning: This will permanently change the enrollment status of multiple students in the selected bracket. This action will be logged." Foreground="#F87171" TextWrapping="Wrap" FontSize="13"/>
+                <TextBlock Text="Warning: This will permanently change the enrollment status of multiple students. Requires Admin NFC tap." Foreground="#F87171" TextWrapping="Wrap" FontSize="13"/>
 
                 <ComboBox x:Name="BatchCourseComboBox" Header="Target Course" HorizontalAlignment="Stretch"/>
 
@@ -195,8 +205,125 @@
                 </ComboBox>
 
                 <Button x:Name="ConfirmBatchButton" Content="Apply Batch Update" Click="ConfirmBatchButton_Click" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Height="44" Margin="0,16,0,0"/>
-                <TextBlock x:Name="BatchDialogStatusText" Foreground="{StaticResource PrimaryAccentBrush}" HorizontalAlignment="Center" FontWeight="SemiBold" Visibility="Collapsed"/>
             </StackPanel>
+        </ContentDialog>
+
+        <!-- ========================================================= -->
+        <!-- THE FIX: ADMINISTRATOR AUTHORIZATION INTERCEPT POPUP      -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="AdminAuthDialog"
+                       Title="Administrator Authorization Required"
+                       CloseButtonText="Cancel"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="350">
+                <TextBlock Text="This action requires Administrator privileges. Please tap your authorized NFC card to proceed." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ProgressRing IsActive="True" Width="24" Height="24"/>
+                        <TextBlock Text="Awaiting Admin NFC tap..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+            </StackPanel>
+        </ContentDialog>
+
+        <!-- ========================================================= -->
+        <!-- EXPANDABLE POPUP DIALOG FOR DEEP INSPECTION               -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="MasterDirectoryDialog"
+                       CloseButtonText="Close"
+                       DefaultButton="Close"
+                       CornerRadius="8">
+
+            <ContentDialog.Resources>
+                <x:Double x:Key="ContentDialogMaxWidth">1600</x:Double>
+            </ContentDialog.Resources>
+
+            <Grid x:Name="DialogDirectoryContainer" Width="900" Margin="0,16,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Master Student Directory" FontWeight="SemiBold" FontSize="18" VerticalAlignment="Center"/>
+                    <ToggleButton x:Name="PopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="PopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                </Grid>
+
+                <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PopupSearchBox" Grid.Column="0" PlaceholderText="Search ID, Name, or UID..." TextChanged="PopupFilter_Changed"/>
+                    <ComboBox x:Name="PopupCourseFilter" Grid.Column="1" Header="" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed"/>
+                    <ComboBox x:Name="PopupStatusFilter" Grid.Column="2" Header="" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+                        <ComboBoxItem Content="All Students"/>
+                        <ComboBoxItem Content="Active Only"/>
+                        <ComboBoxItem Content="Locked Out"/>
+                        <ComboBoxItem Content="Inactive"/>
+                    </ComboBox>
+                    <Button Grid.Column="3" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                </Grid>
+
+                <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.2*"/>
+                                    <ColumnDefinition Width="2.0*"/>
+                                    <ColumnDefinition Width="2.8*"/>
+                                    <ColumnDefinition Width="0.6*"/>
+                                    <ColumnDefinition Width="0.7*"/>
+                                    <ColumnDefinition Width="1.0*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="1" Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="2" Text="Course" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="3" Text="Year" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="4" Text="Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="5" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                            </Grid>
+                        </Border>
+
+                        <ListView Grid.Row="1" x:Name="PopupStudentListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="2.0*"/>
+                                            <ColumnDefinition Width="2.8*"/>
+                                            <ColumnDefinition Width="0.6*"/>
+                                            <ColumnDefinition Width="0.7*"/>
+                                            <ColumnDefinition Width="1.0*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding YearLevel}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding SectionName}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="5" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+            </Grid>
         </ContentDialog>
     </Grid>
 </Window>

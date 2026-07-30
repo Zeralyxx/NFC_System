@@ -41,7 +41,6 @@ namespace NFC_System
             {
                 await _database.EnsureSchemaAsync();
 
-                // CHANGE 1: Fetch the official courses and populate the dropdown!
                 CourseComboBox.ItemsSource = await _database.GetDistinctCoursesAsync();
 
                 // Fetch the port dynamically from the database, fallback to COM3
@@ -53,6 +52,19 @@ namespace NFC_System
             catch (Exception ex)
             {
                 UidLogListView.Items.Insert(0, $"[ERROR] Setup failed: {ex.Message}");
+            }
+        }
+
+        // THE FIX: Strict Int-only formatting logic for Student ID and Year
+        private void NumberOnly_TextChanging(TextBox sender, TextBoxTextChangingEventArgs args)
+        {
+            string text = sender.Text;
+            if (text.Any(c => !char.IsDigit(c)))
+            {
+                int selectionStart = sender.SelectionStart;
+                sender.Text = new string(text.Where(char.IsDigit).ToArray());
+                // Restore cursor position smoothly
+                sender.SelectionStart = Math.Max(0, selectionStart - 1);
             }
         }
 
@@ -146,24 +158,18 @@ namespace NFC_System
                         }
                         else
                         {
-                            NfcUidTextBox.Text = uid;
-
-                            // If the student exists in the database, auto-fill the form!
                             if (existingStudent != null)
                             {
-                                _isExistingProfile = true; // Tell the system this is an update
-                                PinPasswordBox.PlaceholderText = "(Leave blank to keep PIN)"; // Helpful UI hint
+                                _isExistingProfile = true;
+                                PinPasswordBox.PlaceholderText = "(Leave blank to keep PIN)";
 
                                 StudentIdTextBox.Text = existingStudent.StudentId;
                                 FullNameTextBox.Text = existingStudent.FullName;
-
-                                // CHANGE 2: Select the matched course in the dropdown
                                 CourseComboBox.SelectedItem = existingStudent.Course;
-
                                 YearLevelTextBox.Text = existingStudent.YearLevel;
                                 SectionTextBox.Text = existingStudent.SectionName;
+                                NfcUidTextBox.Text = uid;
 
-                                // Match the ComboBox selection to their existing status
                                 foreach (ComboBoxItem item in StatusComboBox.Items)
                                 {
                                     if (item.Content?.ToString() == existingStudent.Status)
@@ -177,12 +183,21 @@ namespace NFC_System
                             }
                             else
                             {
-                                _isExistingProfile = false; // It's a new card
-                                PinPasswordBox.PlaceholderText = "****"; // Reset placeholder
+                                // THE FIX: Smart Clear
+                                // If the guard was previously looking at an existing profile, but then scanned 
+                                // a completely NEW unassigned card, wipe the fields so they don't accidentally
+                                // bind the previous student's data to the new card!
+                                if (_isExistingProfile)
+                                {
+                                    ClearForm();
+                                }
+
+                                NfcUidTextBox.Text = uid;
+                                _isExistingProfile = false;
+                                PinPasswordBox.PlaceholderText = "****";
                                 UidLogListView.Items.Insert(0, $"[INFO] New unassigned card scanned: {uid}");
                             }
 
-                            // Generate the QR based on whatever the Student ID currently is
                             string currentId = StudentIdTextBox.Text.Trim();
                             string generatedQr = BuildQrCredential(currentId);
                             QrCredentialTextBox.Text = generatedQr;
@@ -195,10 +210,12 @@ namespace NFC_System
                             }
                             else
                             {
-                                // If it's a new card and they haven't typed an ID yet, hide the QR image
                                 QrCodeImage.Visibility = Visibility.Collapsed;
                                 QrPlaceholderPanel.Visibility = Visibility.Visible;
-                                UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
+                                if (!_isExistingProfile)
+                                {
+                                    UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
+                                }
                             }
 
                             PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
@@ -234,7 +251,6 @@ namespace NFC_System
             string qrCredential = QrCredentialTextBox.Text.Trim();
             string status = StatusComboBox.SelectedItem is ComboBoxItem item ? item.Content?.ToString() ?? "Active" : "Active";
 
-            // CHANGE 3: Extract the selected course from the ComboBox
             string course = CourseComboBox.SelectedItem?.ToString() ?? "";
 
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
@@ -245,13 +261,11 @@ namespace NFC_System
 
             if (string.IsNullOrWhiteSpace(pin))
             {
-                // If it's a NEW student, they MUST enter a PIN
                 if (!_isExistingProfile)
                 {
                     UidLogListView.Items.Insert(0, "[ERROR] A 4-digit PIN is strictly required for new enrollments.");
                     return;
                 }
-                // If it is an EXISTING student, we allow it to pass through blank!
             }
             else if (pin.Length != 4 || !pin.All(char.IsDigit))
             {
@@ -271,7 +285,7 @@ namespace NFC_System
                 {
                     StudentId = studentId,
                     FullName = fullName,
-                    Course = course, // Maps the course we extracted above
+                    Course = course,
                     YearLevel = YearLevelTextBox.Text.Trim(),
                     SectionName = SectionTextBox.Text.Trim(),
                     Status = status,
@@ -281,6 +295,7 @@ namespace NFC_System
 
                 await _database.SaveStudentAsync(student, pin);
 
+                // No intrusive prompts. Just logs success and clears ready for the next person!
                 UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {fullName}");
                 PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
                 ClearForm();
@@ -295,10 +310,7 @@ namespace NFC_System
         {
             StudentIdTextBox.Text = "";
             FullNameTextBox.Text = "";
-
-            // CHANGE 4: Clear the Combobox instead of the old textbox
             CourseComboBox.SelectedItem = null;
-
             YearLevelTextBox.Text = "";
             SectionTextBox.Text = "";
             NfcUidTextBox.Text = "";

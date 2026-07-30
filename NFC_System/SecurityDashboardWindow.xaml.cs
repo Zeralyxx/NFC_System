@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
@@ -16,6 +17,12 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private List<SystemAuditLog> _masterLogsCache = new();
         private SerialPort? _serialPort;
+
+        // State variables for RBAC authorization
+        private bool _isAwaitingAdminAuth = false;
+        private string _pendingStaffName = "";
+        private string _pendingStaffUid = "";
+        private string _pendingStaffRole = "";
 
         public SecurityDashboardWindow()
         {
@@ -35,7 +42,6 @@ namespace NFC_System
                 await _database.EnsureSchemaAsync();
                 await RefreshDashboardAsync();
 
-                // Connect NFC reader to capture new staff cards
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
                 TryConnectSerial(nfcPort);
             }
@@ -45,7 +51,33 @@ namespace NFC_System
             }
         }
 
-        // --- NFC SERIAL PORT LOGIC FOR STAFF REGISTRATION ---
+        // ====================================================================
+        // NATIVE HARDWARE SUCCESS CHIME
+        // ====================================================================
+        private void PlaySuccessPing()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "success_ping.wav");
+                    if (File.Exists(soundPath))
+                    {
+                        using var player = new System.Media.SoundPlayer(soundPath);
+                        player.PlaySync();
+                    }
+                    else
+                    {
+                        Console.Beep(1046, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1318, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1568, 200);
+                    }
+                }
+                catch { }
+            });
+        }
 
         private void TryConnectSerial(string portName)
         {
@@ -74,11 +106,36 @@ namespace NFC_System
                 {
                     string uid = line.Substring(4).Trim();
 
-                    // Auto-fill the staff registration text box when a card is tapped!
-                    DispatcherQueue.TryEnqueue(() =>
+                    DispatcherQueue.TryEnqueue(async () =>
                     {
-                        StaffNfcUidTextBox.Text = uid;
-                        StatusTextBlock.Text = "Card scanned. Ready to register staff.";
+                        // If we are awaiting authorization, intercept the tap!
+                        if (_isAwaitingAdminAuth)
+                        {
+                            var details = await _database.GetStaffDetailsAsync(uid);
+
+                            // Check if the card tapped belongs to an Admin
+                            if (details.Role == "Administrator" || details.Role == "Master Administrator")
+                            {
+                                _isAwaitingAdminAuth = false;
+                                AdminAuthDialog.Hide();
+                                PlaySuccessPing(); // <--- THE FIX
+                                await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, details.FullName ?? "Admin");
+                            }
+                            else
+                            {
+                                _isAwaitingAdminAuth = false;
+                                AdminAuthDialog.Hide();
+                                StatusTextBlock.Text = "Authorization Denied: Tapped card is not an Administrator.";
+                                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                            }
+                        }
+                        else
+                        {
+                            // Normal behavior: auto-fill the textbox for registration
+                            StaffNfcUidTextBox.Text = uid;
+                            StatusTextBlock.Text = "Card scanned. Ready to register staff.";
+                            StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                        }
                     });
                 }
             }
@@ -106,14 +163,12 @@ namespace NFC_System
         }
 
         // --- DASHBOARD DATA ---
-
         private async Task RefreshDashboardAsync()
         {
             try
             {
                 var recentLogs = await _database.GetMasterAuditLogsAsync(30);
                 RecentActivityListView.ItemsSource = recentLogs;
-                StatusTextBlock.Text = "Dashboard refreshed successfully.";
             }
             catch (Exception ex)
             {
@@ -127,7 +182,6 @@ namespace NFC_System
         }
 
         // --- EXPANDABLE POPUP DIALOG LOGIC ---
-
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
             MasterLogsDialog.XamlRoot = this.Content.XamlRoot;
@@ -200,25 +254,57 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(uid))
             {
                 StatusTextBlock.Text = "Staff Name and NFC UID are strictly required.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
                 return;
             }
 
+            // If Master Admin, skip the authorization prompt!
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecuteStaffRegistration(uid, fullName, role, AppSession.CurrentStaffName);
+            }
+            else
+            {
+                // Standard Admin needs to tap their card again to prove they are present
+                _pendingStaffName = fullName;
+                _pendingStaffUid = uid;
+                _pendingStaffRole = role;
+                _isAwaitingAdminAuth = true;
+
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                var result = await AdminAuthDialog.ShowAsync();
+
+                if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    // They clicked Cancel
+                    _isAwaitingAdminAuth = false;
+                    StatusTextBlock.Text = "Registration cancelled.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+        }
+
+        // Extracted execution method so it can be called from the prompt OR directly
+        private async Task ExecuteStaffRegistration(string uid, string fullName, string role, string authorizedBy)
+        {
             try
             {
                 await _database.RegisterStaffAsync(uid, fullName, role);
-
-                await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Registered new {role} credentials for: {fullName}");
+                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Authorized registration of new {role}: {fullName}");
 
                 StaffNameTextBox.Text = "";
                 StaffNfcUidTextBox.Text = "";
                 StaffRoleComboBox.SelectedIndex = 0;
+
                 StatusTextBlock.Text = $"Successfully registered {role}: {fullName}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
 
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Registration failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
             }
         }
 
@@ -249,6 +335,7 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(studentId) || pin.Length != 4 || !pin.All(char.IsDigit))
             {
                 StatusTextBlock.Text = "Enter a student ID and a 4-digit PIN.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
                 return;
             }
 
@@ -259,14 +346,20 @@ namespace NFC_System
                 NewPinPasswordBox.Password = "";
                 ResetStudentIdTextBox.Text = "";
                 StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
 
-                try { await _database.AddAlertAsync(null, "ADMIN_OVERRIDE", $"Security personnel manually unlocked account and reset PIN for {studentId}."); } catch { }
+                try
+                {
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_OVERRIDE", $"Manually unlocked account and reset PIN for {studentId}.");
+                }
+                catch { }
 
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Could not reset PIN: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
             }
         }
 
@@ -277,6 +370,7 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(courseName))
             {
                 StatusTextBlock.Text = "Please enter a valid course name.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
                 return;
             }
 
@@ -286,6 +380,7 @@ namespace NFC_System
 
                 NewCourseTextBox.Text = "";
                 StatusTextBlock.Text = $"Course '{courseName}' added successfully.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
 
                 ContentDialog successDialog = new ContentDialog
                 {
@@ -295,12 +390,15 @@ namespace NFC_System
                     XamlRoot = this.Content.XamlRoot
                 };
 
+                await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", $"Added new academic course to database: {courseName}");
                 await successDialog.ShowAsync();
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Could not add course: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+
                 ContentDialog errorDialog = new ContentDialog { Title = "Database Error", Content = $"Failed to add the course.\n\nDetails: {ex.Message}", CloseButtonText = "OK", XamlRoot = this.Content.XamlRoot };
                 await errorDialog.ShowAsync();
             }
