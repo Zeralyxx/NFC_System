@@ -61,6 +61,9 @@
                                 <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
                                 <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
                             </Grid>
+
+                            <!-- THE FIX: Indeterminate Progress Bar for Cloud Sync operations -->
+                            <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
                         </StackPanel>
                     </Border>
 
@@ -159,7 +162,6 @@
                             </Border>
                         </Grid>
 
-                        <!-- THE FIX: Widened Action Type and added ColumnSpacing -->
                         <!-- List Headers -->
                         <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
                             <Grid ColumnSpacing="12">
@@ -188,7 +190,6 @@
 
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="local:SystemAuditLog">
-                                    <!-- THE FIX: Added ColumnSpacing="12" to prevent text collision -->
                                     <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="1.8*"/>
@@ -211,7 +212,7 @@
             </Grid>
         </Grid>
 
-        <!-- THE MAGIC FIX: Expandable Popup Dialog for Deep Inspection-->
+        <!-- Expandable Popup Dialog for Deep Inspection-->
         <ContentDialog x:Name="MasterLogsDialog"
                        CloseButtonText="Close"
                        DefaultButton="Close"
@@ -317,7 +318,7 @@
             </Grid>
         </ContentDialog>
 
-        <!-- THE FIX: Administrator Authorization Intercept Popup -->
+        <!-- Administrator Authorization Intercept Popup -->
         <ContentDialog x:Name="AdminAuthDialog"
                        Title="Administrator Authorization"
                        CloseButtonText="Cancel"

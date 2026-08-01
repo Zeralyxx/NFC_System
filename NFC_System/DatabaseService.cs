@@ -2,6 +2,9 @@ using MySqlConnector;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace NFC_System;
@@ -48,26 +51,25 @@ public sealed class AttendanceLog
 
 public sealed class DatabaseService
 {
-    public const string ConnectionString = "Server=127.0.0.1;Port=3306;Database=nfc_system;User ID=root;Password=;";
+    public const string ConnectionString = "Server=192.168.1.7;Port=3306;Database=nfc_system;User ID=root;Password=;";
 
-    // Attempt at making a plug-and-play database service for future database engine changes (e.g., PostgreSQL, SQLite, etc.)
+    // CLOUD FIRESTORE CONFIGURATION
+    private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
+    private static readonly HttpClient _httpClient = new HttpClient();
+
     public async Task EnsureSchemaAsync()
     {
-        // 1. Connect to the base server WITHOUT specifying a database, so it doesn't crash if it doesn't exist
-        string baseConnection = "Server=127.0.0.1;Port=3306;User ID=root;Password=;";
+        string baseConnection = "Server=192.168.1.7;Port=3306;User ID=root;Password=;";
         using var connection = new MySqlConnection(baseConnection);
         await connection.OpenAsync();
 
-        // 2. Safely create the root database
         using (var createDbCmd = new MySqlCommand("CREATE DATABASE IF NOT EXISTS nfc_system;", connection))
         {
             await createDbCmd.ExecuteNonQueryAsync();
         }
 
-        // 3. Switch connection context to the newly created database
         await connection.ChangeDatabaseAsync("nfc_system");
 
-        // 4. Execute the master schema build
         string schemaSql = @"
             CREATE TABLE IF NOT EXISTS students (
                 student_id VARCHAR(50) PRIMARY KEY,
@@ -154,6 +156,636 @@ public sealed class DatabaseService
         }
     }
 
+    // =========================================================================
+    // CLOUD SYNCHRONIZATION METHODS (FIRESTORE REST API)
+    // =========================================================================
+
+    public async Task<int> PullStudentsFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students?pageSize=1000";
+        int updatedCount = 0;
+
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string studentId = ExtractString(fields, "student_id");
+                if (string.IsNullOrWhiteSpace(studentId))
+                {
+                    string docName = document.GetProperty("name").GetString() ?? "";
+                    studentId = docName.Split('/').LastOrDefault() ?? "";
+                }
+                if (string.IsNullOrWhiteSpace(studentId)) continue;
+
+                string fullName = ExtractString(fields, "full_name");
+                string course = ExtractString(fields, "course");
+                string yearLvl = ExtractString(fields, "year_level");
+                string section = ExtractString(fields, "section_name");
+                string status = ExtractString(fields, "status");
+                string nfcUid = ExtractString(fields, "nfc_uid");
+                string qr = ExtractString(fields, "qr_credential");
+                string pinHash = ExtractString(fields, "pin_hash");
+                string pinSalt = ExtractString(fields, "pin_salt");
+                bool pinLocked = ExtractBool(fields, "pin_locked");
+                int failedAttempts = ExtractInt(fields, "failed_pin_attempts");
+
+                string sql = @"
+                    INSERT INTO students 
+                    (student_id, full_name, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts)
+                    VALUES 
+                    (@id, @name, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed)
+                    ON DUPLICATE KEY UPDATE 
+                    full_name=@name, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
+                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed";
+
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@id", studentId);
+                cmd.Parameters.AddWithValue("@name", fullName);
+                cmd.Parameters.AddWithValue("@course", NullIfEmpty(course));
+                cmd.Parameters.AddWithValue("@year", NullIfEmpty(yearLvl));
+                cmd.Parameters.AddWithValue("@section", NullIfEmpty(section));
+                cmd.Parameters.AddWithValue("@status", string.IsNullOrWhiteSpace(status) ? "Active" : status);
+                cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(nfcUid));
+                cmd.Parameters.AddWithValue("@qr", NullIfEmpty(qr));
+                cmd.Parameters.AddWithValue("@hash", NullIfEmpty(pinHash));
+                cmd.Parameters.AddWithValue("@salt", NullIfEmpty(pinSalt));
+                cmd.Parameters.AddWithValue("@locked", pinLocked);
+                cmd.Parameters.AddWithValue("@failed", failedAttempts);
+
+                int affected = await cmd.ExecuteNonQueryAsync();
+                if (affected > 0) updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Student Sync Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PushStudentsToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand("SELECT * FROM students", connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string studentId = Value(reader["student_id"]);
+                if (string.IsNullOrWhiteSpace(studentId)) continue;
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        student_id = new { stringValue = studentId },
+                        full_name = new { stringValue = Value(reader["full_name"]) },
+                        course = new { stringValue = Value(reader["course"]) },
+                        year_level = new { stringValue = Value(reader["year_level"]) },
+                        section_name = new { stringValue = Value(reader["section_name"]) },
+                        status = new { stringValue = Value(reader["status"]) },
+                        nfc_uid = new { stringValue = Value(reader["nfc_uid"]) },
+                        qr_credential = new { stringValue = Value(reader["qr_credential"]) },
+                        pin_hash = new { stringValue = Value(reader["pin_hash"]) },
+                        pin_salt = new { stringValue = Value(reader["pin_salt"]) },
+                        pin_locked = new { booleanValue = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true" },
+                        failed_pin_attempts = new { integerValue = Value(reader["failed_pin_attempts"]) }
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string docId = Uri.EscapeDataString(studentId);
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students/{docId}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Student Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    public async Task<int> PullStaffFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff?pageSize=1000";
+        int updatedCount = 0;
+
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string nfcUid = ExtractString(fields, "nfc_uid");
+                if (string.IsNullOrWhiteSpace(nfcUid))
+                {
+                    string docName = document.GetProperty("name").GetString() ?? "";
+                    nfcUid = docName.Split('/').LastOrDefault() ?? "";
+                }
+                if (string.IsNullOrWhiteSpace(nfcUid)) continue;
+
+                string fullName = ExtractString(fields, "full_name");
+                string role = ExtractString(fields, "role");
+
+                string sql = @"
+                    INSERT INTO staff (nfc_uid, full_name, role) 
+                    VALUES (@uid, @name, @role) 
+                    ON DUPLICATE KEY UPDATE full_name=@name, role=@role";
+
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@uid", nfcUid);
+                cmd.Parameters.AddWithValue("@name", fullName);
+                cmd.Parameters.AddWithValue("@role", role);
+
+                int affected = await cmd.ExecuteNonQueryAsync();
+                if (affected > 0) updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Staff Sync Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PushStaffToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand("SELECT * FROM staff", connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string nfcUid = Value(reader["nfc_uid"]);
+                if (string.IsNullOrWhiteSpace(nfcUid)) continue;
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        nfc_uid = new { stringValue = nfcUid },
+                        full_name = new { stringValue = Value(reader["full_name"]) },
+                        role = new { stringValue = Value(reader["role"]) }
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string docId = Uri.EscapeDataString(nfcUid);
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff/{docId}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Staff Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    public async Task<int> PullCoursesFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses?pageSize=1000";
+        int updatedCount = 0;
+
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string courseName = ExtractString(fields, "course_name");
+                if (string.IsNullOrWhiteSpace(courseName))
+                {
+                    string docName = document.GetProperty("name").GetString() ?? "";
+                    courseName = docName.Split('/').LastOrDefault() ?? "";
+                }
+                if (string.IsNullOrWhiteSpace(courseName)) continue;
+
+                string sql = "INSERT IGNORE INTO courses (course_name) VALUES (@name)";
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@name", courseName);
+
+                int affected = await cmd.ExecuteNonQueryAsync();
+                if (affected > 0) updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Course Sync Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PushCoursesToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand("SELECT * FROM courses", connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string courseName = Value(reader["course_name"]);
+                if (string.IsNullOrWhiteSpace(courseName)) continue;
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        course_name = new { stringValue = courseName }
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string docId = Uri.EscapeDataString(courseName);
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses/{docId}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Course Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    public async Task<int> PullEventsFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events?pageSize=1000";
+        int updatedCount = 0;
+
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string eventId = ExtractString(fields, "event_id");
+                if (string.IsNullOrWhiteSpace(eventId))
+                {
+                    string docName = document.GetProperty("name").GetString() ?? "";
+                    eventId = docName.Split('/').LastOrDefault() ?? "";
+                }
+                if (string.IsNullOrWhiteSpace(eventId)) continue;
+
+                string eventName = ExtractString(fields, "event_name");
+                string verificationMode = ExtractString(fields, "verification_mode");
+                bool isRestricted = ExtractBool(fields, "is_restricted");
+                bool isActive = ExtractBool(fields, "is_active");
+
+                DateTime? eventDate = ExtractTimestamp(fields, "event_date");
+
+                string sql = @"
+                    INSERT INTO events (event_id, event_name, event_date, verification_mode, is_restricted, is_active) 
+                    VALUES (@id, @name, @date, @mode, @restricted, @active) 
+                    ON DUPLICATE KEY UPDATE 
+                    event_name=@name, event_date=@date, verification_mode=@mode, is_restricted=@restricted, is_active=@active";
+
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@id", eventId);
+                cmd.Parameters.AddWithValue("@name", eventName);
+                cmd.Parameters.AddWithValue("@date", eventDate.HasValue ? (object)eventDate.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@mode", verificationMode);
+                cmd.Parameters.AddWithValue("@restricted", isRestricted);
+                cmd.Parameters.AddWithValue("@active", isActive);
+
+                int affected = await cmd.ExecuteNonQueryAsync();
+                if (affected > 0) updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Events Sync Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PushEventsToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand("SELECT * FROM events", connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string eventId = Value(reader["event_id"]);
+                if (string.IsNullOrWhiteSpace(eventId)) continue;
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        event_id = new { stringValue = eventId },
+                        event_name = new { stringValue = Value(reader["event_name"]) },
+                        verification_mode = new { stringValue = Value(reader["verification_mode"]) },
+                        is_restricted = new { booleanValue = Convert.ToBoolean(reader["is_restricted"]) },
+                        is_active = new { booleanValue = Convert.ToBoolean(reader["is_active"]) },
+                        event_date = reader["event_date"] != DBNull.Value
+                            ? new { timestampValue = Convert.ToDateTime(reader["event_date"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
+                            : null
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string docId = Uri.EscapeDataString(eventId);
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events/{docId}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Events Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    public async Task<int> PullEventApprovedStudentsFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students?pageSize=2000";
+        int updatedCount = 0;
+
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string eventId = ExtractString(fields, "event_id");
+                string studentId = ExtractString(fields, "student_id");
+
+                if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(studentId)) continue;
+
+                string sql = "INSERT IGNORE INTO event_approved_students (event_id, student_id) VALUES (@event_id, @student_id)";
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@event_id", eventId);
+                cmd.Parameters.AddWithValue("@student_id", studentId);
+
+                int affected = await cmd.ExecuteNonQueryAsync();
+                if (affected > 0) updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Approved Roster Sync Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PushEventApprovedStudentsToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand("SELECT * FROM event_approved_students", connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string eventId = Value(reader["event_id"]);
+                string studentId = Value(reader["student_id"]);
+
+                if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(studentId)) continue;
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        event_id = new { stringValue = eventId },
+                        student_id = new { stringValue = studentId }
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string docId = Uri.EscapeDataString($"{eventId}_{studentId}");
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students/{docId}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Approved Roster Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    public async Task<int> PushLogsToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand(@"
+                SELECT id, timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks 
+                FROM verification_logs 
+                ORDER BY timestamp DESC LIMIT 100", connection);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                string id = reader["id"].ToString() ?? Guid.NewGuid().ToString();
+                string firestoreTimestamp = Convert.ToDateTime(reader["timestamp"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        student_id = new { stringValue = Value(reader["student_id"]) },
+                        nfc_uid = new { stringValue = Value(reader["nfc_uid"]) },
+                        transaction_type = new { stringValue = Value(reader["transaction_type"]) },
+                        verification_mode = new { stringValue = Value(reader["verification_mode"]) },
+                        is_granted = new { booleanValue = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true" },
+                        error_code = new { stringValue = Value(reader["error_code"]) },
+                        error_message = new { stringValue = Value(reader["error_message"]) },
+                        remarks = new { stringValue = Value(reader["remarks"]) },
+                        timestamp = new { timestampValue = firestoreTimestamp }
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/verification_logs/log_{id}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Log Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    public async Task<int> PushEventAttendanceToCloudAsync()
+    {
+        int pushedCount = 0;
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand(@"
+                SELECT id, timestamp, event_id, student_id, verification_mode, status, remarks 
+                FROM event_attendance 
+                ORDER BY timestamp DESC LIMIT 200", connection);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                string id = reader["id"].ToString() ?? Guid.NewGuid().ToString();
+                string firestoreTimestamp = Convert.ToDateTime(reader["timestamp"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+                var firestorePayload = new
+                {
+                    fields = new
+                    {
+                        event_id = new { stringValue = Value(reader["event_id"]) },
+                        student_id = new { stringValue = Value(reader["student_id"]) },
+                        verification_mode = new { stringValue = Value(reader["verification_mode"]) },
+                        status = new { stringValue = Value(reader["status"]) },
+                        remarks = new { stringValue = Value(reader["remarks"]) },
+                        timestamp = new { timestampValue = firestoreTimestamp }
+                    }
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance/att_{id}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Event Attendance Upload Error: {ex.Message}"); }
+
+        return pushedCount;
+    }
+
+    // JSON Extractor Helpers
+    private string ExtractString(JsonElement fields, string key)
+    {
+        if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("stringValue", out var val))
+            return val.GetString() ?? "";
+        return "";
+    }
+
+    private bool ExtractBool(JsonElement fields, string key)
+    {
+        if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("booleanValue", out var val))
+            return val.GetBoolean();
+        return false;
+    }
+
+    private int ExtractInt(JsonElement fields, string key)
+    {
+        if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("integerValue", out var val))
+            return int.TryParse(val.GetString(), out int result) ? result : 0;
+        return 0;
+    }
+
+    private DateTime? ExtractTimestamp(JsonElement fields, string key)
+    {
+        if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("timestampValue", out var val))
+        {
+            if (DateTime.TryParse(val.GetString(), out DateTime dt)) return dt.ToLocalTime();
+        }
+        else if (fields.TryGetProperty(key, out var propStr) && propStr.TryGetProperty("stringValue", out var valStr))
+        {
+            if (DateTime.TryParse(valStr.GetString(), out DateTime dt2)) return dt2.ToLocalTime();
+        }
+        return null;
+    }
+
+    // =========================================================================
+
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(int limit = 1000)
     {
         var masterLogs = new List<SystemAuditLog>();
@@ -198,7 +830,6 @@ public sealed class DatabaseService
             {
                 string alertType = Value(reader["alert_type"]);
 
-                // NEW: Dynamically detects any Admin or Staff action
                 bool isAdminAction = alertType.StartsWith("ADMIN") || alertType.StartsWith("STAFF");
 
                 string status = isAdminAction ? "RESOLVED" : "FLAGGED";
@@ -365,10 +996,6 @@ public sealed class DatabaseService
         return list;
     }
 
-    /* =========================================================================
-     * ENROLLMENT & ACCOUNT MANAGEMENT OPERATIONS
-     * ========================================================================= */
-
     public async Task SaveStudentAsync(StudentRecord student, string? pin)
     {
         using var connection = new MySqlConnection(ConnectionString);
@@ -431,7 +1058,6 @@ public sealed class DatabaseService
         AddStudentParameters(command, student, salt, hash);
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered or updated student profile for {student.FullName}.");
     }
 
@@ -482,10 +1108,6 @@ public sealed class DatabaseService
 
         return ReadStudent(reader);
     }
-
-    /* =========================================================================
-     * STUDENT DIRECTORY: SEARCH, FILTERING & PAGING
-     * ========================================================================= */
 
     public async Task<(IReadOnlyList<StudentRecord> Students, int TotalCount)> SearchStudentsAsync(
         string? searchTerm,
@@ -612,7 +1234,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@name", courseName.Trim());
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(null, "ADMIN_ACTION", $"Added new academic course to database: {courseName}");
     }
 
@@ -627,7 +1248,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(studentId, "ADMIN_ACTION", $"Updated student status to '{status}'.");
     }
 
@@ -644,10 +1264,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
     }
-
-    /* =========================================================================
-     * AUTOMATED GATE & TRANSITION STATE OPERATIONS
-     * ========================================================================= */
 
     public async Task UpdateEntryStateAsync(string studentId, string state)
     {
@@ -706,10 +1322,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
     }
-
-    /* =========================================================================
-     * LIVE DASHBOARD LOGGING & SYSTEM AUDITING
-     * ========================================================================= */
 
     public async Task<string> GetSettingAsync(string key, string fallback)
     {
@@ -824,10 +1436,6 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
-    /* =========================================================================
-     * ACADEMIC TRACKS & RESTRICTED EVENT CHECKPOINTS
-     * ========================================================================= */
-
     public async Task SaveEventAsync(string eventId, string eventName, VerificationMode mode, bool isRestricted)
     {
         using var connection = new MySqlConnection(ConnectionString);
@@ -843,7 +1451,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@is_restricted", isRestricted ? 1 : 0);
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(null, "ADMIN_ACTION", $"Created or updated Event Profile '{eventName}' ({eventId}).");
     }
 
@@ -859,7 +1466,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(studentId, "ADMIN_ACTION", $"Manually removed student from event roster for '{eventId}'.");
     }
 
@@ -889,7 +1495,6 @@ public sealed class DatabaseService
 
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(null, "ADMIN_ACTION", $"Executed batch approval for Event '{eventId}'. Filter constraints applied.");
     }
 
@@ -905,7 +1510,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(studentId, "ADMIN_ACTION", $"Manually approved student for Event '{eventId}'.");
     }
 
@@ -1010,10 +1614,6 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
-    /* =========================================================================
-     * STRUCTURAL MAPPING INTERNALS
-     * ========================================================================= */
-
     private static async Task<bool> NfcUidBelongsToAnotherStudentAsync(MySqlConnection connection, string uid, string studentId)
     {
         using var command = new MySqlCommand(@"
@@ -1077,7 +1677,6 @@ public sealed class DatabaseService
         closeEventCmd.Parameters.AddWithValue("@event_id", eventId);
         await closeEventCmd.ExecuteNonQueryAsync();
 
-        // NEW: Log the Admin Action!
         await AddAlertAsync(null, "ADMIN_ACTION", $"Closed Event Profile '{eventId}'. It was removed from active scanning.");
     }
 
@@ -1101,15 +1700,12 @@ public sealed class DatabaseService
                 EventName = Value(reader["event_name"]),
                 VerificationMode = Enum.TryParse<VerificationMode>(Value(reader["verification_mode"]), out var vMode) ? vMode : VerificationMode.Standard,
                 IsRestricted = reader["is_restricted"] != DBNull.Value && Convert.ToBoolean(reader["is_restricted"]),
+                Status = "Active",
                 EventDate = reader["event_date"] != DBNull.Value ? Convert.ToDateTime(reader["event_date"]) : null
             });
         }
         return events;
     }
-
-    /* =========================================================================
-     * ROLE-BASED ACCESS CONTROL (RBAC) & STAFF ACCOUNTS
-     * ========================================================================= */
 
     public async Task RegisterStaffAsync(string uid, string fullName, string role)
     {
@@ -1126,8 +1722,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@role", role);
 
         await command.ExecuteNonQueryAsync();
-
-        // Note: The UI layer (SecurityDashboardWindow) logs this action directly to include the specific role formatting.
     }
 
     public async Task<int> BatchUpdateStudentStatusAsync(string? course, string? yearLevel, string newStatus)
@@ -1154,7 +1748,6 @@ public sealed class DatabaseService
 
         string whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
 
-        // Security failsafe: Prevent accidental full database overwrite
         if (string.IsNullOrEmpty(whereSql))
             throw new InvalidOperationException("You must select at least one filter (Course or Year Level) to perform a batch update.");
 
@@ -1170,7 +1763,6 @@ public sealed class DatabaseService
 
         int rowsAffected = await command.ExecuteNonQueryAsync();
 
-        // Log the admin action to the Master Explorer
         if (rowsAffected > 0)
         {
             await AddAlertAsync(null, "ADMIN_ACTION", $"Batch updated {rowsAffected} students to '{newStatus}' (Course: {course ?? "All"}, Year: {yearLevel ?? "All"}).");

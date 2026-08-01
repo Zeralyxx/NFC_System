@@ -51,9 +51,6 @@ namespace NFC_System
             }
         }
 
-        // ====================================================================
-        // NATIVE HARDWARE SUCCESS CHIME
-        // ====================================================================
         private void PlaySuccessPing()
         {
             Task.Run(() =>
@@ -108,17 +105,15 @@ namespace NFC_System
 
                     DispatcherQueue.TryEnqueue(async () =>
                     {
-                        // If we are awaiting authorization, intercept the tap!
                         if (_isAwaitingAdminAuth)
                         {
                             var details = await _database.GetStaffDetailsAsync(uid);
 
-                            // Check if the card tapped belongs to an Admin
                             if (details.Role == "Administrator" || details.Role == "Master Administrator")
                             {
                                 _isAwaitingAdminAuth = false;
                                 AdminAuthDialog.Hide();
-                                PlaySuccessPing(); // <--- THE FIX
+                                PlaySuccessPing();
                                 await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, details.FullName ?? "Admin");
                             }
                             else
@@ -126,12 +121,11 @@ namespace NFC_System
                                 _isAwaitingAdminAuth = false;
                                 AdminAuthDialog.Hide();
                                 StatusTextBlock.Text = "Authorization Denied: Tapped card is not an Administrator.";
-                                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                             }
                         }
                         else
                         {
-                            // Normal behavior: auto-fill the textbox for registration
                             StaffNfcUidTextBox.Text = uid;
                             StatusTextBlock.Text = "Card scanned. Ready to register staff.";
                             StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
@@ -162,7 +156,6 @@ namespace NFC_System
             CloseSerialPort();
         }
 
-        // --- DASHBOARD DATA ---
         private async Task RefreshDashboardAsync()
         {
             try
@@ -181,7 +174,6 @@ namespace NFC_System
             _ = RefreshDashboardAsync();
         }
 
-        // --- EXPANDABLE POPUP DIALOG LOGIC ---
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
             MasterLogsDialog.XamlRoot = this.Content.XamlRoot;
@@ -243,8 +235,6 @@ namespace NFC_System
             PopupLogsListView.ItemsSource = filtered.ToList();
         }
 
-        // --- ADMINISTRATIVE ACTIONS ---
-
         private async void RegisterStaffButton_Click(object sender, RoutedEventArgs e)
         {
             string fullName = StaffNameTextBox.Text.Trim();
@@ -254,18 +244,16 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(uid))
             {
                 StatusTextBlock.Text = "Staff Name and NFC UID are strictly required.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 return;
             }
 
-            // If Master Admin, skip the authorization prompt!
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecuteStaffRegistration(uid, fullName, role, AppSession.CurrentStaffName);
             }
             else
             {
-                // Standard Admin needs to tap their card again to prove they are present
                 _pendingStaffName = fullName;
                 _pendingStaffUid = uid;
                 _pendingStaffRole = role;
@@ -276,7 +264,6 @@ namespace NFC_System
 
                 if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
                 {
-                    // They clicked Cancel
                     _isAwaitingAdminAuth = false;
                     StatusTextBlock.Text = "Registration cancelled.";
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
@@ -284,7 +271,6 @@ namespace NFC_System
             }
         }
 
-        // Extracted execution method so it can be called from the prompt OR directly
         private async Task ExecuteStaffRegistration(string uid, string fullName, string role, string authorizedBy)
         {
             try
@@ -297,34 +283,153 @@ namespace NFC_System
                 StaffRoleComboBox.SelectedIndex = 0;
 
                 StatusTextBlock.Text = $"Successfully registered {role}: {fullName}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
 
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Registration failed: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
             }
         }
 
+        // ====================================================================
+        // SYNC DIALOG HELPER
+        // ====================================================================
+        private async Task ShowSyncResultDialog(string title, string message)
+        {
+            ContentDialog resultDialog = new ContentDialog
+            {
+                Title = title,
+                Content = message,
+                CloseButtonText = "OK",
+                XamlRoot = this.Content.XamlRoot
+            };
+            await resultDialog.ShowAsync();
+        }
+
+        // ====================================================================
+        // UPLOAD DATA (NOTIFIES ONLY IF NEW ADDITIONS/UPDATES EXIST)
+        // ====================================================================
         private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
         {
             UploadDataButton.IsEnabled = false;
+            GetNewDataButton.IsEnabled = false;
+            SyncProgressBar.Visibility = Visibility.Visible;
             StatusTextBlock.Text = "Uploading local records to cloud database...";
-            await Task.Delay(2000);
-            StatusTextBlock.Text = "Upload complete. Cloud is securely synced.";
-            UploadDataButton.IsEnabled = true;
+
+            try
+            {
+                int pushedStudents = await _database.PushStudentsToCloudAsync();
+                int pushedStaff = await _database.PushStaffToCloudAsync();
+                int pushedCourses = await _database.PushCoursesToCloudAsync();
+                int pushedEvents = await _database.PushEventsToCloudAsync();
+                int pushedApproved = await _database.PushEventApprovedStudentsToCloudAsync();
+                int pushedLogs = await _database.PushLogsToCloudAsync();
+                int pushedEventLogs = await _database.PushEventAttendanceToCloudAsync();
+
+                int totalPushed = pushedStudents + pushedStaff + pushedCourses + pushedEvents + pushedApproved + pushedLogs + pushedEventLogs;
+
+                if (totalPushed > 0)
+                {
+                    var additions = new List<string>();
+                    if (pushedStudents > 0) additions.Add($"{pushedStudents} Student(s)");
+                    if (pushedStaff > 0) additions.Add($"{pushedStaff} Staff member(s)");
+                    if (pushedCourses > 0) additions.Add($"{pushedCourses} Course(s)");
+                    if (pushedEvents > 0) additions.Add($"{pushedEvents} Event(s)");
+                    if (pushedApproved > 0) additions.Add($"{pushedApproved} Roster Entry(ies)");
+                    if (pushedLogs > 0) additions.Add($"{pushedLogs} Gate Log(s)");
+                    if (pushedEventLogs > 0) additions.Add($"{pushedEventLogs} Event Attendance Log(s)");
+
+                    string formattedList = "• " + string.Join("\n• ", additions);
+                    string message = $"Upload complete. The following new records were synced to the cloud:\n\n{formattedList}";
+
+                    StatusTextBlock.Text = $"Upload complete. {totalPushed} records pushed.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                    PlaySuccessPing();
+
+                    await ShowSyncResultDialog("Upload Successful", message);
+                }
+                else
+                {
+                    StatusTextBlock.Text = "System is already up to date. No new local records to upload.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Upload failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+
+                await ShowSyncResultDialog("Upload Failed", $"An error occurred while syncing to the cloud:\n\n{ex.Message}");
+            }
+            finally
+            {
+                UploadDataButton.IsEnabled = true;
+                GetNewDataButton.IsEnabled = true;
+                SyncProgressBar.Visibility = Visibility.Collapsed;
+            }
         }
 
+        // ====================================================================
+        // DOWNLOAD DATA (NOTIFIES ONLY IF NEW ADDITIONS EXIST)
+        // ====================================================================
         private async void GetNewDataButton_Click(object sender, RoutedEventArgs e)
         {
             GetNewDataButton.IsEnabled = false;
+            UploadDataButton.IsEnabled = false;
+            SyncProgressBar.Visibility = Visibility.Visible;
             StatusTextBlock.Text = "Downloading latest records from cloud database...";
-            await Task.Delay(2000);
-            StatusTextBlock.Text = "Download complete. Local database is up to date.";
-            GetNewDataButton.IsEnabled = true;
-            await RefreshDashboardAsync();
+
+            try
+            {
+                int pulledStudents = await _database.PullStudentsFromCloudAsync();
+                int pulledStaff = await _database.PullStaffFromCloudAsync();
+                int pulledCourses = await _database.PullCoursesFromCloudAsync();
+                int pulledEvents = await _database.PullEventsFromCloudAsync();
+                int pulledApproved = await _database.PullEventApprovedStudentsFromCloudAsync();
+
+                int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved;
+
+                if (totalPulled > 0)
+                {
+                    var additions = new List<string>();
+                    if (pulledStudents > 0) additions.Add($"{pulledStudents} Student(s)");
+                    if (pulledStaff > 0) additions.Add($"{pulledStaff} Staff member(s)");
+                    if (pulledCourses > 0) additions.Add($"{pulledCourses} Course(s)");
+                    if (pulledEvents > 0) additions.Add($"{pulledEvents} Event(s)");
+                    if (pulledApproved > 0) additions.Add($"{pulledApproved} Roster Entry(ies)");
+
+                    string formattedList = "• " + string.Join("\n• ", additions);
+                    string message = $"Download complete. The following new updates were synced locally:\n\n{formattedList}";
+
+                    StatusTextBlock.Text = $"Download complete. {totalPulled} records pulled.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                    PlaySuccessPing();
+                    await RefreshDashboardAsync();
+
+                    await ShowSyncResultDialog("Download Successful", message);
+                }
+                else
+                {
+                    StatusTextBlock.Text = "System is already up to date. No new cloud records found.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Download failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+
+                await ShowSyncResultDialog("Download Failed", $"An error occurred while pulling from the cloud:\n\n{ex.Message}");
+            }
+            finally
+            {
+                GetNewDataButton.IsEnabled = true;
+                UploadDataButton.IsEnabled = true;
+                SyncProgressBar.Visibility = Visibility.Collapsed;
+            }
         }
 
         private async void ResetPinButton_Click(object sender, RoutedEventArgs e)
@@ -335,7 +440,7 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(studentId) || pin.Length != 4 || !pin.All(char.IsDigit))
             {
                 StatusTextBlock.Text = "Enter a student ID and a 4-digit PIN.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 return;
             }
 
@@ -346,7 +451,7 @@ namespace NFC_System
                 NewPinPasswordBox.Password = "";
                 ResetStudentIdTextBox.Text = "";
                 StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
 
                 try
                 {
@@ -359,7 +464,7 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Could not reset PIN: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
             }
         }
 
@@ -370,7 +475,7 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(courseName))
             {
                 StatusTextBlock.Text = "Please enter a valid course name.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 return;
             }
 
@@ -380,7 +485,7 @@ namespace NFC_System
 
                 NewCourseTextBox.Text = "";
                 StatusTextBlock.Text = $"Course '{courseName}' added successfully.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)); // Green
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
 
                 ContentDialog successDialog = new ContentDialog
                 {
@@ -397,7 +502,7 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Could not add course: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
 
                 ContentDialog errorDialog = new ContentDialog { Title = "Database Error", Content = $"Failed to add the course.\n\nDetails: {ex.Message}", CloseButtonText = "OK", XamlRoot = this.Content.XamlRoot };
                 await errorDialog.ShowAsync();
