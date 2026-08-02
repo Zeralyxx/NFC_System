@@ -83,18 +83,12 @@
                     <Border Grid.Row="2" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <!-- Student ID -->
-                                <ColumnDefinition Width="180"/>
-                                <!-- Full Name -->
-                                <ColumnDefinition Width="220"/>
-                                <!-- Course -->
-                                <ColumnDefinition Width="70"/>
-                                <!-- Year -->
-                                <ColumnDefinition Width="80"/>
-                                <!-- Section -->
-                                <ColumnDefinition Width="*"/>
-                                <!-- Status -->
+                                <ColumnDefinition Width="1.2*"/>
+                                <ColumnDefinition Width="2.0*"/>
+                                <ColumnDefinition Width="2.2*"/>
+                                <ColumnDefinition Width="0.7*"/>
+                                <ColumnDefinition Width="0.8*"/>
+                                <ColumnDefinition Width="1.0*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             <TextBlock Grid.Column="1" Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
@@ -118,12 +112,12 @@
                             <DataTemplate>
                                 <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="180"/>
-                                        <ColumnDefinition Width="220"/>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="80"/>
-                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="2.0*"/>
+                                        <ColumnDefinition Width="2.2*"/>
+                                        <ColumnDefinition Width="0.7*"/>
+                                        <ColumnDefinition Width="0.8*"/>
+                                        <ColumnDefinition Width="1.0*"/>
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
