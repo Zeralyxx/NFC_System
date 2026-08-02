@@ -23,6 +23,7 @@ namespace NFC_System
         private string _pendingStaffName = "";
         private string _pendingStaffUid = "";
         private string _pendingStaffRole = "";
+        private string _pendingAdminAction = ""; // "REGISTER_STAFF", "UPLOAD_DATA", "DOWNLOAD_DATA"
         // DEBOUNCE TIMER FOR SEARCH
         private readonly DispatcherTimer _searchDebounceTimer = new();
 
@@ -120,11 +121,28 @@ namespace NFC_System
                                 _isAwaitingAdminAuth = false;
                                 AdminAuthDialog.Hide();
                                 PlaySuccessPing();
-                                await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, details.FullName ?? "Admin");
+
+                                string authorizedByName = details.FullName ?? "Admin";
+                                string actionToRun = _pendingAdminAction;
+                                _pendingAdminAction = "";
+
+                                switch (actionToRun)
+                                {
+                                    case "REGISTER_STAFF":
+                                        await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName);
+                                        break;
+                                    case "UPLOAD_DATA":
+                                        await ExecuteUploadDataAsync(authorizedByName);
+                                        break;
+                                    case "DOWNLOAD_DATA":
+                                        await ExecuteDownloadDataAsync(authorizedByName);
+                                        break;
+                                }
                             }
                             else
                             {
                                 _isAwaitingAdminAuth = false;
+                                _pendingAdminAction = "";
                                 AdminAuthDialog.Hide();
                                 StatusTextBlock.Text = "Authorization Denied: Tapped card is not an Administrator.";
                                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
@@ -289,14 +307,17 @@ namespace NFC_System
                 _pendingStaffName = fullName;
                 _pendingStaffUid = uid;
                 _pendingStaffRole = role;
+                _pendingAdminAction = "REGISTER_STAFF";
                 _isAwaitingAdminAuth = true;
 
+                AdminAuthDescriptionText.Text = "To prevent unauthorized account creation, an Administrator must verify this action.";
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 var result = await AdminAuthDialog.ShowAsync();
 
                 if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
                 {
                     _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
                     StatusTextBlock.Text = "Registration cancelled.";
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
                 }
@@ -340,6 +361,44 @@ namespace NFC_System
 
         private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
         {
+            ContentDialog confirmDialog = new ContentDialog
+            {
+                Title = "Confirm Upload",
+                Content = "This will push new local students, staff, courses, events, and logs to the cloud database. Continue?",
+                PrimaryButtonText = "Yes, Upload",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var confirmResult = await confirmDialog.ShowAsync();
+            if (confirmResult != ContentDialogResult.Primary) return;
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecuteUploadDataAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _pendingAdminAction = "UPLOAD_DATA";
+                _isAwaitingAdminAuth = true;
+
+                AdminAuthDescriptionText.Text = "To confirm this upload, an Administrator must verify by tapping their NFC card.";
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                var authResult = await AdminAuthDialog.ShowAsync();
+
+                if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+                    StatusTextBlock.Text = "Upload cancelled.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+        }
+
+        private async Task ExecuteUploadDataAsync(string authorizedBy)
+        {
             UploadDataButton.IsEnabled = false;
             GetNewDataButton.IsEnabled = false;
             SyncProgressBar.Visibility = Visibility.Visible;
@@ -375,6 +434,12 @@ namespace NFC_System
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                     PlaySuccessPing();
 
+                    try
+                    {
+                        await _database.AddAlertAsync(authorizedBy, "ADMIN_ACTION", $"Authorized cloud data upload. {totalPushed} record(s) pushed.");
+                    }
+                    catch { }
+
                     await ShowSyncResultDialog("Upload Successful", message);
                 }
                 else
@@ -399,6 +464,44 @@ namespace NFC_System
         }
 
         private async void GetNewDataButton_Click(object sender, RoutedEventArgs e)
+        {
+            ContentDialog confirmDialog = new ContentDialog
+            {
+                Title = "Confirm Download",
+                Content = "This will pull the latest students, staff, courses, events, and rosters from the cloud database into this local terminal. Continue?",
+                PrimaryButtonText = "Yes, Download",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var confirmResult = await confirmDialog.ShowAsync();
+            if (confirmResult != ContentDialogResult.Primary) return;
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecuteDownloadDataAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _pendingAdminAction = "DOWNLOAD_DATA";
+                _isAwaitingAdminAuth = true;
+
+                AdminAuthDescriptionText.Text = "To confirm this download, an Administrator must verify by tapping their NFC card.";
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                var authResult = await AdminAuthDialog.ShowAsync();
+
+                if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+                    StatusTextBlock.Text = "Download cancelled.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+        }
+
+        private async Task ExecuteDownloadDataAsync(string authorizedBy)
         {
             GetNewDataButton.IsEnabled = false;
             UploadDataButton.IsEnabled = false;
@@ -432,6 +535,12 @@ namespace NFC_System
                     PlaySuccessPing();
                     await RefreshDashboardAsync();
 
+                    try
+                    {
+                        await _database.AddAlertAsync(authorizedBy, "ADMIN_ACTION", $"Authorized cloud data download. {totalPulled} record(s) pulled.");
+                    }
+                    catch { }
+
                     await ShowSyncResultDialog("Download Successful", message);
                 }
                 else
@@ -454,6 +563,8 @@ namespace NFC_System
                 SyncProgressBar.Visibility = Visibility.Collapsed;
             }
         }
+
+        
 
         private async void ResetPinButton_Click(object sender, RoutedEventArgs e)
         {

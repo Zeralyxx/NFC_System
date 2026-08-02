@@ -47,7 +47,7 @@
                         <TextBlock Text="Identity Information" Style="{StaticResource CardTitleStyle}"/>
 
                         <!-- THE FIX: Int-only formatting applied via TextChanging -->
-                        <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 2600001" TextChanging="NumberOnly_TextChanging"/>
+                        <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" TextChanging="NumberOnly_TextChanging"/>
                         <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
                         <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
                         <Grid ColumnSpacing="16">

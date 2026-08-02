@@ -361,6 +361,13 @@ namespace NFC_System
             _inactivityTimer.Stop();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
+
+            // 1. Force LEDs OFF before tearing down serial connection
+            SetHardwareLeds(false);
+
+            // 2. Small delay (50ms) to ensure the serial buffer pushes "LED=OFF\n" to the ESP32
+            System.Threading.Thread.Sleep(50);
+
             CloseSerialPort();
             _ = DisposeCameraAsync();
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
@@ -372,6 +379,13 @@ namespace NFC_System
             _inactivityTimer.Stop();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
+
+            // 1. Force LEDs OFF before tearing down serial connection
+            SetHardwareLeds(false);
+
+            // 2. Small delay (50ms) to ensure the serial buffer pushes "LED=OFF\n" to the ESP32
+            System.Threading.Thread.Sleep(50);
+
             CloseSerialPort();
             _ = DisposeCameraAsync();
             this.Close();
@@ -434,6 +448,9 @@ namespace NFC_System
         private void UpdateUiForState(AuthenticationStage state)
         {
             UpdateProgressIndicator();
+
+            // The Fix: By default, turn LEDs off unless explicitly waiting for a QR scan
+            SetHardwareLeds(state == AuthenticationStage.WaitingForQR);
 
             switch (state)
             {
@@ -1087,6 +1104,8 @@ namespace NFC_System
             if (_isDisposingCamera) return;
             _isDisposingCamera = true;
 
+            SetHardwareLeds(false);
+
             try
             {
                 if (_frameReader != null)
@@ -1107,6 +1126,37 @@ namespace NFC_System
             {
                 _isDisposingCamera = false;
             }
+        }
+
+        private void SetHardwareLeds(bool turnOn)
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    // If the window is closing, write immediately on the calling thread
+                    if (_isClosing)
+                    {
+                        _serialPort.WriteLine(turnOn ? "LED=ON" : "LED=OFF");
+                    }
+                    else
+                    {
+                        // Otherwise, run asynchronously off the UI thread
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                if (_serialPort != null && _serialPort.IsOpen)
+                                {
+                                    _serialPort.WriteLine(turnOn ? "LED=ON" : "LED=OFF");
+                                }
+                            }
+                            catch { }
+                        });
+                    }
+                }
+            }
+            catch { }
         }
 
         private void DebugSecurityLevel_SelectionChanged(object sender, SelectionChangedEventArgs e)

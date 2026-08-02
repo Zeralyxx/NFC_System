@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace NFC_System;
 
@@ -51,7 +52,29 @@ public sealed class AttendanceLog
 
 public sealed class DatabaseService
 {
-    public const string ConnectionString = "Server=192.168.1.7;Port=3306;Database=nfc_system;User ID=root;Password=;";
+    public static string ServerIp { get; private set; } = "127.0.0.1";
+    public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;";
+    public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;";
+
+    public static void LoadConfig()
+    {
+        string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "db_config.txt");
+        if (File.Exists(path))
+        {
+            ServerIp = File.ReadAllText(path).Trim();
+        }
+        else
+        {
+            File.WriteAllText(path, "127.0.0.1"); // Default to localhost
+        }
+    }
+
+    public static void SaveConfig(string ip)
+    {
+        string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "db_config.txt");
+        File.WriteAllText(path, ip.Trim());
+        ServerIp = ip.Trim();
+    }
 
     // CLOUD FIRESTORE CONFIGURATION
     private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
@@ -59,8 +82,9 @@ public sealed class DatabaseService
 
     public async Task EnsureSchemaAsync()
     {
-        string baseConnection = "Server=192.168.1.7;Port=3306;User ID=root;Password=;";
-        using var connection = new MySqlConnection(baseConnection);
+        // THE FIX: Use BaseConnectionString here instead of the hardcoded string!
+        // This ensures it uses the dynamic IP and the 3-second timeout rule.
+        using var connection = new MySqlConnection(BaseConnectionString);
         await connection.OpenAsync();
 
         using (var createDbCmd = new MySqlCommand("CREATE DATABASE IF NOT EXISTS nfc_system;", connection))

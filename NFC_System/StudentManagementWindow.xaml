@@ -83,12 +83,18 @@
                     <Border Grid.Row="2" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.2*"/>
-                                <ColumnDefinition Width="2.0*"/>
-                                <ColumnDefinition Width="2.8*"/>
-                                <ColumnDefinition Width="0.6*"/>
-                                <ColumnDefinition Width="0.7*"/>
-                                <ColumnDefinition Width="1.0*"/>
+                                <ColumnDefinition Width="120"/>
+                                <!-- Student ID -->
+                                <ColumnDefinition Width="180"/>
+                                <!-- Full Name -->
+                                <ColumnDefinition Width="220"/>
+                                <!-- Course -->
+                                <ColumnDefinition Width="70"/>
+                                <!-- Year -->
+                                <ColumnDefinition Width="80"/>
+                                <!-- Section -->
+                                <ColumnDefinition Width="*"/>
+                                <!-- Status -->
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             <TextBlock Grid.Column="1" Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
@@ -101,16 +107,23 @@
 
                     <!-- Native DataGrid (ListView) -->
                     <ListView x:Name="StudentListView" Grid.Row="3" SelectionChanged="StudentListView_SelectionChanged" Background="Transparent" CornerRadius="8">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                <Setter Property="Padding" Value="16,0,16,0"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.2*"/>
-                                        <ColumnDefinition Width="2.0*"/>
-                                        <ColumnDefinition Width="2.8*"/>
-                                        <ColumnDefinition Width="0.6*"/>
-                                        <ColumnDefinition Width="0.7*"/>
-                                        <ColumnDefinition Width="1.0*"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="70"/>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
 
                                     <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
@@ -300,6 +313,13 @@
                         </Border>
 
                         <ListView Grid.Row="1" x:Name="PopupStudentListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="Padding" Value="16,0,16,0"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">

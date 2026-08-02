@@ -5,7 +5,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="Application Settings">
+    Title="Application Settings"
+    >
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -14,90 +15,33 @@
     <Grid Padding="32" Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,24">
             <TextBlock Text="Configuration" Style="{StaticResource PageTitleStyle}" FontSize="28"/>
-            <TextBlock Text="Manage hardware devices, preferences, and system parameters." Style="{StaticResource BodyTextStyle}" Opacity="0.8"/>
+            <TextBlock Text="Manage server connection and system parameters." Style="{StaticResource BodyTextStyle}" Opacity="0.8"/>
         </StackPanel>
 
-        <!-- Main Settings Content -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Spacing="24" Padding="0,0,16,0">
+        <!-- Network Configuration Card -->
+        <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+            <StackPanel Spacing="20">
+                <TextBlock Text="Network Configuration" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
+                <TextBlock Text="Set the IPv4 address of the local MySQL server this station connects to." Style="{StaticResource BodyTextStyle}" FontSize="12" TextWrapping="Wrap"/>
 
-                <!-- Hardware & Devices Card -->
-                <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <StackPanel Spacing="20">
-                        <TextBlock Text="Hardware &amp; Peripherals" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
+                <TextBox x:Name="ServerIpConfigTextBox"
+                         Header="MySQL Server IP Address"
+                         PlaceholderText="e.g., 192.168.1.7 or 127.0.0.1"/>
 
-                        <!-- NFC Reader Settings -->
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <Ellipse x:Name="NfcStatusIndicator" Grid.Column="0" Width="12" Height="12" Fill="ForestGreen" VerticalAlignment="Center"/>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="NFC Serial Reader" Style="{StaticResource DataValueStyle}"/>
-                                <TextBlock Text="Active on COM3 (9600 baud)" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
-                            </StackPanel>
-                            <ComboBox x:Name="ComPortComboBox" Grid.Column="2" Width="120" SelectedIndex="0" VerticalAlignment="Center">
-                                <ComboBoxItem Content="COM3"/>
-                                <ComboBoxItem Content="COM4"/>
-                                <ComboBoxItem Content="Auto-Detect"/>
-                            </ComboBox>
-                        </Grid>
-
-                        <Rectangle Height="1" Fill="#10FFFFFF" Margin="0,4"/>
-
-                        <!-- Camera Settings -->
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <Ellipse x:Name="CameraStatusIndicator" Grid.Column="0" Width="12" Height="12" Fill="Firebrick" VerticalAlignment="Center"/>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="QR Capture Device" Style="{StaticResource DataValueStyle}"/>
-                                <TextBlock Text="External USB HD Camera (Disconnected)" Style="{StaticResource BodyTextStyle}" FontSize="12" Foreground="Firebrick"/>
-                            </StackPanel>
-                            <ToggleSwitch x:Name="CameraToggle" Grid.Column="2" IsOn="False" OnContent="Enabled" OffContent="Disabled" VerticalAlignment="Center"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- Appearance & Interface Card -->
-                <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <StackPanel Spacing="20">
-                        <TextBlock Text="Appearance &amp; Interface" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
-
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock Text="Application Theme" Style="{StaticResource DataValueStyle}"/>
-                                <TextBlock Text="Override system default colors" Style="{StaticResource BodyTextStyle}" FontSize="12"/>
-                            </StackPanel>
-                            <ComboBox x:Name="ThemeComboBox" Grid.Column="1" Width="140" SelectedIndex="0" VerticalAlignment="Center">
-                                <ComboBoxItem Content="Dark Mode"/>
-                                <ComboBoxItem Content="Light Mode"/>
-                                <ComboBoxItem Content="System Default"/>
-                            </ComboBox>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                <TextBlock x:Name="ServerIpStatusText"
+                           Text=""
+                           FontSize="12"
+                           Foreground="#34D399"
+                           TextWrapping="Wrap"/>
             </StackPanel>
-        </ScrollViewer>
+        </Border>
 
         <!-- Action Buttons Footer -->
         <Grid Grid.Row="2" Margin="0,24,0,0" ColumnSpacing="16">

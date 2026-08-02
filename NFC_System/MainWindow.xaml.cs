@@ -36,7 +36,6 @@ namespace NFC_System
 
         // ====================================================================
         // CLOUD FIRESTORE CONFIGURATION
-        // Replace 'YOUR-FIREBASE-PROJECT-ID' with your actual Firebase Project ID!
         // ====================================================================
         private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
         private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin";
@@ -48,6 +47,9 @@ namespace NFC_System
             MaximizeWindow();
 
             this.Closed += MainWindow_Closed;
+
+            // Load the dynamic IP configuration BEFORE anything else runs
+            DatabaseService.LoadConfig();
 
             if (this.Content is FrameworkElement rootElement)
             {
@@ -196,18 +198,28 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
+                // THE FIX: Provide the dynamic IP configuration interface if connection fails
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
                 LoginStatusText.Text = "Database connection failed.";
 
-                ContentDialog errorDialog = new ContentDialog
+                DbErrorTextBlock.Text = $"Connection Error: {ex.Message}";
+                ServerIpTextBox.Text = DatabaseService.ServerIp;
+                DbConfigDialog.XamlRoot = this.Content.XamlRoot;
+
+                var result = await DbConfigDialog.ShowAsync();
+
+                if (result == ContentDialogResult.Primary)
                 {
-                    Title = "Database Error",
-                    Content = $"Failed to reach the MySQL Database. Ensure XAMPP is running.\n\nDetails: {ex.Message}",
-                    CloseButtonText = "OK",
-                    XamlRoot = this.Content.XamlRoot
-                };
-                await errorDialog.ShowAsync();
+                    // User entered a new IP and hit save
+                    DatabaseService.SaveConfig(ServerIpTextBox.Text);
+                    _ = InitializeSystemAsync(); // Restart the connection attempt
+                }
+                else
+                {
+                    // User hit exit
+                    Application.Current.Exit();
+                }
             }
         }
 
@@ -277,7 +289,6 @@ namespace NFC_System
                 CompleteSetupButton.IsEnabled = true;
             }
         }
-
 
         /* =========================================================================
          * ROLE-BASED ACCESS CONTROL & LOGIN LOGIC
@@ -558,6 +569,70 @@ namespace NFC_System
             }
         }
 
+        private async void RefreshComPort_Click(object sender, RoutedEventArgs e)
+        {
+            // 1. Update UI to show activity
+            LoginStatusText.Text = "Reconnecting NFC Terminal...";
+            LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+            LoginLoadingRing.IsActive = true;
+            LoginLoadingRing.Visibility = Visibility.Visible;
+
+            // 2. Synchronously close existing port to prevent "Access Denied" exceptions
+            if (_serialPort != null)
+            {
+                try
+                {
+                    _serialPort.DataReceived -= SerialPort_DataReceived;
+                    if (_serialPort.IsOpen) _serialPort.Close();
+                    _serialPort.Dispose();
+                }
+                catch { }
+                finally
+                {
+                    _serialPort = null;
+                }
+            }
+
+            // 3. Brief delay to allow the OS to fully release the COM port
+            await Task.Delay(500);
+
+            // 4. Fetch the latest port in case it was updated, and reconnect
+            _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+            bool isConnected = TryConnectSerial(_currentPort);
+
+            // 5. Restore UI
+            LoginLoadingRing.IsActive = false;
+            LoginLoadingRing.Visibility = Visibility.Collapsed;
+
+            if (isConnected)
+            {
+                LoginStatusText.Text = "Please tap your Staff or Admin NFC ID to log in.";
+                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
+
+                ContentDialog successDialog = new ContentDialog
+                {
+                    Title = "Hardware Linked",
+                    Content = $"The NFC Terminal was successfully reconnected on port {_currentPort}.",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await successDialog.ShowAsync();
+            }
+            else
+            {
+                LoginStatusText.Text = "Connection failed. Please check the USB cable.";
+                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+
+                ContentDialog warningDialog = new ContentDialog
+                {
+                    Title = "Hardware Warning",
+                    Content = $"Could not find the NFC Terminal on {_currentPort}. Please check the USB cable or update the port in Settings.",
+                    CloseButtonText = "Continue",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await warningDialog.ShowAsync();
+            }
+        }
         private void MaximizeWindow()
         {
             IntPtr hWnd = WindowNative.GetWindowHandle(this);

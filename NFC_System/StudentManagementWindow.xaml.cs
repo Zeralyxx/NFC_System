@@ -75,8 +75,8 @@ namespace NFC_System
             {
                 var result = await _database.SearchStudentsAsync("", "All Students", "All Courses", "All Years", 1, 99999);
                 _allStudents = result.Students.ToList();
+                var courses = await _database.GetDistinctCoursesAsync();
 
-                var courses = _allStudents.Select(s => s.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
 
                 CourseFilterComboBox.Items.Clear();
                 CourseFilterComboBox.Items.Add("All Courses");
