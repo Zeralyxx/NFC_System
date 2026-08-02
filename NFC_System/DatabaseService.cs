@@ -38,8 +38,6 @@ public sealed class SystemAuditLog
     public string Action { get; set; } = "";
     public string Status { get; set; } = "";
     public string Details { get; set; } = "";
-    public double AuthSpeedMs { get; set; }
-    public double DbQuerySpeedMs { get; set; }
     public Microsoft.UI.Xaml.Media.Brush StatusColor { get; set; } = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray);
 }
 
@@ -1270,11 +1268,12 @@ public sealed class DatabaseService
 
         string whereSql = whereClauses.Count > 0 ? " AND " + string.Join(" AND ", whereClauses) : "";
 
+        // REMOVED auth_speed_ms and db_query_speed_ms from here
         string sql = $@"
             SELECT * FROM (
                 SELECT timestamp, student_id, student_name, nfc_uid, transaction_type as action, 
                        CASE WHEN is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
-                       error_code, remarks as details, 'GATE LOG' as log_type, auth_speed_ms, db_query_speed_ms
+                       error_code, remarks as details, 'GATE LOG' as log_type
                 FROM ({CombinedLogsQuery}) cl 
                 WHERE transaction_type != 'EventAttendance'
                 
@@ -1283,8 +1282,7 @@ public sealed class DatabaseService
                 SELECT timestamp, student_id, '' as student_name, '' as nfc_uid, alert_type as action, 
                        CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'RESOLVED' ELSE 'FLAGGED' END as status, 
                        '' as error_code, message as details, 
-                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type,
-                       0 as auth_speed_ms, 0 as db_query_speed_ms
+                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type
                 FROM alerts
             ) AS MasterLogs
             WHERE 1=1 {whereSql}
@@ -1331,8 +1329,6 @@ public sealed class DatabaseService
                 Action = Value(reader["action"]),
                 Status = Value(reader["status"]),
                 Details = details,
-                AuthSpeedMs = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0,
-                DbQuerySpeedMs = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0,
                 DisplayTime = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss.fff tt")
             };
 
@@ -1347,6 +1343,47 @@ public sealed class DatabaseService
         }
 
         return masterLogs;
+    }
+
+    public async Task ExportCleanLogsToCsvAsync(string folderPath)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        string[] tables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs" };
+
+        foreach (var table in tables)
+        {
+            string sql = $@"
+                SELECT timestamp, student_name, verification_mode, auth_speed_ms, db_query_speed_ms 
+                FROM {table} 
+                ORDER BY timestamp DESC";
+
+            using var cmd = new MySqlCommand(sql, connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            string filePath = Path.Combine(folderPath, $"{table}.csv");
+            using var writer = new StreamWriter(filePath);
+
+            // CSV Header
+            await writer.WriteLineAsync("Date & Time,Student Name,Verification Mode,Auth Speed (ms),DB Query Speed (ms)");
+
+            while (await reader.ReadAsync())
+            {
+                // Format down to the millisecond (.fff)
+                string ts = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd HH:mm:ss.fff");
+
+                // Remove commas from names so they don't break the CSV columns
+                string name = Value(reader["student_name"]).Replace(",", " ");
+                if (string.IsNullOrWhiteSpace(name)) name = "Unknown";
+
+                string mode = Value(reader["verification_mode"]);
+                string auth = reader["auth_speed_ms"]?.ToString() ?? "0";
+                string db = reader["db_query_speed_ms"]?.ToString() ?? "0";
+
+                await writer.WriteLineAsync($"{ts},{name},{mode},{auth},{db}");
+            }
+        }
     }
 
     public async Task<(int TotalScansToday, int CurrentlyInside, int DeniedToday)> GetUniversityMetricsAsync()
@@ -1534,7 +1571,7 @@ public sealed class DatabaseService
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-        SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+        SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
                pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
         FROM students
         WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(@exact))
@@ -1604,7 +1641,7 @@ public sealed class DatabaseService
         await connection.OpenAsync();
 
         string sql = @"
-            SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+            SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
                    pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
             FROM students
             WHERE nfc_uid = @uid
@@ -1628,7 +1665,7 @@ public sealed class DatabaseService
         await connection.OpenAsync();
 
         string sql = @"
-            SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+            SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
                    pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
             FROM students
             WHERE student_id = @id
@@ -1721,7 +1758,7 @@ public sealed class DatabaseService
         int offset = (safePageNumber - 1) * safePageSize;
 
         string sql = $@"
-            SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+            SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
                    pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
             FROM students
             {whereSql}
@@ -2100,7 +2137,7 @@ public sealed class DatabaseService
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            SELECT eas.student_id, s.full_name, s.course, s.year_level, s.section_name, s.status, s.nfc_uid, 
+            SELECT eas.student_id, s.full_name, s.email, s.course, s.year_level, s.section_name, s.status, s.nfc_uid, 
                    s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp
             FROM event_approved_students eas
             LEFT JOIN students s ON eas.student_id = s.student_id

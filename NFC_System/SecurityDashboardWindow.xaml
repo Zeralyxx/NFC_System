@@ -132,6 +132,7 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+                    <Button x:Name="ExportLogsButton" Content="Export to CSV" Click="ExportLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
                     <Button x:Name="OpenPopupLogsButton" Content="⛶ Open Master Audit Explorer" Click="OpenPopupLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="40" Padding="24,0"/>
                 </StackPanel>
 
@@ -171,8 +172,6 @@
                                 <TextBlock Grid.Column="1" Text="Action Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="4" Text="Auth (ms)" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="5" Text="DB (ms)" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             </Grid>
                         </Border>
@@ -203,8 +202,7 @@
                                         <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="4" Text="{x:Bind AuthSpeedMs}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="5" Text="{x:Bind DbQuerySpeedMs}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
+                                        
                                         <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                     </Grid>
                                 </DataTemplate>
@@ -362,8 +360,7 @@
                                         <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="4" Text="{x:Bind AuthSpeedMs}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="5" Text="{x:Bind DbQuerySpeedMs}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
+                                        
                                         <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                     </Grid>
                                 </DataTemplate>

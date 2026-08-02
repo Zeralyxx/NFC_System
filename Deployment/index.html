@@ -1,89 +1,332 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
-
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/12.17.0/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/12.17.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/12.17.0/firebase-performance-compat.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
-
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
-    </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
-
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gate Terminal | PIN Reset</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #0A0A0A;
+            --bg-card: #1A1A1A;
+            --accent: #3B82F6;
+            --accent-hover: #2563EB;
+            --text-main: #FFFFFF;
+            --text-muted: #A0A0A0;
+            --error: #F87171;
+            --success: #34D399;
         }
-      });
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: var(--bg-card);
+            padding: 40px;
+            border-radius: 12px;
+            border: 1px solid #333;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        p {
+            color: var(--text-muted);
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+            .input-group label {
+                display: block;
+                font-size: 13px;
+                margin-bottom: 6px;
+                font-weight: 600;
+                color: var(--text-muted);
+            }
+
+            .input-group input {
+                width: 100%;
+                padding: 12px;
+                background: rgba(255,255,255,0.05);
+                border: 1px solid #444;
+                border-radius: 6px;
+                color: white;
+                font-size: 16px;
+                box-sizing: border-box;
+                transition: border-color 0.2s;
+            }
+
+                .input-group input:focus {
+                    outline: none;
+                    border-color: var(--accent);
+                }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+            button:hover {
+                background-color: var(--accent-hover);
+            }
+
+            button:disabled {
+                background-color: #444;
+                cursor: not-allowed;
+            }
+
+        .status {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+        }
+
+            .status.error {
+                color: var(--error);
+                display: block;
+            }
+
+            .status.success {
+                color: var(--success);
+                display: block;
+            }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Gate Terminal PIN Reset</h2>
+
+        <!-- STAGE 1: Request OTP -->
+        <div id="stage-1">
+            <p>Enter your Student ID. A 6-digit verification code will be sent to your institutional email.</p>
+            <div class="input-group">
+                <label>Student ID</label>
+                <input type="text" id="studentId" placeholder="e.g. 26-00001">
+            </div>
+            <button id="btnRequestOtp">Send Verification Code</button>
+        </div>
+
+        <!-- STAGE 2: Verify OTP -->
+        <div id="stage-2" class="hidden">
+            <p>We sent a 6-digit code to your email. Please enter it below.</p>
+            <div class="input-group">
+                <label>Verification Code</label>
+                <input type="text" id="otpCode" placeholder="000000" maxlength="6">
+            </div>
+            <button id="btnVerifyOtp">Verify Code</button>
+        </div>
+
+        <!-- STAGE 3: New PIN -->
+        <div id="stage-3" class="hidden">
+            <p>Verification successful. Create your new 4-digit PIN.</p>
+            <div class="input-group">
+                <label>New 4-Digit PIN</label>
+                <input type="password" id="newPin" placeholder="****" maxlength="4">
+            </div>
+            <div class="input-group">
+                <label>Confirm PIN</label>
+                <input type="password" id="confirmPin" placeholder="****" maxlength="4">
+            </div>
+            <button id="btnResetPin">Set New PIN</button>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMessage" class="status"></div>
+    </div>
+
+    <!-- Firebase SDKs (Modular V10) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        // ==========================================
+        // CONFIGURATION: REPLACE THESE WITH YOUR KEYS
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo",
+            authDomain: "nfc-system-d6ec2.firebaseapp.com",
+            projectId: "nfc-system-d6ec2",
+            storageBucket: "nfc-system-d6ec2.firebasestorage.app",
+            messagingSenderId: "767021424378",
+            appId: "1:767021424378:web:75f7c6fa79e14c0ac1b343"
+        };
+
+
+
+        const EMAILJS_PUBLIC_KEY = "rHCQQuC4OTsz-96MZ";
+        const EMAILJS_SERVICE_ID = "nfc_team";
+        const EMAILJS_TEMPLATE_ID = "template_zcaqxc7";
+        // ==========================================
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        emailjs.init(EMAILJS_PUBLIC_KEY);
+
+        // State Variables
+        let currentStudentId = "";
+        let generatedOtp = "";
+
+        // UI Elements
+        const stage1 = document.getElementById('stage-1');
+        const stage2 = document.getElementById('stage-2');
+        const stage3 = document.getElementById('stage-3');
+        const statusMsg = document.getElementById('statusMessage');
+
+        function showMessage(msg, isError = true) {
+            statusMsg.textContent = msg;
+            statusMsg.className = isError ? "status error" : "status success";
+        }
+
+        // --- STAGE 1: Request OTP ---
+        document.getElementById('btnRequestOtp').addEventListener('click', async () => {
+            const studentId = document.getElementById('studentId').value.trim();
+            if (!studentId) return showMessage("Please enter your Student ID.");
+
+            const btn = document.getElementById('btnRequestOtp');
+            btn.disabled = true;
+            btn.textContent = "Checking...";
+            statusMsg.className = "hidden";
+
+            try {
+                // Fetch student from Firestore
+                const encodedId = encodeURIComponent(studentId);
+                const docRef = doc(db, "students", encodedId);
+                const docSnap = await getDoc(docRef);
+
+                if (!docSnap.exists()) {
+                    btn.disabled = false;
+                    btn.textContent = "Send Verification Code";
+                    return showMessage("Student ID not found.");
+                }
+
+                const data = docSnap.data();
+                const studentEmail = data.email;
+                const studentName = data.full_name;
+
+                if (!studentEmail) {
+                    btn.disabled = false;
+                    btn.textContent = "Send Verification Code";
+                    return showMessage("No email is associated with this Student ID. Please visit the admin office.");
+                }
+
+                // Generate 6-digit OTP
+                generatedOtp = Math.floor(15000 + Math.random() * 900000).toString();
+
+                // Send Email via EmailJS
+                await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+                    student_name: studentName,
+                    otp_code: generatedOtp,
+                    to_email: studentEmail
+                });
+
+                currentStudentId = encodedId;
+                stage1.classList.add('hidden');
+                stage2.classList.remove('hidden');
+                showMessage("Code sent successfully!", false);
+
+            } catch (error) {
+                console.error(error);
+                showMessage("Failed to connect or send email. Try again later.");
+                btn.disabled = false;
+                btn.textContent = "Send Verification Code";
+            }
+        });
+
+        // --- STAGE 2: Verify OTP ---
+        document.getElementById('btnVerifyOtp').addEventListener('click', () => {
+            const enteredOtp = document.getElementById('otpCode').value.trim();
+            if (enteredOtp === generatedOtp) {
+                stage2.classList.add('hidden');
+                stage3.classList.remove('hidden');
+                showMessage("Code verified. Create a new PIN.", false);
+            } else {
+                showMessage("Incorrect verification code.");
+            }
+        });
+
+        // --- STAGE 3: Hash PIN and Update Firestore ---
+        document.getElementById('btnResetPin').addEventListener('click', async () => {
+            const newPin = document.getElementById('newPin').value;
+            const confirmPin = document.getElementById('confirmPin').value;
+
+            if (newPin.length !== 4 || isNaN(newPin)) return showMessage("PIN must be exactly 4 digits.");
+            if (newPin !== confirmPin) return showMessage("PINs do not match.");
+
+            const btn = document.getElementById('btnResetPin');
+            btn.disabled = true;
+            btn.textContent = "Updating Database...";
+
+            try {
+                // 1. Generate Salt and Hash to match C# PBKDF2 logic
+                const saltArray = window.crypto.getRandomValues(new Uint8Array(16));
+                const enc = new TextEncoder();
+                const keyMaterial = await window.crypto.subtle.importKey(
+                    "raw", enc.encode(newPin), { name: "PBKDF2" }, false, ["deriveBits", "deriveKey"]
+                );
+
+                // Note: Iterations and Hash type must match your C# PinHasher!
+                const hashBuffer = await window.crypto.subtle.deriveBits(
+                    { name: "PBKDF2", salt: saltArray, iterations: 15000, hash: "SHA-256" },
+                    keyMaterial, 256
+                );
+
+                // Convert to Base64 to match standard C# byte[] serialization
+                const base64Salt = btoa(String.fromCharCode(...saltArray));
+                const base64Hash = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
+
+                // 2. Update Firestore Document
+                const docRef = doc(db, "students", currentStudentId);
+                await updateDoc(docRef, {
+                    pin_hash: base64Hash,
+                    pin_salt: base64Salt,
+                    pin_locked: false,
+                    failed_pin_attempts: 0
+                });
+
+                showMessage("PIN reset successfully! You can now use it at the gate terminal.", false);
+                btn.textContent = "Reset Complete";
+
+            } catch (error) {
+                console.error(error);
+                showMessage("Failed to update PIN. Please try again.");
+                btn.disabled = false;
+                btn.textContent = "Set New PIN";
+            }
+        });
     </script>
-  </body>
+</body>
 </html>

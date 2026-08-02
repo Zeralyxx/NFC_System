@@ -741,6 +741,38 @@ namespace NFC_System
             this.Close();
         }
 
+        private async void ExportLogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var folderPicker = new Windows.Storage.Pickers.FolderPicker();
+                folderPicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop;
+                folderPicker.FileTypeFilter.Add("*");
+
+                // Required WinUI 3 initialization for Pickers
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                WinRT.Interop.InitializeWithWindow.Initialize(folderPicker, hwnd);
+
+                var folder = await folderPicker.PickSingleFolderAsync();
+                if (folder != null)
+                {
+                    StatusTextBlock.Text = "Exporting logs to CSV...";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+
+                    await _database.ExportCleanLogsToCsvAsync(folder.Path);
+
+                    StatusTextBlock.Text = $"Logs successfully exported to {folder.Path}";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                    PlaySuccessPing();
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Export failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+            }
+        }
+
         private void MaximizeWindow()
         {
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
