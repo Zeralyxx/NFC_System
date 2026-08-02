@@ -33,6 +33,7 @@ namespace NFC_System
         // Snapshot of original values to detect unsaved changes
         private string _origStudentId = "";
         private string _origFullName = "";
+        private string _origEmail = ""; // <-- Add this
         private string _origCourse = "";
         private string _origYearLevel = "";
         private string _origSection = "";
@@ -50,6 +51,7 @@ namespace NFC_System
 
             EditDialogStudentIdBox.TextChanged += EditDialog_FieldChanged;
             EditDialogFullNameBox.TextChanged += EditDialog_FieldChanged;
+            EditDialogEmailBox.TextChanged += EditDialog_FieldChanged; // <-- Add this
             EditDialogCourseComboBox.SelectionChanged += EditDialog_FieldChanged;
             EditDialogYearLevelBox.TextChanged += EditDialog_FieldChanged;
             EditDialogSectionBox.TextChanged += EditDialog_FieldChanged;
@@ -231,6 +233,7 @@ namespace NFC_System
 
             EditDialogStudentIdBox.Text = student.StudentId;
             EditDialogFullNameBox.Text = student.FullName;
+            EditDialogEmailBox.Text = student.Email ?? ""; // <-- Add this
 
             EditDialogCourseComboBox.ItemsSource = CourseFilterComboBox.Items
                 .Cast<object>()
@@ -256,6 +259,7 @@ namespace NFC_System
             // Snapshot original state for dirty-checking
             _origStudentId = student.StudentId;
             _origFullName = student.FullName;
+            _origEmail = student.Email ?? ""; // <-- Add this
             _origCourse = student.Course;
             _origYearLevel = student.YearLevel;
             _origSection = student.SectionName;
@@ -338,6 +342,7 @@ namespace NFC_System
 
             string curStudentId = EditDialogStudentIdBox.Text.Trim();
             string curFullName = EditDialogFullNameBox.Text.Trim();
+            string curEmail = EditDialogEmailBox.Text.Trim(); // <-- Add this
             string curCourse = EditDialogCourseComboBox.SelectedItem?.ToString() ?? "";
             string curYearLevel = EditDialogYearLevelBox.Text.Trim();
             string curSection = EditDialogSectionBox.Text.Trim();
@@ -361,6 +366,7 @@ namespace NFC_System
             bool isDirty =
                 curStudentId != _origStudentId ||
                 curFullName != _origFullName ||
+                curEmail != _origEmail || // <-- Add this
                 curCourse != _origCourse ||
                 curYearLevel != _origYearLevel ||
                 curSection != _origSection ||
@@ -502,6 +508,7 @@ namespace NFC_System
                         {
                             StudentId = EditDialogStudentIdBox.Text.Trim(),
                             FullName = EditDialogFullNameBox.Text.Trim(),
+                            Email = EditDialogEmailBox.Text.Trim(), // <-- Add this
                             Course = EditDialogCourseComboBox.SelectedItem?.ToString() ?? "",
                             YearLevel = EditDialogYearLevelBox.Text.Trim(),
                             SectionName = EditDialogSectionBox.Text.Trim(),

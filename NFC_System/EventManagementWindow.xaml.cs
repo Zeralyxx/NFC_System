@@ -206,28 +206,38 @@ namespace NFC_System
             CloseEventButton.IsEnabled = _selectedEvent != null;
         }
 
-        
+
 
         private async void ActiveEventsListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
             if (ActiveEventsListView.SelectedItem is EventRecord clickedEvent)
             {
-                if (!clickedEvent.IsRestricted)
-                {
-                    LogMessage($"[INFO] '{clickedEvent.EventId}' is an open event. No pre-approval required.");
-                    return;
-                }
-
                 _selectedEvent = clickedEvent;
 
                 AttendeeManagementDialog.XamlRoot = this.Content.XamlRoot;
-                AttendeeManagementDialog.Title = $"Manage Attendees: {clickedEvent.DisplayName}";
+                AttendeeManagementDialog.Title = $"Manage Event: {clickedEvent.EventId}";
 
-                // Reset all states and filters
-                CourseComboBox.SelectedIndex = -1;
-                YearComboBox.SelectedIndex = -1;
-                IndividualIdTextBox.Text = "";
-                SearchAttendeeTextBox.Text = "";
+                // Load Event Name into Editor
+                EditEventNameTextBox.Text = clickedEvent.DisplayName ?? "";
+
+                // Show or Hide Attendee Management based on Restriction
+                if (!clickedEvent.IsRestricted)
+                {
+                    AttendeeManagementSection.Visibility = Visibility.Collapsed;
+                    LogMessage($"[INFO] '{clickedEvent.EventId}' is an open event. Attendee management hidden.");
+                }
+                else
+                {
+                    AttendeeManagementSection.Visibility = Visibility.Visible;
+
+                    // Reset all states and filters
+                    CourseComboBox.SelectedIndex = -1;
+                    YearComboBox.SelectedIndex = -1;
+                    IndividualIdTextBox.Text = "";
+                    SearchAttendeeTextBox.Text = "";
+
+                    await RefreshAttendeesListAsync();
+                }
 
                 // Force collapse the dialog width on open
                 DialogContentContainer.Width = 600;
@@ -236,8 +246,33 @@ namespace NFC_System
                 AttendeesListView.Visibility = Visibility.Visible;
                 AttendeesGridView.Visibility = Visibility.Collapsed;
 
-                await RefreshAttendeesListAsync();
                 await AttendeeManagementDialog.ShowAsync();
+            }
+        }
+
+        private async void UpdateEventNameButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedEvent == null) return;
+
+            string newName = EditEventNameTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(newName))
+            {
+                LogMessage("[WARNING] Event Name cannot be empty.");
+                return;
+            }
+
+            try
+            {
+                // Reusing SaveEventAsync acts as an upsert (ON DUPLICATE KEY UPDATE) to overwrite the existing event parameters.
+                await _database.SaveEventAsync(_selectedEvent.EventId, newName, _selectedEvent.VerificationMode, _selectedEvent.IsRestricted);
+                LogMessage($"[SUCCESS] Event '{_selectedEvent.EventId}' renamed to '{newName}'.");
+
+                // Refresh to reflect the new name in the background UI
+                await LoadActiveEventsAsync();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"[DB ERROR] Failed to update event name: {ex.Message}");
             }
         }
 

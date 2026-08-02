@@ -353,7 +353,7 @@
 
                     <TextBox x:Name="EditDialogStudentIdBox" Header="Student ID" TextChanging="NumberOnly_TextChanging"/>
                     <TextBox x:Name="EditDialogFullNameBox" Header="Full Name"/>
-
+                    <TextBox x:Name="EditDialogEmailBox" Header="Email Address" PlaceholderText="michael.sintay@tcu.edu.ph"/>
                     <ComboBox x:Name="EditDialogCourseComboBox" Header="Course" HorizontalAlignment="Stretch"/>
 
                     <Grid ColumnSpacing="16">
