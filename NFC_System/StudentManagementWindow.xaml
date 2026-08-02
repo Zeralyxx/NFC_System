@@ -325,5 +325,63 @@
                 </Border>
             </Grid>
         </ContentDialog>
+        <!-- ========================================================= -->
+        <!-- POPUP: FULL STUDENT PROFILE EDIT (Double-Click Trigger)   -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="EditStudentDialog"
+               Title="Edit Student Profile"
+               CloseButtonText="Cancel"
+               CornerRadius="8">
+            <ScrollViewer VerticalScrollBarVisibility="Hidden" MaxHeight="520">
+                <StackPanel Spacing="16" Width="480" Margin="0,8,0,0">
+
+                    <TextBlock x:Name="EditDialogStatusText" Foreground="#F87171" FontWeight="SemiBold" TextWrapping="Wrap" Visibility="Collapsed"/>
+
+                    <TextBox x:Name="EditDialogStudentIdBox" Header="Student ID" TextChanging="NumberOnly_TextChanging"/>
+                    <TextBox x:Name="EditDialogFullNameBox" Header="Full Name"/>
+
+                    <ComboBox x:Name="EditDialogCourseComboBox" Header="Course" HorizontalAlignment="Stretch"/>
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="EditDialogYearLevelBox" Header="Year Level" TextChanging="NumberOnly_TextChanging"/>
+                        <TextBox Grid.Column="1" x:Name="EditDialogSectionBox" Header="Section"/>
+                    </Grid>
+
+                    <ComboBox x:Name="EditDialogStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="Active"/>
+                        <ComboBoxItem Content="Inactive"/>
+                        <ComboBoxItem Content="Graduated"/>
+                        <ComboBoxItem Content="Expelled"/>
+                    </ComboBox>
+
+                    <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,4"/>
+
+                    <StackPanel Spacing="8">
+                        <TextBox x:Name="EditDialogNfcUidBox" Header="NFC UID"/>
+                        <Button x:Name="ChangeNfcButton" Content="Card Lost? Tap New NFC Card" Click="ChangeNfcButton_Click"
+                            HorizontalAlignment="Stretch" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}"
+                            Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                        <TextBlock x:Name="NfcScanStatusText" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Visibility="Collapsed"/>
+                        <TextBox x:Name="NfcReplacementReasonBox" Header="Reason for card replacement"
+                                PlaceholderText="e.g. reported lost, found in library, card damaged..."
+                                Visibility="Collapsed"/>
+                    </StackPanel>
+                    <PasswordBox x:Name="EditDialogNewPinBox" Header="Reset PIN (leave blank to keep current)" MaxLength="4" PlaceholderText="****"/>
+
+
+                    <Button x:Name="EditDialogSaveButton" Content="Save Changes" Click="EditDialogSaveButton_Click"
+                        IsEnabled="False"
+                        HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}"
+                        Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"
+                        Margin="0,8,0,0"/>
+
+                    <TextBlock Text="Saving requires an Administrator NFC tap to confirm." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </ScrollViewer>
+        </ContentDialog>
     </Grid>
 </Window>

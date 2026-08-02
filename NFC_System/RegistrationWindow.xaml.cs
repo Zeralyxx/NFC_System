@@ -20,6 +20,7 @@ namespace NFC_System
         private bool _isScanning = false;
         private bool _isExistingProfile = false;
         private readonly DatabaseService _database = new();
+        private bool _duplicateWarningAcknowledged = false;
 
         public RegistrationWindow()
         {
@@ -30,6 +31,7 @@ namespace NFC_System
             ScanUidButton.Click += ScanUidButton_Click;
             ClearButton.Click += ClearButton_Click;
             SaveButton.Click += SaveButton_Click;
+            FullNameTextBox.TextChanged += (s, e) => _duplicateWarningAcknowledged = false;
 
             // Kick off the async loader
             _ = InitializeAsync();
@@ -255,7 +257,6 @@ namespace NFC_System
             string pin = PinPasswordBox.Password.Trim();
             string qrCredential = QrCredentialTextBox.Text.Trim();
             string status = StatusComboBox.SelectedItem is ComboBoxItem item ? item.Content?.ToString() ?? "Active" : "Active";
-
             string course = CourseComboBox.SelectedItem?.ToString() ?? "";
 
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
@@ -266,16 +267,32 @@ namespace NFC_System
 
             if (string.IsNullOrWhiteSpace(pin))
             {
-                if (!_isExistingProfile)
-                {
-                    UidLogListView.Items.Insert(0, "[ERROR] A 4-digit PIN is strictly required for new enrollments.");
-                    return;
-                }
+                UidLogListView.Items.Insert(0, "[ERROR] A 4-digit PIN is strictly required for new enrollments.");
+                return;
             }
             else if (pin.Length != 4 || !pin.All(char.IsDigit))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] If setting a PIN, it must be exactly 4 numeric digits.");
                 return;
+            }
+
+            // Duplicate-person check (name-based), only runs once per attempt until the
+            // guard either confirms or changes the name field.
+            if (!_duplicateWarningAcknowledged)
+            {
+                var possibleDupes = await _database.FindPotentialDuplicatesByNameAsync(fullName);
+                if (possibleDupes.Count > 0)
+                {
+                    UidLogListView.Items.Insert(0,
+                        $"[WARNING] {possibleDupes.Count} existing student(s) share this name — possible duplicate:");
+                    foreach (var dupe in possibleDupes)
+                        UidLogListView.Items.Insert(1, $"    → {dupe.StudentId} | {dupe.FullName} | {dupe.Course} {dupe.SectionName}");
+
+                    UidLogListView.Items.Insert(0, "[ACTION REQUIRED] Verify this isn't a re-enrollment, then press Save again to confirm.");
+
+                    _duplicateWarningAcknowledged = true; // next Save click proceeds
+                    return;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(qrCredential))
@@ -300,10 +317,13 @@ namespace NFC_System
 
                 await _database.SaveStudentAsync(student, pin);
 
-                // No intrusive prompts. Just logs success and clears ready for the next person!
                 UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {fullName}");
                 PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
                 ClearForm();
+            }
+            catch (InvalidOperationException ex)
+            {
+                UidLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
             }
             catch (Exception ex)
             {
@@ -327,6 +347,7 @@ namespace NFC_System
             QrCodeImage.Visibility = Visibility.Collapsed;
             QrPlaceholderPanel.Visibility = Visibility.Visible;
             StatusComboBox.SelectedIndex = 0;
+            _duplicateWarningAcknowledged = false;
         }
 
         private WriteableBitmap GenerateQrBitmap(string text)

@@ -62,7 +62,6 @@
                                 <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
                             </Grid>
 
-                            <!-- THE FIX: Indeterminate Progress Bar for Cloud Sync operations -->
                             <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
                         </StackPanel>
                     </Border>
@@ -87,14 +86,8 @@
                     <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                         <StackPanel Spacing="16">
                             <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="NewCourseTextBox" Grid.Column="0" Header="Add New Course" PlaceholderText="e.g. BS Computer Science"/>
-                                <Button x:Name="AddCourseButton" Grid.Column="1" Content="Add Course" Click="AddCourseButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
-                            </Grid>
+                            <TextBlock Text="Add new degree programs or safely remove existing ones." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                            <Button Content="Manage Courses" Click="OpenManageCoursesDialog_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
                         </StackPanel>
                     </Border>
 
@@ -184,7 +177,9 @@
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="Padding" Value="16,0,16,0"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="MinHeight" Value="48"/>
+                                    <Setter Property="Padding" Value="16,4,16,4"/>
                                 </Style>
                             </ListView.ItemContainerStyle>
 
@@ -211,6 +206,42 @@
                 </Border>
             </Grid>
         </Grid>
+
+        <!-- Manage Courses Dialog -->
+        <ContentDialog x:Name="ManageCoursesDialog"
+                       Title="Manage Academic Courses"
+                       CloseButtonText="Close"
+                       CornerRadius="8">
+            <StackPanel Spacing="24" Width="400">
+                <TextBlock x:Name="CourseDialogStatusText" Text="Select an action below." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+
+                <!-- Add Course -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Add New Course" FontWeight="SemiBold"/>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="DialogNewCourseTextBox" PlaceholderText="e.g. BS Computer Science"/>
+                        <Button x:Name="DialogAddCourseButton" Grid.Column="1" Content="Add" Click="DialogAddCourseButton_Click" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" Width="80"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Delete Course -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Delete Existing Course" FontWeight="SemiBold"/>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="DialogDeleteCourseComboBox" HorizontalAlignment="Stretch" PlaceholderText="Select a course..."/>
+                        <Button x:Name="DialogDeleteCourseButton" Grid.Column="1" Content="Delete" Click="DialogDeleteCourseButton_Click" Background="#EF4444" Foreground="White" BorderThickness="0" Width="80"/>
+                    </Grid>
+                </StackPanel>
+            </StackPanel>
+        </ContentDialog>
 
         <!-- Expandable Popup Dialog for Deep Inspection-->
         <ContentDialog x:Name="MasterLogsDialog"
@@ -244,21 +275,28 @@
                         <ColumnDefinition Width="2*"/>
                         <ColumnDefinition Width="1.5*"/>
                         <ColumnDefinition Width="1.5*"/>
+                        <ColumnDefinition Width="1.5*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+
                     <TextBox x:Name="PopupSearchBox" Grid.Column="0" PlaceholderText="Search ID, Subject, or Details..." TextChanged="PopupFilter_Changed"/>
-                    <ComboBox x:Name="PopupTypeFilter" Grid.Column="1" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+
+                    <CalendarDatePicker x:Name="PopupDatePicker" Grid.Column="1" PlaceholderText="Filter by Date" HorizontalAlignment="Stretch" DateChanged="PopupDatePicker_DateChanged"/>
+
+                    <ComboBox x:Name="PopupTypeFilter" Grid.Column="2" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
                         <ComboBoxItem Content="All Types"/>
                         <ComboBoxItem Content="GATE LOG"/>
                         <ComboBoxItem Content="SECURITY ALERT"/>
                         <ComboBoxItem Content="ADMIN ACTION"/>
                     </ComboBox>
-                    <ComboBox x:Name="PopupStatusFilter" Grid.Column="2" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+
+                    <ComboBox x:Name="PopupStatusFilter" Grid.Column="3" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
                         <ComboBoxItem Content="All Statuses"/>
                         <ComboBoxItem Content="Granted / Resolved"/>
                         <ComboBoxItem Content="Denied / Flagged"/>
                     </ComboBox>
-                    <Button Grid.Column="3" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+
+                    <Button Grid.Column="4" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
                 </Grid>
 
                 <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
@@ -290,7 +328,9 @@
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="Padding" Value="16,0,16,0"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="MinHeight" Value="48"/>
+                                    <Setter Property="Padding" Value="16,4,16,4"/>
                                 </Style>
                             </ListView.ItemContainerStyle>
 

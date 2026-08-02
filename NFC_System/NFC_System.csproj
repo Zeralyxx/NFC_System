@@ -121,6 +121,8 @@
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
+	
+
 
   <!-- Publish Properties -->
   <PropertyGroup>
@@ -140,4 +142,8 @@
     <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
     <AppxPackageDir>Z:\Downloads\Visual Studio 2026 Releases\</AppxPackageDir>
   </PropertyGroup>
+
+<PropertyGroup>
+	<NoWarn>$(NoWarn);CA1416</NoWarn>
+</PropertyGroup>
 </Project>

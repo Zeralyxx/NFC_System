@@ -23,6 +23,8 @@ namespace NFC_System
         private string _pendingStaffName = "";
         private string _pendingStaffUid = "";
         private string _pendingStaffRole = "";
+        // DEBOUNCE TIMER FOR SEARCH
+        private readonly DispatcherTimer _searchDebounceTimer = new();
 
         public SecurityDashboardWindow()
         {
@@ -31,6 +33,10 @@ namespace NFC_System
 
             this.Closed += Window_Closed;
             ResetPinButton.Click += ResetPinButton_Click;
+
+            // Setup the 500ms delay timer for database searching
+            _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(500);
+            _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
 
             _ = InitializeAsync();
         }
@@ -174,6 +180,8 @@ namespace NFC_System
             _ = RefreshDashboardAsync();
         }
 
+
+
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
             MasterLogsDialog.XamlRoot = this.Content.XamlRoot;
@@ -181,9 +189,9 @@ namespace NFC_System
             PopupExpandToggle.IsChecked = false;
             PopupExpandToggle.Content = "⛶ Expand View";
 
-            _masterLogsCache = (await _database.GetMasterAuditLogsAsync(2000)).ToList();
+            // Load initial top 2000 with no filters
+            await ApplyServerSidePopupFiltersAsync();
 
-            ApplyPopupFilters();
             await MasterLogsDialog.ShowAsync();
         }
 
@@ -201,38 +209,62 @@ namespace NFC_System
             }
         }
 
-        private void PopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyPopupFilters();
+        // Whenever the user types or changes a dropdown, restart the 500ms timer
+        private void PopupFilter_Changed(object sender, RoutedEventArgs e)
+        {
+            if (PopupLogsListView == null) return; // Prevent firing during window init
 
-        private void PopupClear_Click(object sender, RoutedEventArgs e)
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
+
+        private void PopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args)
+        {
+            if (PopupLogsListView == null) return;
+
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
+
+        // When the timer finishes (meaning the user stopped typing), execute the DB query
+        private async void SearchDebounceTimer_Tick(object? sender, object e)
+        {
+            _searchDebounceTimer.Stop();
+            await ApplyServerSidePopupFiltersAsync();
+        }
+
+        private async void PopupClear_Click(object sender, RoutedEventArgs e)
         {
             PopupSearchBox.Text = "";
             PopupTypeFilter.SelectedIndex = 0;
             PopupStatusFilter.SelectedIndex = 0;
-            ApplyPopupFilters();
+            PopupDatePicker.Date = null; // Clear the date
+
+            _searchDebounceTimer.Stop();
+            await ApplyServerSidePopupFiltersAsync();
         }
 
-        private void ApplyPopupFilters()
+        // Passes the UI inputs directly to the database for deep historical searching
+        private async Task ApplyServerSidePopupFiltersAsync()
         {
-            if (_masterLogsCache == null || PopupLogsListView == null) return;
+            string searchTerm = PopupSearchBox.Text?.Trim() ?? "";
+            string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
+            string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
 
-            var filtered = _masterLogsCache.AsEnumerable();
-
-            string query = PopupSearchBox.Text?.Trim().ToLower() ?? "";
-            if (!string.IsNullOrEmpty(query))
+            // Extract the optional date filter
+            DateTime? searchDate = null;
+            if (PopupDatePicker.Date.HasValue)
             {
-                filtered = filtered.Where(l =>
-                    (l.Subject != null && l.Subject.ToLower().Contains(query)) ||
-                    (l.Details != null && l.Details.ToLower().Contains(query)));
+                searchDate = PopupDatePicker.Date.Value.DateTime;
             }
 
-            string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
-            if (type != "All Types") filtered = filtered.Where(l => l.LogType == type);
-
-            string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
-            if (status == "Granted / Resolved") filtered = filtered.Where(l => l.Status == "GRANTED" || l.Status == "RESOLVED");
-            else if (status == "Denied / Flagged") filtered = filtered.Where(l => l.Status == "DENIED" || l.Status == "FLAGGED");
-
-            PopupLogsListView.ItemsSource = filtered.ToList();
+            try
+            {
+                // Queries the actual database, pulling up to 2,000 matches from ANY date
+                var searchResults = await _database.GetMasterAuditLogsAsync(2000, searchTerm, type, status, searchDate);
+                PopupLogsListView.ItemsSource = searchResults;
+            }
+            catch { /* Ignore brief DB locks during rapid typing */ }
         }
 
         private async void RegisterStaffButton_Click(object sender, RoutedEventArgs e)
@@ -294,9 +326,6 @@ namespace NFC_System
             }
         }
 
-        // ====================================================================
-        // SYNC DIALOG HELPER
-        // ====================================================================
         private async Task ShowSyncResultDialog(string title, string message)
         {
             ContentDialog resultDialog = new ContentDialog
@@ -309,9 +338,6 @@ namespace NFC_System
             await resultDialog.ShowAsync();
         }
 
-        // ====================================================================
-        // UPLOAD DATA (NOTIFIES ONLY IF NEW ADDITIONS/UPDATES EXIST)
-        // ====================================================================
         private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
         {
             UploadDataButton.IsEnabled = false;
@@ -372,9 +398,6 @@ namespace NFC_System
             }
         }
 
-        // ====================================================================
-        // DOWNLOAD DATA (NOTIFIES ONLY IF NEW ADDITIONS EXIST)
-        // ====================================================================
         private async void GetNewDataButton_Click(object sender, RoutedEventArgs e)
         {
             GetNewDataButton.IsEnabled = false;
@@ -468,14 +491,39 @@ namespace NFC_System
             }
         }
 
-        private async void AddCourseButton_Click(object sender, RoutedEventArgs e)
+        // ====================================================================
+        // COURSE MANAGEMENT DIALOG LOGIC
+        // ====================================================================
+        private async void OpenManageCoursesDialog_Click(object sender, RoutedEventArgs e)
         {
-            string courseName = NewCourseTextBox.Text.Trim();
+            ManageCoursesDialog.XamlRoot = this.Content.XamlRoot;
+            CourseDialogStatusText.Text = "Select an action below.";
+            CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
+            DialogNewCourseTextBox.Text = "";
+
+            await LoadCoursesIntoDialogAsync();
+            await ManageCoursesDialog.ShowAsync();
+        }
+
+        private async Task LoadCoursesIntoDialogAsync()
+        {
+            try
+            {
+                var courses = await _database.GetDistinctCoursesAsync();
+                DialogDeleteCourseComboBox.ItemsSource = courses;
+                DialogDeleteCourseComboBox.SelectedIndex = -1;
+            }
+            catch { }
+        }
+
+        private async void DialogAddCourseButton_Click(object sender, RoutedEventArgs e)
+        {
+            string courseName = DialogNewCourseTextBox.Text.Trim();
 
             if (string.IsNullOrWhiteSpace(courseName))
             {
-                StatusTextBlock.Text = "Please enter a valid course name.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                CourseDialogStatusText.Text = "Please enter a valid course name.";
+                CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 return;
             }
 
@@ -483,29 +531,78 @@ namespace NFC_System
             {
                 await _database.AddCourseAsync(courseName);
 
-                NewCourseTextBox.Text = "";
-                StatusTextBlock.Text = $"Course '{courseName}' added successfully.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                CourseDialogStatusText.Text = $"Course '{courseName}' added successfully.";
+                CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                DialogNewCourseTextBox.Text = "";
 
-                ContentDialog successDialog = new ContentDialog
-                {
-                    Title = "Course Created Successfully",
-                    Content = $"The academic course '{courseName}' has been added to the database.\n\nIt will now appear in the dropdown menu on the Student Registration window.",
-                    CloseButtonText = "OK",
-                    XamlRoot = this.Content.XamlRoot
-                };
-
-                await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", $"Added new academic course to database: {courseName}");
-                await successDialog.ShowAsync();
+                await LoadCoursesIntoDialogAsync();
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Could not add course: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                CourseDialogStatusText.Text = $"Could not add course: {ex.Message}";
+                CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+            }
+        }
 
-                ContentDialog errorDialog = new ContentDialog { Title = "Database Error", Content = $"Failed to add the course.\n\nDetails: {ex.Message}", CloseButtonText = "OK", XamlRoot = this.Content.XamlRoot };
-                await errorDialog.ShowAsync();
+        private async void DialogDeleteCourseButton_Click(object sender, RoutedEventArgs e)
+        {
+            string courseName = (DialogDeleteCourseComboBox.SelectedItem as string) ?? "";
+
+            if (string.IsNullOrWhiteSpace(courseName))
+            {
+                CourseDialogStatusText.Text = "Please select a course to delete.";
+                CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                return;
+            }
+
+            try
+            {
+                // 1. Safety Check: Are students using this course?
+                int enrolledStudents = await _database.GetStudentCountByCourseAsync(courseName);
+
+                if (enrolledStudents > 0)
+                {
+                    ContentDialog warningDialog = new ContentDialog
+                    {
+                        Title = "Action Blocked: Course in Use",
+                        Content = $"You cannot delete '{courseName}' because there are currently {enrolledStudents} student(s) enrolled in it.\n\nPlease reassign these students to a different course before deleting.",
+                        CloseButtonText = "Understood",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await warningDialog.ShowAsync();
+                    return;
+                }
+
+                // 2. Confirmation Dialog
+                ContentDialog confirmDialog = new ContentDialog
+                {
+                    Title = "Confirm Deletion",
+                    Content = $"Are you absolutely sure you want to delete '{courseName}'? This action cannot be undone.",
+                    PrimaryButtonText = "Delete Course",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await confirmDialog.ShowAsync();
+
+                if (result == ContentDialogResult.Primary)
+                {
+                    // 3. Execute Deletion
+                    await _database.DeleteCourseAsync(courseName);
+
+                    CourseDialogStatusText.Text = $"Course '{courseName}' was successfully deleted.";
+                    CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+
+                    await LoadCoursesIntoDialogAsync();
+                    await RefreshDashboardAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                CourseDialogStatusText.Text = $"Could not delete course: {ex.Message}";
+                CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
             }
         }
 

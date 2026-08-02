@@ -145,7 +145,7 @@ namespace NFC_System
         }
 
         // ====================================================================
-        // THE FIX: NATIVE HARDWARE SUCCESS CHIME
+        // NATIVE HARDWARE AUDIO FEEDBACK
         // ====================================================================
         private void PlaySuccessPing()
         {
@@ -182,6 +182,19 @@ namespace NFC_System
                     Console.Beep(2500, 300);
                     System.Threading.Thread.Sleep(100);
                 }
+            });
+        }
+
+        // NEW: Fast, responsive beep for hardware keypad input
+        private void PlayKeypadBeep()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(800, 60);
+                }
+                catch { }
             });
         }
 
@@ -346,8 +359,8 @@ namespace NFC_System
         {
             _isClosing = true;
             _inactivityTimer.Stop();
-            _shadowCacheTimer.Stop();  // <--- ADD THIS
-            _syncRecoveryTimer.Stop(); // <--- ADD THIS
+            _shadowCacheTimer.Stop();
+            _syncRecoveryTimer.Stop();
             CloseSerialPort();
             _ = DisposeCameraAsync();
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
@@ -357,8 +370,8 @@ namespace NFC_System
         {
             _isClosing = true;
             _inactivityTimer.Stop();
-            _shadowCacheTimer.Stop();  // <--- ADD THIS
-            _syncRecoveryTimer.Stop(); // <--- ADD THIS
+            _shadowCacheTimer.Stop();
+            _syncRecoveryTimer.Stop();
             CloseSerialPort();
             _ = DisposeCameraAsync();
             this.Close();
@@ -524,7 +537,7 @@ namespace NFC_System
             DispatcherQueue.TryEnqueue(async () =>
             {
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
-                _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : uid;
+                _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
 
                 nfcTimer.Stop();
                 string nfcResult = outcome.IsGranted ? "MATCH (Access Granted)" :
@@ -570,6 +583,8 @@ namespace NFC_System
 
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
+
+            PlayKeypadBeep();
 
             if (isCancel) { SetState(AuthenticationStage.Idle); return; }
 

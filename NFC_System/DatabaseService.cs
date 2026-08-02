@@ -931,71 +931,112 @@ public sealed class DatabaseService
 
     // =========================================================================
 
-    public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(int limit = 1000)
+    public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(
+        int limit = 1000,
+        string? searchTerm = null,
+        string? typeFilter = null,
+        string? statusFilter = null,
+        DateTime? dateFilter = null)
     {
         var masterLogs = new List<SystemAuditLog>();
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using (var cmd1 = new MySqlCommand("SELECT timestamp, student_id, nfc_uid, transaction_type, is_granted, error_code, remarks FROM verification_logs WHERE transaction_type != 'EventAttendance' ORDER BY timestamp DESC LIMIT @limit", connection))
+        // Build the dynamic WHERE clause based on UI filters
+        var whereClauses = new List<string>();
+        var parameters = new Dictionary<string, object>();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            cmd1.Parameters.AddWithValue("@limit", limit);
-            using var reader = await cmd1.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
-                string status = isGranted ? "GRANTED" : "DENIED";
-                string type = Value(reader["transaction_type"]);
-                string error = Value(reader["error_code"]);
-                string details = Value(reader["remarks"]);
-
-                if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
-                    details = $"[{error}] {details}";
-
-                string subject = Value(reader["student_id"]);
-                if (string.IsNullOrWhiteSpace(subject)) subject = $"UID: {Value(reader["nfc_uid"])}";
-
-                masterLogs.Add(new SystemAuditLog
-                {
-                    Timestamp = Convert.ToDateTime(reader["timestamp"]),
-                    LogType = "GATE LOG",
-                    Subject = subject,
-                    Action = type,
-                    Status = status,
-                    Details = details
-                });
-            }
+            whereClauses.Add("(student_id LIKE @search OR nfc_uid LIKE @search OR details LIKE @search)");
+            parameters.Add("@search", $"%{searchTerm.Trim()}%");
         }
 
-        using (var cmd2 = new MySqlCommand("SELECT timestamp, student_id, alert_type, message FROM alerts ORDER BY timestamp DESC LIMIT @limit", connection))
+        if (dateFilter.HasValue)
         {
-            cmd2.Parameters.AddWithValue("@limit", limit);
-            using var reader = await cmd2.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                string alertType = Value(reader["alert_type"]);
-
-                bool isAdminAction = alertType.StartsWith("ADMIN") || alertType.StartsWith("STAFF");
-
-                string status = isAdminAction ? "RESOLVED" : "FLAGGED";
-                string logType = isAdminAction ? "ADMIN ACTION" : "SECURITY ALERT";
-
-                masterLogs.Add(new SystemAuditLog
-                {
-                    Timestamp = Convert.ToDateTime(reader["timestamp"]),
-                    LogType = logType,
-                    Subject = Value(reader["student_id"]),
-                    Action = alertType,
-                    Status = status,
-                    Details = Value(reader["message"])
-                });
-            }
+            whereClauses.Add("DATE(timestamp) = DATE(@dateSearch)");
+            parameters.Add("@dateSearch", dateFilter.Value.ToString("yyyy-MM-dd"));
         }
 
-        var sorted = masterLogs.OrderByDescending(l => l.Timestamp).Take(limit).ToList();
-        foreach (var log in sorted)
+        if (!string.IsNullOrWhiteSpace(typeFilter) && typeFilter != "All Types")
         {
-            log.DisplayTime = log.Timestamp.ToString("MMM dd, yyyy - hh:mm:ss tt");
+            whereClauses.Add("log_type = @type");
+            parameters.Add("@type", typeFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusFilter) && statusFilter != "All Statuses")
+        {
+            if (statusFilter == "Granted / Resolved")
+                whereClauses.Add("status IN ('GRANTED', 'RESOLVED')");
+            else if (statusFilter == "Denied / Flagged")
+                whereClauses.Add("status IN ('DENIED', 'FLAGGED')");
+        }
+
+        string whereSql = whereClauses.Count > 0 ? " AND " + string.Join(" AND ", whereClauses) : "";
+
+        // Combine both tables into one highly performant searchable view using ANSI SQL CASE WHEN
+        string sql = $@"
+            SELECT * FROM (
+                SELECT timestamp, student_id, nfc_uid, transaction_type as action, 
+                       CASE WHEN is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
+                       error_code, remarks as details, 'GATE LOG' as log_type
+                FROM verification_logs 
+                WHERE transaction_type != 'EventAttendance'
+                
+                UNION ALL 
+                
+                SELECT timestamp, student_id, '' as nfc_uid, alert_type as action, 
+                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'RESOLVED' ELSE 'FLAGGED' END as status, 
+                       '' as error_code, message as details, 
+                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type
+                FROM alerts
+            ) AS MasterLogs
+            WHERE 1=1 {whereSql}
+            ORDER BY timestamp DESC
+            LIMIT @limit";
+
+        using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@limit", limit);
+        foreach (var param in parameters)
+        {
+            command.Parameters.AddWithValue(param.Key, param.Value);
+        }
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string error = Value(reader["error_code"]);
+            string details = Value(reader["details"]);
+
+            if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
+                details = $"[{error}] {details}";
+
+            // Strip out the "(NFC UID: ...)" from admin/staff logs before displaying
+            int nfcIndex = details.IndexOf("(NFC UID:");
+            if (nfcIndex != -1)
+            {
+                int closeBracket = details.IndexOf(")", nfcIndex);
+                if (closeBracket != -1)
+                {
+                    int startRemove = (nfcIndex > 0 && details[nfcIndex - 1] == ' ') ? nfcIndex - 1 : nfcIndex;
+                    details = details.Remove(startRemove, closeBracket - startRemove + 1);
+                }
+            }
+
+            string subject = Value(reader["student_id"]);
+            if (string.IsNullOrWhiteSpace(subject) && !string.IsNullOrWhiteSpace(Value(reader["nfc_uid"])))
+                subject = $"UID: {Value(reader["nfc_uid"])}";
+
+            var log = new SystemAuditLog
+            {
+                Timestamp = Convert.ToDateTime(reader["timestamp"]),
+                LogType = Value(reader["log_type"]),
+                Subject = subject,
+                Action = Value(reader["action"]),
+                Status = Value(reader["status"]),
+                Details = details,
+                DisplayTime = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt")
+            };
 
             if (log.Status == "GRANTED" || log.Status == "RESOLVED")
                 log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
@@ -1003,9 +1044,11 @@ public sealed class DatabaseService
                 log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
             else
                 log.StatusColor = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
+
+            masterLogs.Add(log);
         }
 
-        return sorted;
+        return masterLogs;
     }
 
     public async Task<(int TotalScansToday, int CurrentlyInside, int DeniedToday)> GetUniversityMetricsAsync()
@@ -1147,12 +1190,22 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
+        // Student ID must be unique — this window only creates new profiles now.
+        bool idExists;
+        using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
+        {
+            checkCmd.Parameters.AddWithValue("@id", student.StudentId);
+            idExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+        }
+        if (idExists)
+            throw new InvalidOperationException(
+                $"Student ID '{student.StudentId}' is already registered. Editing existing profiles isn't available here.");
+
         if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, student.StudentId))
-            throw new InvalidOperationException("NFC UID is already linked to another student.");
+            throw new InvalidOperationException("This NFC card is already linked to another student.");
 
         string? salt = null;
         string? hash = null;
-
         if (!string.IsNullOrWhiteSpace(pin))
         {
             var hashedResult = PinHasher.HashPin(pin);
@@ -1160,51 +1213,97 @@ public sealed class DatabaseService
             hash = hashedResult.Hash;
         }
 
-        bool exists = false;
-        using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
-        {
-            checkCmd.Parameters.AddWithValue("@id", student.StudentId);
-            exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
-        }
-
-        string sql;
-
-        if (exists)
-        {
-            if (salt != null && hash != null)
-            {
-                sql = @"
-                UPDATE students 
-                SET full_name = @full_name, course = @course, year_level = @year_level, 
-                    section_name = @section_name, status = @status, nfc_uid = @nfc_uid, 
-                    qr_credential = @qr_credential, pin_salt = @pin_salt, pin_hash = @pin_hash, 
-                    pin_locked = FALSE, failed_pin_attempts = 0
-                WHERE student_id = @student_id;";
-            }
-            else
-            {
-                sql = @"
-                UPDATE students 
-                SET full_name = @full_name, course = @course, year_level = @year_level, 
-                    section_name = @section_name, status = @status, nfc_uid = @nfc_uid, 
-                    qr_credential = @qr_credential
-                WHERE student_id = @student_id;";
-            }
-        }
-        else
-        {
-            sql = @"
-            INSERT INTO students
-            (student_id, full_name, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
-            VALUES
-            (@student_id, @full_name, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE);";
-        }
+        string sql = @"
+        INSERT INTO students
+        (student_id, full_name, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
+        VALUES
+        (@student_id, @full_name, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE);";
 
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
         await command.ExecuteNonQueryAsync();
 
-        await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered or updated student profile for {student.FullName}.");
+        await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered new student profile for {student.FullName}.");
+    }
+
+    /// <summary>
+    /// Looks for existing students whose name closely matches, to catch the case
+    /// where the same physical person is being re-enrolled under a new Student ID
+    /// (e.g. a lost/replaced NFC card with no UID match).
+    /// </summary>
+    public async Task<IReadOnlyList<StudentRecord>> FindPotentialDuplicatesByNameAsync(string fullName)
+    {
+        var results = new List<StudentRecord>();
+        string normalized = fullName.Trim();
+        if (normalized.Length < 3) return results;
+
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+        SELECT student_id, full_name, course, year_level, section_name, status, nfc_uid,
+               pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+        FROM students
+        WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(@exact))
+           OR full_name LIKE @partial
+        LIMIT 5", connection);
+        command.Parameters.AddWithValue("@exact", normalized);
+        command.Parameters.AddWithValue("@partial", $"%{normalized}%");
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            results.Add(ReadStudent(reader));
+
+        return results;
+    }
+
+    public async Task UpdateStudentAsync(string originalStudentId, StudentRecord student, string? newPin)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        bool isRename = !string.Equals(originalStudentId, student.StudentId, StringComparison.Ordinal);
+
+        if (isRename)
+        {
+            bool targetExists;
+            using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
+            {
+                checkCmd.Parameters.AddWithValue("@id", student.StudentId);
+                targetExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+            }
+            if (targetExists)
+                throw new InvalidOperationException(
+                    $"Cannot rename to '{student.StudentId}' — that ID already belongs to another student.");
+        }
+
+        if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, originalStudentId))
+            throw new InvalidOperationException("This NFC card is already linked to another student.");
+
+        string? salt = null;
+        string? hash = null;
+        if (!string.IsNullOrWhiteSpace(newPin))
+        {
+            var hashed = PinHasher.HashPin(newPin);
+            salt = hashed.Salt;
+            hash = hashed.Hash;
+        }
+
+        string sql = salt != null && hash != null
+            ? @"UPDATE students 
+            SET student_id=@student_id, full_name=@full_name, course=@course, year_level=@year_level,
+                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential,
+                pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0
+            WHERE student_id=@original_id;"
+            : @"UPDATE students 
+            SET student_id=@student_id, full_name=@full_name, course=@course, year_level=@year_level,
+                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential
+            WHERE student_id=@original_id;";
+
+        using var cmd = new MySqlCommand(sql, connection);
+        AddStudentParameters(cmd, student, salt, hash);
+        cmd.Parameters.AddWithValue("@original_id", originalStudentId);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task<StudentRecord?> GetStudentByUidAsync(string uid)
@@ -1542,7 +1641,21 @@ public sealed class DatabaseService
         while (await reader.ReadAsync())
         {
             string time = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd hh:mm:ss tt");
-            alerts.Add($"{time} | {Value(reader["alert_type"])} | {Value(reader["student_id"])} | {Value(reader["message"])}");
+            string details = Value(reader["message"]);
+
+            // THE FIX: Strip out the "(NFC UID: ...)" tag
+            int nfcIndex = details.IndexOf("(NFC UID:");
+            if (nfcIndex != -1)
+            {
+                int closeBracket = details.IndexOf(")", nfcIndex);
+                if (closeBracket != -1)
+                {
+                    int startRemove = (nfcIndex > 0 && details[nfcIndex - 1] == ' ') ? nfcIndex - 1 : nfcIndex;
+                    details = details.Remove(startRemove, closeBracket - startRemove + 1);
+                }
+            }
+
+            alerts.Add($"{time} | {Value(reader["alert_type"])} | {Value(reader["student_id"])} | {details}");
         }
         return alerts;
     }
@@ -1642,6 +1755,29 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
 
         await AddAlertAsync(null, "ADMIN_ACTION", $"Executed batch approval for Event '{eventId}'. Filter constraints applied.");
+    }
+
+    public async Task<int> GetStudentCountByCourseAsync(string courseName)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("SELECT COUNT(*) FROM students WHERE course = @course", connection);
+        command.Parameters.AddWithValue("@course", courseName);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    public async Task DeleteCourseAsync(string courseName)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("DELETE FROM courses WHERE course_name = @name", connection);
+        command.Parameters.AddWithValue("@name", courseName);
+        await command.ExecuteNonQueryAsync();
+
+        await AddAlertAsync(null, "ADMIN_ACTION", $"Deleted academic course from database: {courseName}");
     }
 
     public async Task AddEventAttendeeAsync(string eventId, string studentId)

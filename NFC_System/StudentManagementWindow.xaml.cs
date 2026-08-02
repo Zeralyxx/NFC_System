@@ -11,12 +11,13 @@ using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
 using MySqlConnector;
+using Microsoft.UI.Xaml.Input; // for DoubleTappedRoutedEventArgs
 
 namespace NFC_System
 {
     public sealed partial class StudentManagementWindow : Window
     {
-        private enum AdminActionType { None, SaveIndividual, DeleteIndividual, BatchUpdate }
+        private enum AdminActionType { None, SaveIndividual, DeleteIndividual, BatchUpdate, EditFullProfile }
 
         private readonly DatabaseService _database = new();
         private List<StudentRecord> _allStudents = new();
@@ -26,6 +27,17 @@ namespace NFC_System
         // Serial Port objects to listen for the Admin Tap
         private SerialPort? _serialPort;
         private bool _isAwaitingAdminAuth = false;
+        private bool _isAwaitingNfcReplacementScan = false;
+        private StudentRecord? _editingStudent = null;
+
+        // Snapshot of original values to detect unsaved changes
+        private string _origStudentId = "";
+        private string _origFullName = "";
+        private string _origCourse = "";
+        private string _origYearLevel = "";
+        private string _origSection = "";
+        private string _origStatus = "";
+        private string _origNfcUid = "";
         private AdminActionType _pendingAction = AdminActionType.None;
 
         public StudentManagementWindow()
@@ -33,6 +45,27 @@ namespace NFC_System
             this.InitializeComponent();
             MaximizeWindow();
             this.Closed += Window_Closed;
+            StudentListView.DoubleTapped += StudentListView_DoubleTapped;
+            PopupStudentListView.DoubleTapped += PopupStudentListView_DoubleTapped;
+
+            EditDialogStudentIdBox.TextChanged += EditDialog_FieldChanged;
+            EditDialogFullNameBox.TextChanged += EditDialog_FieldChanged;
+            EditDialogCourseComboBox.SelectionChanged += EditDialog_FieldChanged;
+            EditDialogYearLevelBox.TextChanged += EditDialog_FieldChanged;
+            EditDialogSectionBox.TextChanged += EditDialog_FieldChanged;
+            EditDialogStatusComboBox.SelectionChanged += EditDialog_FieldChanged;
+            EditDialogNfcUidBox.TextChanged += EditDialog_FieldChanged;
+            EditDialogNewPinBox.PasswordChanged += EditDialog_FieldChanged;
+
+            EditStudentDialog.Closed += (s, e) =>
+            {
+                _isAwaitingNfcReplacementScan = false;
+                ChangeNfcButton.IsEnabled = true;
+                NfcScanStatusText.Visibility = Visibility.Collapsed;
+                NfcReplacementReasonBox.Visibility = Visibility.Collapsed;
+                NfcReplacementReasonBox.Text = "";
+            };
+
             _ = LoadDataAsync();
         }
 
@@ -126,11 +159,18 @@ namespace NFC_System
             {
                 if (_serialPort == null || !_serialPort.IsOpen) return;
                 string line = _serialPort.ReadLine().Trim();
+                if (!line.StartsWith("UID=")) return;
 
-                if (line.StartsWith("UID=") && _isAwaitingAdminAuth)
+                string uid = line.Substring(4).Trim();
+
+                if (_isAwaitingNfcReplacementScan)
                 {
-                    string uid = line.Substring(4).Trim();
+                    DispatcherQueue.TryEnqueue(async () => await HandleNfcReplacementScanAsync(uid));
+                    return;
+                }
 
+                if (_isAwaitingAdminAuth)
+                {
                     DispatcherQueue.TryEnqueue(async () =>
                     {
                         var details = await _database.GetStaffDetailsAsync(uid);
@@ -165,6 +205,231 @@ namespace NFC_System
                 }
             }
             catch { }
+        }
+
+        private async void StudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+        {
+            if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
+            {
+                await OpenEditDialogAsync(student);
+            }
+        }
+
+        private async void PopupStudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+        {
+            if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
+            {
+                MasterDirectoryDialog.Hide();
+                await OpenEditDialogAsync(student);
+            }
+        }
+
+        private async Task OpenEditDialogAsync(StudentRecord student)
+        {
+            _editingStudent = student;
+            EditDialogStatusText.Visibility = Visibility.Collapsed;
+
+            EditDialogStudentIdBox.Text = student.StudentId;
+            EditDialogFullNameBox.Text = student.FullName;
+
+            EditDialogCourseComboBox.ItemsSource = CourseFilterComboBox.Items
+                .Cast<object>()
+                .Select(i => i.ToString())
+                .Where(c => c != "All Courses")
+                .ToList();
+            EditDialogCourseComboBox.SelectedItem = student.Course;
+
+            EditDialogYearLevelBox.Text = student.YearLevel;
+            EditDialogSectionBox.Text = student.SectionName;
+            EditDialogNfcUidBox.Text = student.NfcUid;
+            EditDialogNewPinBox.Password = "";
+
+            EditDialogStatusComboBox.SelectedIndex = student.Status switch
+            {
+                "Active" => 0,
+                "Inactive" => 1,
+                "Graduated" => 2,
+                "Expelled" => 3,
+                _ => 0
+            };
+
+            // Snapshot original state for dirty-checking
+            _origStudentId = student.StudentId;
+            _origFullName = student.FullName;
+            _origCourse = student.Course;
+            _origYearLevel = student.YearLevel;
+            _origSection = student.SectionName;
+            _origStatus = student.Status;
+            _origNfcUid = student.NfcUid;
+
+            _isAwaitingNfcReplacementScan = false;
+            ChangeNfcButton.IsEnabled = true;
+            NfcScanStatusText.Visibility = Visibility.Collapsed;
+            NfcReplacementReasonBox.Visibility = Visibility.Collapsed;
+            NfcReplacementReasonBox.Text = "";
+            EditDialogSaveButton.IsEnabled = false;
+
+            EditStudentDialog.XamlRoot = this.Content.XamlRoot;
+            await EditStudentDialog.ShowAsync();
+        }
+
+        private void ChangeNfcButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_editingStudent == null) return;
+
+            _isAwaitingNfcReplacementScan = true;
+            ChangeNfcButton.IsEnabled = false;
+            NfcScanStatusText.Text = "Waiting for NFC tap... present the new card to the reader.";
+            NfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250));
+            NfcScanStatusText.Visibility = Visibility.Visible;
+        }
+
+        private async Task HandleNfcReplacementScanAsync(string uid)
+        {
+            _isAwaitingNfcReplacementScan = false;
+            ChangeNfcButton.IsEnabled = true;
+
+            if (IsInvalidUid(uid))
+            {
+                NfcScanStatusText.Text = "Bad read — please tap the card again.";
+                NfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                NfcScanStatusText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            var existing = await _database.GetStudentByUidAsync(uid);
+            if (existing != null && existing.StudentId != _origStudentId)
+            {
+                NfcScanStatusText.Text = $"This card already belongs to {existing.FullName} ({existing.StudentId}). Tap a different card.";
+                NfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                NfcScanStatusText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            EditDialogNfcUidBox.Text = uid; // fires EditDialog_FieldChanged, which reveals the reason box
+            NfcScanStatusText.Text = "New card captured. Please note the reason below, then press Save Changes.";
+            NfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+            NfcScanStatusText.Visibility = Visibility.Visible;
+        }
+
+        private static bool IsInvalidUid(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid)) return true;
+            string[] parts = uid.Split(':');
+            if (parts.Length != 4 && parts.Length != 7) return true;
+
+            bool allZero = true;
+            foreach (string part in parts) { if (part != "00") { allZero = false; break; } }
+            if (allZero) return true;
+
+            if (parts.Length >= 4)
+            {
+                int start = parts.Length - 4;
+                bool trailingZeros = true;
+                for (int i = start; i < parts.Length; i++) { if (parts[i] != "00") { trailingZeros = false; break; } }
+                if (trailingZeros) return true;
+            }
+            return false;
+        }
+
+        private void EditDialog_FieldChanged(object sender, object e)
+        {
+            if (_editingStudent == null || EditDialogSaveButton == null) return;
+
+            string curStudentId = EditDialogStudentIdBox.Text.Trim();
+            string curFullName = EditDialogFullNameBox.Text.Trim();
+            string curCourse = EditDialogCourseComboBox.SelectedItem?.ToString() ?? "";
+            string curYearLevel = EditDialogYearLevelBox.Text.Trim();
+            string curSection = EditDialogSectionBox.Text.Trim();
+            string curStatus = (EditDialogStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+            string curNfcUid = EditDialogNfcUidBox.Text.Trim();
+            bool hasPinChange = !string.IsNullOrWhiteSpace(EditDialogNewPinBox.Password);
+
+            bool nfcActuallyChanged = curNfcUid != _origNfcUid;
+
+            // Reveal/hide the reason field based purely on whether the UID differs from original,
+            // regardless of whether it came from a tap or manual typing.
+            if (NfcReplacementReasonBox != null)
+            {
+                NfcReplacementReasonBox.Visibility = nfcActuallyChanged ? Visibility.Visible : Visibility.Collapsed;
+                if (!nfcActuallyChanged)
+                {
+                    NfcReplacementReasonBox.Text = "";
+                }
+            }
+
+            bool isDirty =
+                curStudentId != _origStudentId ||
+                curFullName != _origFullName ||
+                curCourse != _origCourse ||
+                curYearLevel != _origYearLevel ||
+                curSection != _origSection ||
+                curStatus != _origStatus ||
+                curNfcUid != _origNfcUid ||
+                hasPinChange;
+
+            EditDialogSaveButton.IsEnabled = isDirty;
+        }
+
+        private void ShowEditDialogError(string message)
+        {
+            EditDialogStatusText.Text = message;
+            EditDialogStatusText.Visibility = Visibility.Visible;
+        }
+
+        private void NumberOnly_TextChanging(TextBox sender, TextBoxTextChangingEventArgs args)
+        {
+            string text = sender.Text;
+            if (text.Any(c => !char.IsDigit(c) && c != '-'))
+            {
+                int selectionStart = sender.SelectionStart;
+                sender.Text = new string(text.Where(c => char.IsDigit(c) || c == '-').ToArray());
+                sender.SelectionStart = Math.Max(0, selectionStart - 1);
+            }
+        }
+
+        private async void EditDialogSaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_editingStudent == null) return;
+
+            string newId = EditDialogStudentIdBox.Text.Trim();
+            string fullName = EditDialogFullNameBox.Text.Trim();
+            string nfcUid = EditDialogNfcUidBox.Text.Trim();
+            string pin = EditDialogNewPinBox.Password.Trim();
+
+            if (string.IsNullOrWhiteSpace(newId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
+            {
+                ShowEditDialogError("Student ID, Full Name, and NFC UID cannot be empty.");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(pin) && (pin.Length != 4 || !pin.All(char.IsDigit)))
+            {
+                ShowEditDialogError("New PIN must be exactly 4 numeric digits.");
+                return;
+            }
+
+            bool nfcActuallyChanged = nfcUid != _origNfcUid;
+            if (nfcActuallyChanged && string.IsNullOrWhiteSpace(NfcReplacementReasonBox.Text))
+            {
+                ShowEditDialogError("Please provide a reason for the NFC card replacement.");
+                return;
+            }
+
+            EditStudentDialog.Hide();
+            _pendingAction = AdminActionType.EditFullProfile;
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecutePendingAdminAction(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _isAwaitingAdminAuth = true;
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                await AdminAuthDialog.ShowAsync();
+            }
         }
 
         private void Window_Closed(object sender, WindowEventArgs args)
@@ -223,6 +488,47 @@ namespace NFC_System
 
                     // Add the specific master admin name to the batch log
                     await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", $"Batch updated {affectedRows} students to '{status}' (Course: {course}, Year: {year}).");
+                }
+                else if (_pendingAction == AdminActionType.EditFullProfile)
+                {
+                    if (_editingStudent != null)
+                    {
+                        string originalId = _editingStudent.StudentId;
+                        string oldUid = _editingStudent.NfcUid;
+                        string pin = EditDialogNewPinBox.Password.Trim();
+                        string nfcReplacementReason = NfcReplacementReasonBox.Text.Trim();
+
+                        var updated = new StudentRecord
+                        {
+                            StudentId = EditDialogStudentIdBox.Text.Trim(),
+                            FullName = EditDialogFullNameBox.Text.Trim(),
+                            Course = EditDialogCourseComboBox.SelectedItem?.ToString() ?? "",
+                            YearLevel = EditDialogYearLevelBox.Text.Trim(),
+                            SectionName = EditDialogSectionBox.Text.Trim(),
+                            Status = ((ComboBoxItem)EditDialogStatusComboBox.SelectedItem).Content.ToString() ?? "Active",
+                            NfcUid = EditDialogNfcUidBox.Text.Trim(),
+                            QrCredential = EditDialogStudentIdBox.Text.Trim() // keep QR aligned to Student ID
+                        };
+
+                        await _database.UpdateStudentAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin);
+
+                        bool nfcChanged = oldUid != updated.NfcUid;
+                        string logMessage = nfcChanged
+                            ? $"Edited full profile for {updated.FullName} ({originalId} → {updated.StudentId}). NFC card replaced — reason: {nfcReplacementReason}."
+                            : $"Edited full profile for {updated.FullName} ({originalId} → {updated.StudentId}).";
+
+                        await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", logMessage);
+
+                        if (nfcChanged)
+                        {
+                            // Push the shadow cache refresh now instead of waiting up to 5 minutes
+                            // for the background timer, so the old card stops working immediately
+                            // even on kiosks currently running offline.
+                            await _database.UpdateShadowCacheAsync();
+                        }
+
+                        _editingStudent = null;
+                    }
                 }
 
                 // Play the success sound upon successful execution
