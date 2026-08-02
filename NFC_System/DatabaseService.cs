@@ -51,7 +51,7 @@ public sealed class AttendanceLog
 
 public sealed class DatabaseService
 {
-    public const string ConnectionString = "Server=192.168.1.7;Port=3306;Database=nfc_system;User ID=root;Password=;";
+    public const string ConnectionString = "Server=192.168.100.8;Port=3306;Database=nfc_system;User ID=root;Password=;";
 
     // CLOUD FIRESTORE CONFIGURATION
     private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
@@ -59,7 +59,7 @@ public sealed class DatabaseService
 
     public async Task EnsureSchemaAsync()
     {
-        string baseConnection = "Server=192.168.1.7;Port=3306;User ID=root;Password=;";
+        string baseConnection = "Server=192.168.100.8;Port=3306;User ID=root;Password=;";
         using var connection = new MySqlConnection(baseConnection);
         await connection.OpenAsync();
 
