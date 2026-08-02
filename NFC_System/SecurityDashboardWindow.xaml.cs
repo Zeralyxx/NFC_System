@@ -506,7 +506,7 @@ namespace NFC_System
             GetNewDataButton.IsEnabled = false;
             UploadDataButton.IsEnabled = false;
             SyncProgressBar.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = "Downloading latest records from cloud database...";
+            StatusTextBlock.Text = "Downloading latest records and logs from cloud database...";
 
             try
             {
@@ -515,8 +515,10 @@ namespace NFC_System
                 int pulledCourses = await _database.PullCoursesFromCloudAsync();
                 int pulledEvents = await _database.PullEventsFromCloudAsync();
                 int pulledApproved = await _database.PullEventApprovedStudentsFromCloudAsync();
+                int pulledLogs = await _database.PullLogsFromCloudAsync(); // NEW
+                int pulledEventLogs = await _database.PullEventAttendanceFromCloudAsync(); // NEW
 
-                int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved;
+                int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved + pulledLogs + pulledEventLogs;
 
                 if (totalPulled > 0)
                 {
@@ -526,6 +528,8 @@ namespace NFC_System
                     if (pulledCourses > 0) additions.Add($"{pulledCourses} Course(s)");
                     if (pulledEvents > 0) additions.Add($"{pulledEvents} Event(s)");
                     if (pulledApproved > 0) additions.Add($"{pulledApproved} Roster Entry(ies)");
+                    if (pulledLogs > 0) additions.Add($"{pulledLogs} Gate Log(s)"); // NEW
+                    if (pulledEventLogs > 0) additions.Add($"{pulledEventLogs} Event Log(s)"); // NEW
 
                     string formattedList = "• " + string.Join("\n• ", additions);
                     string message = $"Download complete. The following new updates were synced locally:\n\n{formattedList}";
@@ -564,7 +568,7 @@ namespace NFC_System
             }
         }
 
-        
+
 
         private async void ResetPinButton_Click(object sender, RoutedEventArgs e)
         {
@@ -667,6 +671,9 @@ namespace NFC_System
                 return;
             }
 
+            // THE FIX: Hide the current ManageCoursesDialog so we can safely open the confirmation/warning dialogs
+            ManageCoursesDialog.Hide();
+
             try
             {
                 // 1. Safety Check: Are students using this course?
@@ -682,6 +689,9 @@ namespace NFC_System
                         XamlRoot = this.Content.XamlRoot
                     };
                     await warningDialog.ShowAsync();
+
+                    // Bring back the main course dialog
+                    await ManageCoursesDialog.ShowAsync();
                     return;
                 }
 
@@ -709,11 +719,17 @@ namespace NFC_System
                     await LoadCoursesIntoDialogAsync();
                     await RefreshDashboardAsync();
                 }
+
+                // Bring back the main course dialog regardless of if they deleted or cancelled
+                await ManageCoursesDialog.ShowAsync();
             }
             catch (Exception ex)
             {
                 CourseDialogStatusText.Text = $"Could not delete course: {ex.Message}";
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+
+                // Bring back the main course dialog to show the error
+                await ManageCoursesDialog.ShowAsync();
             }
         }
 

@@ -524,7 +524,8 @@ namespace NFC_System
                 _outcomeMessage = "This credential has already checked into this event.";
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+                // FIX: Cleaner Date and Time output format
+                string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | DOUBLE ENTRY");
 
                 _ = Task.Run(() => _database.LogVerificationAsync(null, uid, transType, _currentMode, false, "ANTI_PROXY_VIOLATION", "DOUBLE_ENTRY", "Blocked attempt to scan into the same event multiple times."));
@@ -538,7 +539,8 @@ namespace NFC_System
                 _outcomeMessage = "Card couldn't be read properly. Please tap again.";
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+                // FIX: Cleaner Date and Time output format
+                string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | BAD READ: Please tap again");
 
                 _ = Task.Run(() => _database.LogVerificationAsync(null, uid, transType, _currentMode, false, "BAD_NFC_READ", "BAD_READ", "Card couldn't be read properly. User prompted to tap again."));
@@ -723,7 +725,8 @@ namespace NFC_System
                 LoadProfileData("UNKNOWN USER", payload.Trim());
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                string logTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
+                // FIX: Cleaner Date and Time output format
+                string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
 
                 _ = Task.Run(() => _database.LogVerificationAsync(null, payload.Trim(), transType, _currentMode, false, "ANTI_PROXY_VIOLATION", "DOUBLE_ENTRY", "Blocked attempt to scan into the same event multiple times."));

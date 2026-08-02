@@ -53,8 +53,8 @@ public sealed class AttendanceLog
 public sealed class DatabaseService
 {
     public static string ServerIp { get; private set; } = "127.0.0.1";
-    public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;";
-    public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;";
+    public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
+    public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
     public static void LoadConfig()
     {
@@ -82,8 +82,6 @@ public sealed class DatabaseService
 
     public async Task EnsureSchemaAsync()
     {
-        // THE FIX: Use BaseConnectionString here instead of the hardcoded string!
-        // This ensures it uses the dynamic IP and the 3-second timeout rule.
         using var connection = new MySqlConnection(BaseConnectionString);
         await connection.OpenAsync();
 
@@ -301,6 +299,132 @@ public sealed class DatabaseService
             }
         }
         catch (Exception ex) { throw new Exception($"Student Sync Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PullLogsFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/verification_logs?pageSize=2000";
+        int updatedCount = 0;
+
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string studentId = ExtractString(fields, "student_id");
+                string nfcUid = ExtractString(fields, "nfc_uid");
+                string transactionType = ExtractString(fields, "transaction_type");
+                string verificationMode = ExtractString(fields, "verification_mode");
+                bool isGranted = ExtractBool(fields, "is_granted");
+                string errorCode = ExtractString(fields, "error_code");
+                string errorMessage = ExtractString(fields, "error_message");
+                string remarks = ExtractString(fields, "remarks");
+                DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
+
+                if (timestamp == null) continue;
+
+                // Anti-Duplicate Check: Look for a log with the exact same timestamp and action
+                using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE timestamp = @ts AND transaction_type = @tt", connection);
+                checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                checkCmd.Parameters.AddWithValue("@tt", transactionType);
+
+                if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0) continue;
+
+                string sql = @"
+                    INSERT INTO verification_logs 
+                    (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, synced_to_cloud) 
+                    VALUES (@ts, @sid, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, 1)";
+
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                cmd.Parameters.AddWithValue("@sid", NullIfEmpty(studentId));
+                cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(nfcUid));
+                cmd.Parameters.AddWithValue("@tt", NullIfEmpty(transactionType));
+                cmd.Parameters.AddWithValue("@mode", NullIfEmpty(verificationMode));
+                cmd.Parameters.AddWithValue("@granted", isGranted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@errCode", NullIfEmpty(errorCode));
+                cmd.Parameters.AddWithValue("@errMsg", NullIfEmpty(errorMessage));
+                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(remarks));
+
+                await cmd.ExecuteNonQueryAsync();
+                updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Logs Pull Error: {ex.Message}"); }
+
+        return updatedCount;
+    }
+
+    public async Task<int> PullEventAttendanceFromCloudAsync()
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance?pageSize=2000";
+        int updatedCount = 0;
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
+
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                string eventId = ExtractString(fields, "event_id");
+                string studentId = ExtractString(fields, "student_id");
+                string verificationMode = ExtractString(fields, "verification_mode");
+                string status = ExtractString(fields, "status");
+                string remarks = ExtractString(fields, "remarks");
+                DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
+
+                if (timestamp == null || string.IsNullOrWhiteSpace(eventId)) continue;
+
+                // Anti-Duplicate Check
+                using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM event_attendance WHERE timestamp = @ts AND event_id = @eid AND student_id = @sid", connection);
+                checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                checkCmd.Parameters.AddWithValue("@eid", eventId);
+                checkCmd.Parameters.AddWithValue("@sid", studentId);
+
+                if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0) continue;
+
+                string sql = @"
+                    INSERT INTO event_attendance 
+                    (timestamp, event_id, student_id, verification_mode, status, remarks, synced_to_cloud) 
+                    VALUES (@ts, @eid, @sid, @mode, @status, @rem, 1)";
+
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                cmd.Parameters.AddWithValue("@eid", eventId);
+                cmd.Parameters.AddWithValue("@sid", studentId);
+                cmd.Parameters.AddWithValue("@mode", NullIfEmpty(verificationMode));
+                cmd.Parameters.AddWithValue("@status", NullIfEmpty(status));
+                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(remarks));
+
+                await cmd.ExecuteNonQueryAsync();
+                updatedCount++;
+            }
+        }
+        catch (Exception ex) { throw new Exception($"Event Attendance Pull Error: {ex.Message}"); }
 
         return updatedCount;
     }
@@ -1171,6 +1295,7 @@ public sealed class DatabaseService
                 Action = Value(reader["action"]),
                 Status = Value(reader["status"]),
                 Details = details,
+                // FIX: Cleaner Date and Time output format
                 DisplayTime = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt")
             };
 
@@ -1308,7 +1433,8 @@ public sealed class DatabaseService
 
             list.Add(new VerificationLogRecord
             {
-                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
+                // FIX: Cleaner Date and Time output format
+                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
                 StudentId = Value(reader["student_id"]),
                 FullName = string.IsNullOrWhiteSpace(Value(reader["full_name"])) ? "Unknown / Unregistered" : Value(reader["full_name"]),
                 Course = Value(reader["course"]),
@@ -1747,7 +1873,8 @@ public sealed class DatabaseService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            string time = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd hh:mm:ss tt");
+            // FIX: Cleaner Date and Time output format
+            string time = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt");
             string subject = Value(reader["student_id"]);
             if (string.IsNullOrWhiteSpace(subject))
             {
@@ -1776,10 +1903,10 @@ public sealed class DatabaseService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            string time = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd hh:mm:ss tt");
+            // FIX: Cleaner Date and Time output format
+            string time = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt");
             string details = Value(reader["message"]);
 
-            // THE FIX: Strip out the "(NFC UID: ...)" tag
             int nfcIndex = details.IndexOf("(NFC UID:");
             if (nfcIndex != -1)
             {
@@ -2237,7 +2364,8 @@ public sealed class DatabaseService
         {
             list.Add(new AttendanceLog
             {
-                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm tt") : "",
+                // FIX: Cleaner Date and Time output format
+                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
                 StudentId = Value(reader["student_id"]),
                 FullName = Value(reader["full_name"]),
                 Course = Value(reader["course"]),
