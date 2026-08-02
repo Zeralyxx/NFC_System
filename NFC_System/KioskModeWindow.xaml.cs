@@ -65,6 +65,9 @@ namespace NFC_System
         private bool _isUpdatingPreview = false;
 
         private string _lastScannedQr = string.Empty;
+        // OFFLINE CACHE TIMERS
+        private readonly DispatcherTimer _shadowCacheTimer = new();
+        private readonly DispatcherTimer _syncRecoveryTimer = new();
         private DateTime _lastQrScanTime = DateTime.MinValue;
 
         private static readonly HashSet<string> _eventAttendanceCache = new();
@@ -114,6 +117,29 @@ namespace NFC_System
             Closed += KioskModeWindow_Closed;
             _ = InitializeCameraAsync();
             _ = SyncOperationalModeAsync();
+
+            // --------------------------------------------------------
+            // OFFLINE CACHE CONFIGURATION
+            // --------------------------------------------------------
+
+            // 1. Silent Background Pull (Every 5 Minutes)
+            _shadowCacheTimer.Interval = TimeSpan.FromMinutes(5);
+            _shadowCacheTimer.Tick += async (s, e) => await _database.UpdateShadowCacheAsync();
+            _shadowCacheTimer.Start();
+
+            // 2. Silent Recovery Push (Checks Every 5 Seconds)
+            _syncRecoveryTimer.Interval = TimeSpan.FromSeconds(5);
+            _syncRecoveryTimer.Tick += async (s, e) =>
+            {
+                if (OfflineCacheService.HasPendingLogs())
+                {
+                    if (await _database.TestConnectionAsync())
+                    {
+                        await _database.SyncOfflineLogsToServerAsync();
+                    }
+                }
+            };
+            _syncRecoveryTimer.Start();
 
             KioskStateController.ModeChanged += KioskStateController_ModeChanged;
         }
@@ -320,6 +346,8 @@ namespace NFC_System
         {
             _isClosing = true;
             _inactivityTimer.Stop();
+            _shadowCacheTimer.Stop();  // <--- ADD THIS
+            _syncRecoveryTimer.Stop(); // <--- ADD THIS
             CloseSerialPort();
             _ = DisposeCameraAsync();
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
@@ -329,6 +357,8 @@ namespace NFC_System
         {
             _isClosing = true;
             _inactivityTimer.Stop();
+            _shadowCacheTimer.Stop();  // <--- ADD THIS
+            _syncRecoveryTimer.Stop(); // <--- ADD THIS
             CloseSerialPort();
             _ = DisposeCameraAsync();
             this.Close();

@@ -785,6 +785,151 @@ public sealed class DatabaseService
     }
 
     // =========================================================================
+    // OFFLINE SHADOW CACHE INTEGRATION (NEW METHODS)
+    // =========================================================================
+
+    public async Task<bool> TestConnectionAsync()
+    {
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+            return true; // XAMPP server is reachable
+        }
+        catch
+        {
+            return false; // Connection failed
+        }
+    }
+
+    public async Task UpdateShadowCacheAsync()
+    {
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            // 1. Export Active Students to Shadow Cache
+            var students = new List<CachedStudent>();
+            using (var cmd = new MySqlCommand("SELECT student_id, full_name, nfc_uid, pin_hash, pin_salt, status, pin_locked FROM students WHERE nfc_uid IS NOT NULL AND nfc_uid != ''", connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    students.Add(new CachedStudent
+                    {
+                        StudentId = Value(reader["student_id"]),
+                        FullName = Value(reader["full_name"]),
+                        NfcUid = Value(reader["nfc_uid"]),
+                        PinHash = Value(reader["pin_hash"]),
+                        PinSalt = Value(reader["pin_salt"]),
+                        Status = Value(reader["status"]),
+                        PinLocked = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true"
+                    });
+                }
+            }
+            OfflineCacheService.UpdateStudentCache(students);
+
+            // 2. Export Active Events to Shadow Cache
+            var events = new List<CachedEvent>();
+            using (var cmd = new MySqlCommand("SELECT event_id, event_name, verification_mode, is_restricted, is_active FROM events WHERE is_active = 1", connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    events.Add(new CachedEvent
+                    {
+                        EventId = Value(reader["event_id"]),
+                        EventName = Value(reader["event_name"]),
+                        VerificationMode = Value(reader["verification_mode"]),
+                        IsRestricted = Convert.ToBoolean(reader["is_restricted"]),
+                        IsActive = Convert.ToBoolean(reader["is_active"])
+                    });
+                }
+            }
+
+            // 3. Export Event Approved Rosters
+            var rostersDict = new Dictionary<string, List<string>>();
+            using (var cmd = new MySqlCommand("SELECT event_id, student_id FROM event_approved_students", connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    string eId = Value(reader["event_id"]);
+                    string sId = Value(reader["student_id"]);
+
+                    if (!rostersDict.ContainsKey(eId))
+                        rostersDict[eId] = new List<string>();
+
+                    rostersDict[eId].Add(sId);
+                }
+            }
+
+            var rosters = rostersDict.Select(kvp => new CachedEventRoster
+            {
+                EventId = kvp.Key,
+                ApprovedStudentIds = kvp.Value
+            }).ToList();
+
+            OfflineCacheService.UpdateEventCache(events, rosters);
+        }
+        catch { /* Silently fail background updates if XAMPP drops mid-pull */ }
+    }
+
+    public async Task SyncOfflineLogsToServerAsync()
+    {
+        if (!OfflineCacheService.HasPendingLogs()) return;
+
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            // Push pending gate logs
+            var gateLogs = OfflineCacheService.GetPendingGateLogs();
+            foreach (var log in gateLogs)
+            {
+                using var cmd = new MySqlCommand(@"
+                    INSERT INTO verification_logs (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
+                    VALUES (@ts, @sid, @nfc, @ttype, @vmode, @granted, @err, @rem)", connection);
+
+                cmd.Parameters.AddWithValue("@ts", DateTime.Parse(log.Timestamp));
+                cmd.Parameters.AddWithValue("@sid", NullIfEmpty(log.StudentId));
+                cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(log.NfcUid));
+                cmd.Parameters.AddWithValue("@ttype", log.TransactionType);
+                cmd.Parameters.AddWithValue("@vmode", log.VerificationMode);
+                cmd.Parameters.AddWithValue("@granted", log.IsGranted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@err", NullIfEmpty(log.ErrorCode));
+                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
+
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Push pending event logs
+            var eventLogs = OfflineCacheService.GetPendingEventLogs();
+            foreach (var log in eventLogs)
+            {
+                using var cmd = new MySqlCommand(@"
+                    INSERT INTO event_attendance (timestamp, event_id, student_id, verification_mode, status, remarks) 
+                    VALUES (@ts, @eid, @sid, @vmode, @status, @rem)", connection);
+
+                cmd.Parameters.AddWithValue("@ts", DateTime.Parse(log.Timestamp));
+                cmd.Parameters.AddWithValue("@eid", log.EventId);
+                cmd.Parameters.AddWithValue("@sid", log.StudentId);
+                cmd.Parameters.AddWithValue("@vmode", log.VerificationMode);
+                cmd.Parameters.AddWithValue("@status", log.Status);
+                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
+
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Successfully pushed, clear local files
+            OfflineCacheService.ClearPendingLogs();
+        }
+        catch { /* Let it stay in cache and try again next tick */ }
+    }
+
+    // =========================================================================
 
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(int limit = 1000)
     {
@@ -908,6 +1053,7 @@ public sealed class DatabaseService
         }
         return list;
     }
+
     public async Task<(string HighDayLabel, int HighCount, string LowDayLabel, int LowCount)> GetSecurityAlertExtremesAsync()
     {
         using var connection = new MySqlConnection(ConnectionString);

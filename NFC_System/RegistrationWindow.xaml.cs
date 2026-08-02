@@ -55,14 +55,19 @@ namespace NFC_System
             }
         }
 
-        // THE FIX: Strict Int-only formatting logic for Student ID and Year
+        // THE FIX: Updated logic to allow both digits and hyphens for formats like "23-00103"
         private void NumberOnly_TextChanging(TextBox sender, TextBoxTextChangingEventArgs args)
         {
             string text = sender.Text;
-            if (text.Any(c => !char.IsDigit(c)))
+
+            // Checks if there are any characters that are NOT a digit and NOT a hyphen
+            if (text.Any(c => !char.IsDigit(c) && c != '-'))
             {
                 int selectionStart = sender.SelectionStart;
-                sender.Text = new string(text.Where(char.IsDigit).ToArray());
+
+                // Filters the string, keeping only digits and hyphens
+                sender.Text = new string(text.Where(c => char.IsDigit(c) || c == '-').ToArray());
+
                 // Restore cursor position smoothly
                 sender.SelectionStart = Math.Max(0, selectionStart - 1);
             }
