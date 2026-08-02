@@ -524,11 +524,11 @@ namespace NFC_System
                 _outcomeMessage = "This credential has already checked into this event.";
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                // FIX: Cleaner Date and Time output format
                 string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | DOUBLE ENTRY");
 
-                _ = Task.Run(() => _database.LogVerificationAsync(null, uid, transType, _currentMode, false, "ANTI_PROXY_VIOLATION", "DOUBLE_ENTRY", "Blocked attempt to scan into the same event multiple times."));
+                nfcTimer.Stop();
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", nfcTimer.Elapsed.TotalMilliseconds, 0));
                 return;
             }
 
@@ -539,11 +539,11 @@ namespace NFC_System
                 _outcomeMessage = "Card couldn't be read properly. Please tap again.";
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                // FIX: Cleaner Date and Time output format
                 string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | BAD READ: Please tap again");
 
-                _ = Task.Run(() => _database.LogVerificationAsync(null, uid, transType, _currentMode, false, "BAD_NFC_READ", "BAD_READ", "Card couldn't be read properly. User prompted to tap again."));
+                nfcTimer.Stop();
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "BAD_READ", "BAD_NFC_READ", "Card couldn't be read properly. User prompted to tap again.", nfcTimer.Elapsed.TotalMilliseconds, 0));
                 return;
             }
 
@@ -725,13 +725,12 @@ namespace NFC_System
                 LoadProfileData("UNKNOWN USER", payload.Trim());
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                // FIX: Cleaner Date and Time output format
                 string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
 
-                _ = Task.Run(() => _database.LogVerificationAsync(null, payload.Trim(), transType, _currentMode, false, "ANTI_PROXY_VIOLATION", "DOUBLE_ENTRY", "Blocked attempt to scan into the same event multiple times."));
-
                 qrTimer.Stop();
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, payload.Trim(), transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", qrTimer.Elapsed.TotalMilliseconds, 0));
+
                 LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / DOUBLE ENTRY");
                 return;
             }

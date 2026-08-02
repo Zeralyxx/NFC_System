@@ -49,6 +49,7 @@
                         <!-- THE FIX: Int-only formatting applied via TextChanging -->
                         <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" TextChanging="NumberOnly_TextChanging"/>
                         <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
+                        <TextBox x:Name="EmailTextBox" Header="Institutional Email" PlaceholderText="e.g. michael.sintay@tcu.edu.ph" />
                         <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
                         <Grid ColumnSpacing="16">
                             <Grid.ColumnDefinitions>

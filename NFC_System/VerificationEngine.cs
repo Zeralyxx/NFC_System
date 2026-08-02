@@ -46,7 +46,8 @@ public sealed class VerificationEngine
 
     public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null, bool isQrFallback = false)
     {
-        Stopwatch profileTimer = Stopwatch.StartNew();
+        Stopwatch authTimer = Stopwatch.StartNew();
+        Stopwatch dbTimer = new Stopwatch();
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         StudentRecord? student = null;
@@ -55,6 +56,7 @@ public sealed class VerificationEngine
         // ---------------------------------------------------------
         // 1. ONLINE VS OFFLINE ROUTING
         // ---------------------------------------------------------
+        dbTimer.Start();
         try
         {
             student = await _database.GetStudentByUidAsync(uid);
@@ -63,9 +65,10 @@ public sealed class VerificationEngine
         {
             isOffline = true;
         }
+        dbTimer.Stop();
+        double dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
 
-        profileTimer.Stop();
-        LogPerformanceMetric($"DB Query: Retrieve Profile ({(isOffline ? "OFFLINE CACHE" : "ONLINE")})", profileTimer.ElapsedMilliseconds, student != null ? "Found" : "Not Found");
+        LogPerformanceMetric($"DB Query: Retrieve Profile ({(isOffline ? "OFFLINE CACHE" : "ONLINE")})", dbQueryMs, student != null ? "Found" : "Not Found");
 
         // ---------------------------------------------------------
         // 2. OFFLINE VERIFICATION FLOW
@@ -112,34 +115,38 @@ public sealed class VerificationEngine
             if (student == null)
             {
                 string error = "NOT_REGISTERED";
-                await SafeLogGateAsync(null, uid, transactionType, mode, false, error, "NFC UID is not linked to a student record.");
+                await SafeLogGateAsync(null, uid, transactionType, mode, false, error, "NFC UID is not linked to a student record.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
                 return Denied(uid, null, "UNAUTHORIZED", "NFC credential is not registered", error, $"{scanTime} | UID {uid} | DENIED | NOT REGISTERED");
             }
 
             if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "INACTIVE_STUDENT";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, $"Student status is {student.Status}.");
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, $"Student status is {student.Status}.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
                 return Denied(uid, student, "ACCESS DENIED", $"Student status is {student.Status}", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {student.Status.ToUpper()}");
             }
 
             if (transactionType == TransactionType.Entry && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "ANTI_TAILGATING_VIOLATION";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Consecutive entry attempt detected before an exit transaction.");
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Consecutive entry attempt detected before an exit transaction.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
                 return Denied(uid, student, "ACCESS DENIED", "Anti-tailgating rule blocked repeated entry", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | TAILGATING");
             }
 
             if (transactionType == TransactionType.Exit && string.IsNullOrWhiteSpace(eventId) && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "IRREGULAR_EXIT_SEQUENCE";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Exit attempted while student is already marked OUTSIDE.");
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Exit attempted while student is already marked OUTSIDE.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
                 return Denied(uid, student, "ACCESS DENIED", "Exit blocked because student is already outside", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | IRREGULAR EXIT");
             }
 
             if (transactionType == TransactionType.EventAttendance && !string.IsNullOrWhiteSpace(eventId))
             {
+                dbTimer.Restart();
                 bool allowed = await _database.IsStudentAllowedForEventAsync(eventId, student.StudentId);
+                dbTimer.Stop();
+                dbQueryMs += dbTimer.Elapsed.TotalMilliseconds;
+
                 if (!allowed)
                 {
                     string error = "UNAUTHORIZED_EVENT_ACCESS";
@@ -178,13 +185,13 @@ public sealed class VerificationEngine
 
         if (mode == VerificationMode.Fast || transactionType == TransactionType.Exit)
         {
-            return await GrantAsync(session, transactionType == TransactionType.Exit ? "NFC validation passed." : "NFC validation passed in Fast Mode.");
+            return await GrantAsync(session, transactionType == TransactionType.Exit ? "NFC validation passed." : "NFC validation passed in Fast Mode.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
         }
 
         if (student!.PinLocked)
         {
             string error = "PIN_LOCKED";
-            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.");
+            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
             return Denied(uid, student, isOffline ? "OFFLINE: ACCESS DENIED" : "ACCESS DENIED", "PIN is locked after repeated failed attempts", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | PIN LOCKED");
         }
 
@@ -202,6 +209,10 @@ public sealed class VerificationEngine
 
     public async Task<VerificationOutcome> SubmitPinAsync(VerificationSession session, string pin)
     {
+        Stopwatch authTimer = Stopwatch.StartNew();
+        Stopwatch dbTimer = new Stopwatch();
+        double dbQueryMs = 0;
+
         StudentRecord student = session.Student;
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
@@ -217,13 +228,16 @@ public sealed class VerificationEngine
 
             try
             {
+                dbTimer.Start();
                 await _database.UpdatePinFailureAsync(student.StudentId, failedAttempts, locked);
-                await _database.LogVerificationAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, error, $"Failed PIN attempt {failedAttempts}/3.");
+                dbTimer.Stop();
+                dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
+
+                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
                 await _database.AddAlertAsync(student.StudentId, error, locked ? $"{student.FullName} reached three failed PIN attempts and has been locked." : $"{student.FullName} entered an incorrect PIN ({failedAttempts}/3).");
             }
             catch
             {
-                // Offline logging for PIN failure
                 OfflineCacheService.SaveOfflineGateLog(student.StudentId, session.Uid, session.TransactionType.ToString(), session.Mode.ToString(), false, error, $"[OFFLINE] Failed PIN attempt {failedAttempts}/3.");
             }
 
@@ -232,7 +246,10 @@ public sealed class VerificationEngine
 
         try
         {
+            dbTimer.Restart();
             await _database.UpdatePinFailureAsync(student.StudentId, 0, false);
+            dbTimer.Stop();
+            dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
         }
         catch { /* Server is offline, continue verifying against cached JSON */ }
 
@@ -253,11 +270,13 @@ public sealed class VerificationEngine
             };
         }
 
-        return await GrantAsync(session, session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.");
+        return await GrantAsync(session, session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
     }
 
     public async Task<VerificationOutcome> SubmitQrAsync(VerificationSession session, string qrCredential)
     {
+        Stopwatch authTimer = Stopwatch.StartNew();
+
         StudentRecord student = session.Student;
         string normalizedInput = qrCredential.Trim();
         string normalizedStored = student.QrCredential.Trim();
@@ -266,11 +285,11 @@ public sealed class VerificationEngine
         if (string.IsNullOrWhiteSpace(normalizedStored) || !normalizedStored.Equals(normalizedInput, StringComparison.OrdinalIgnoreCase))
         {
             string error = "CREDENTIAL_MISMATCH";
-            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.");
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.", authTimer.Elapsed.TotalMilliseconds, 0);
             return Denied(session.Uid, student, "ACCESS DENIED", "QR credential mismatch detected", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | QR MISMATCH");
         }
 
-        return await GrantAsync(session, "NFC, PIN, and QR credential validation passed.");
+        return await GrantAsync(session, "NFC, PIN, and QR credential validation passed.", authTimer.Elapsed.TotalMilliseconds, 0);
     }
 
     public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId)
@@ -323,11 +342,13 @@ public sealed class VerificationEngine
     // OFFLINE-SAFE DATABASE HELPERS
     // ====================================================================
 
-    private async Task<VerificationOutcome> GrantAsync(VerificationSession session, string remarks)
+    private async Task<VerificationOutcome> GrantAsync(VerificationSession session, string remarks, double authSpeedMs, double dbQueryMs)
     {
         StudentRecord student = session.Student;
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
         bool isOffline = false;
+
+        Stopwatch updateTimer = Stopwatch.StartNew();
 
         try
         {
@@ -353,7 +374,10 @@ public sealed class VerificationEngine
                 student.EntryState = "INSIDE";
             }
 
-            await _database.LogVerificationAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", "", remarks);
+            updateTimer.Stop();
+            dbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
+
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, authSpeedMs, dbQueryMs);
         }
         catch
         {
@@ -376,11 +400,11 @@ public sealed class VerificationEngine
         };
     }
 
-    private async Task SafeLogGateAsync(StudentRecord? student, string uid, TransactionType type, VerificationMode mode, bool granted, string errorCategory, string remarks)
+    private async Task SafeLogGateAsync(StudentRecord? student, string uid, TransactionType type, VerificationMode mode, bool granted, string errorCategory, string remarks, double authSpeedMs, double dbQuerySpeedMs)
     {
         try
         {
-            await _database.LogVerificationAsync(student, uid, type, mode, granted, errorCategory, errorCategory, remarks);
+            await _database.LogVerificationAsync(student, student?.FullName, uid, type, mode, granted, errorCategory, errorCategory, remarks, authSpeedMs, dbQuerySpeedMs);
             if (!granted && student != null) await _database.AddAlertAsync(student.StudentId, errorCategory, remarks);
         }
         catch

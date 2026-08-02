@@ -20,6 +20,8 @@ public sealed class VerificationLogRecord
     public string Action { get; set; } = "";
     public string Status { get; set; } = "";
     public string Mode { get; set; } = "";
+    public double AuthSpeedMs { get; set; }
+    public double DbQuerySpeedMs { get; set; }
 
     public Microsoft.UI.Xaml.Media.Brush StatusColor =>
         Status == "GRANTED"
@@ -36,6 +38,8 @@ public sealed class SystemAuditLog
     public string Action { get; set; } = "";
     public string Status { get; set; } = "";
     public string Details { get; set; } = "";
+    public double AuthSpeedMs { get; set; }
+    public double DbQuerySpeedMs { get; set; }
     public Microsoft.UI.Xaml.Media.Brush StatusColor { get; set; } = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray);
 }
 
@@ -55,6 +59,14 @@ public sealed class DatabaseService
     public static string ServerIp { get; private set; } = "127.0.0.1";
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
+
+    // DYNAMIC UNION FOR ALL 3 LOG TABLES
+    private const string CombinedLogsQuery = @"
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, db_query_speed_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
+        UNION ALL 
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, db_query_speed_ms, synced_to_cloud, 'standard_mode_logs' AS source_table FROM standard_mode_logs 
+        UNION ALL 
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, db_query_speed_ms, synced_to_cloud, 'high_security_mode_logs' AS source_table FROM high_security_mode_logs";
 
     public static void LoadConfig()
     {
@@ -96,6 +108,7 @@ public sealed class DatabaseService
             CREATE TABLE IF NOT EXISTS students (
                 student_id VARCHAR(50) PRIMARY KEY,
                 full_name VARCHAR(100) NOT NULL,
+                email VARCHAR(150),
                 course VARCHAR(100),
                 year_level VARCHAR(20),
                 section_name VARCHAR(50),
@@ -114,10 +127,11 @@ public sealed class DatabaseService
                 course_name VARCHAR(100) PRIMARY KEY
             );
 
-            CREATE TABLE IF NOT EXISTS verification_logs (
+            CREATE TABLE IF NOT EXISTS fast_mode_logs (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
                 student_id VARCHAR(50),
+                student_name VARCHAR(100),
                 nfc_uid VARCHAR(50),
                 transaction_type VARCHAR(50),
                 verification_mode VARCHAR(50),
@@ -125,6 +139,42 @@ public sealed class DatabaseService
                 error_code VARCHAR(100),
                 error_message TEXT,
                 remarks TEXT,
+                auth_speed_ms DOUBLE,
+                db_query_speed_ms DOUBLE,
+                synced_to_cloud BOOLEAN DEFAULT FALSE
+            );
+
+            CREATE TABLE IF NOT EXISTS standard_mode_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+                student_id VARCHAR(50),
+                student_name VARCHAR(100),
+                nfc_uid VARCHAR(50),
+                transaction_type VARCHAR(50),
+                verification_mode VARCHAR(50),
+                is_granted BOOLEAN,
+                error_code VARCHAR(100),
+                error_message TEXT,
+                remarks TEXT,
+                auth_speed_ms DOUBLE,
+                db_query_speed_ms DOUBLE,
+                synced_to_cloud BOOLEAN DEFAULT FALSE
+            );
+
+            CREATE TABLE IF NOT EXISTS high_security_mode_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+                student_id VARCHAR(50),
+                student_name VARCHAR(100),
+                nfc_uid VARCHAR(50),
+                transaction_type VARCHAR(50),
+                verification_mode VARCHAR(50),
+                is_granted BOOLEAN,
+                error_code VARCHAR(100),
+                error_message TEXT,
+                remarks TEXT,
+                auth_speed_ms DOUBLE,
+                db_query_speed_ms DOUBLE,
                 synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
@@ -158,7 +208,7 @@ public sealed class DatabaseService
 
             CREATE TABLE IF NOT EXISTS event_attendance (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
                 event_id VARCHAR(50),
                 student_id VARCHAR(50),
                 verification_mode VARCHAR(50),
@@ -179,25 +229,14 @@ public sealed class DatabaseService
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
-        // Auto-Migration: If the database already existed before this update, safely inject the new column
         try
         {
-            using var alterCmd1 = new MySqlCommand("ALTER TABLE verification_logs ADD COLUMN synced_to_cloud BOOLEAN DEFAULT FALSE;", connection);
-            await alterCmd1.ExecuteNonQueryAsync();
-        }
-        catch { /* Column already exists, safe to ignore */ }
-
-        try
-        {
-            using var alterCmd2 = new MySqlCommand("ALTER TABLE event_attendance ADD COLUMN synced_to_cloud BOOLEAN DEFAULT FALSE;", connection);
-            await alterCmd2.ExecuteNonQueryAsync();
+            using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection);
+            await alterCmd.ExecuteNonQueryAsync();
         }
         catch { /* Column already exists, safe to ignore */ }
     }
 
-    // =========================================================================
-    // CLOUD CLEANUP (TRUE MIRRORING FOR DIRECTORIES)
-    // =========================================================================
     private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
     {
         string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{collectionName}?pageSize=1000";
@@ -222,12 +261,8 @@ public sealed class DatabaseService
                 }
             }
         }
-        catch { /* Silently handle cleanup failures */ }
+        catch { }
     }
-
-    // =========================================================================
-    // CLOUD SYNCHRONIZATION METHODS (FIRESTORE REST API)
-    // =========================================================================
 
     public async Task<int> PullStudentsFromCloudAsync()
     {
@@ -260,6 +295,7 @@ public sealed class DatabaseService
                 if (string.IsNullOrWhiteSpace(studentId)) continue;
 
                 string fullName = ExtractString(fields, "full_name");
+                string email = ExtractString(fields, "email"); // Add this line
                 string course = ExtractString(fields, "course");
                 string yearLvl = ExtractString(fields, "year_level");
                 string section = ExtractString(fields, "section_name");
@@ -305,66 +341,76 @@ public sealed class DatabaseService
 
     public async Task<int> PullLogsFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/verification_logs?pageSize=2000";
         int updatedCount = 0;
+        string[] logTables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs" };
 
-        try
+        foreach (var tableName in logTables)
         {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+            string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{tableName}?pageSize=2000";
 
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
-
-            using var connection = new MySqlConnection(ConnectionString);
-            await connection.OpenAsync();
-
-            foreach (var document in documents.EnumerateArray())
+            try
             {
-                if (!document.TryGetProperty("fields", out var fields)) continue;
+                var response = await _httpClient.GetAsync(url);
+                if (!response.IsSuccessStatusCode) continue;
 
-                string studentId = ExtractString(fields, "student_id");
-                string nfcUid = ExtractString(fields, "nfc_uid");
-                string transactionType = ExtractString(fields, "transaction_type");
-                string verificationMode = ExtractString(fields, "verification_mode");
-                bool isGranted = ExtractBool(fields, "is_granted");
-                string errorCode = ExtractString(fields, "error_code");
-                string errorMessage = ExtractString(fields, "error_message");
-                string remarks = ExtractString(fields, "remarks");
-                DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
+                var json = await response.Content.ReadAsStringAsync();
+                using JsonDocument doc = JsonDocument.Parse(json);
 
-                if (timestamp == null) continue;
+                if (!doc.RootElement.TryGetProperty("documents", out var documents)) continue;
 
-                // Anti-Duplicate Check: Look for a log with the exact same timestamp and action
-                using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE timestamp = @ts AND transaction_type = @tt", connection);
-                checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
-                checkCmd.Parameters.AddWithValue("@tt", transactionType);
+                using var connection = new MySqlConnection(ConnectionString);
+                await connection.OpenAsync();
 
-                if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0) continue;
+                foreach (var document in documents.EnumerateArray())
+                {
+                    if (!document.TryGetProperty("fields", out var fields)) continue;
 
-                string sql = @"
-                    INSERT INTO verification_logs 
-                    (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, synced_to_cloud) 
-                    VALUES (@ts, @sid, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, 1)";
+                    string studentId = ExtractString(fields, "student_id");
+                    string studentName = ExtractString(fields, "student_name");
+                    string nfcUid = ExtractString(fields, "nfc_uid");
+                    string transactionType = ExtractString(fields, "transaction_type");
+                    string verificationMode = ExtractString(fields, "verification_mode");
+                    bool isGranted = ExtractBool(fields, "is_granted");
+                    string errorCode = ExtractString(fields, "error_code");
+                    string errorMessage = ExtractString(fields, "error_message");
+                    string remarks = ExtractString(fields, "remarks");
+                    double authSpeed = ExtractDouble(fields, "auth_speed_ms");
+                    double dbQuerySpeed = ExtractDouble(fields, "db_query_speed_ms");
+                    DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
 
-                using var cmd = new MySqlCommand(sql, connection);
-                cmd.Parameters.AddWithValue("@ts", timestamp.Value);
-                cmd.Parameters.AddWithValue("@sid", NullIfEmpty(studentId));
-                cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(nfcUid));
-                cmd.Parameters.AddWithValue("@tt", NullIfEmpty(transactionType));
-                cmd.Parameters.AddWithValue("@mode", NullIfEmpty(verificationMode));
-                cmd.Parameters.AddWithValue("@granted", isGranted ? 1 : 0);
-                cmd.Parameters.AddWithValue("@errCode", NullIfEmpty(errorCode));
-                cmd.Parameters.AddWithValue("@errMsg", NullIfEmpty(errorMessage));
-                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(remarks));
+                    if (timestamp == null) continue;
 
-                await cmd.ExecuteNonQueryAsync();
-                updatedCount++;
+                    using var checkCmd = new MySqlCommand($"SELECT COUNT(*) FROM {tableName} WHERE timestamp = @ts AND transaction_type = @tt", connection);
+                    checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                    checkCmd.Parameters.AddWithValue("@tt", transactionType);
+
+                    if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0) continue;
+
+                    string sql = $@"
+                        INSERT INTO {tableName} 
+                        (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, db_query_speed_ms, synced_to_cloud) 
+                        VALUES (@ts, @sid, @sname, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, @authSpeed, @dbSpeed, 1)";
+
+                    using var cmd = new MySqlCommand(sql, connection);
+                    cmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                    cmd.Parameters.AddWithValue("@sid", NullIfEmpty(studentId));
+                    cmd.Parameters.AddWithValue("@sname", NullIfEmpty(studentName));
+                    cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(nfcUid));
+                    cmd.Parameters.AddWithValue("@tt", NullIfEmpty(transactionType));
+                    cmd.Parameters.AddWithValue("@mode", NullIfEmpty(verificationMode));
+                    cmd.Parameters.AddWithValue("@granted", isGranted ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@errCode", NullIfEmpty(errorCode));
+                    cmd.Parameters.AddWithValue("@errMsg", NullIfEmpty(errorMessage));
+                    cmd.Parameters.AddWithValue("@rem", NullIfEmpty(remarks));
+                    cmd.Parameters.AddWithValue("@authSpeed", authSpeed);
+                    cmd.Parameters.AddWithValue("@dbSpeed", dbQuerySpeed);
+
+                    await cmd.ExecuteNonQueryAsync();
+                    updatedCount++;
+                }
             }
+            catch { }
         }
-        catch (Exception ex) { throw new Exception($"Logs Pull Error: {ex.Message}"); }
 
         return updatedCount;
     }
@@ -399,7 +445,6 @@ public sealed class DatabaseService
 
                 if (timestamp == null || string.IsNullOrWhiteSpace(eventId)) continue;
 
-                // Anti-Duplicate Check
                 using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM event_attendance WHERE timestamp = @ts AND event_id = @eid AND student_id = @sid", connection);
                 checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
                 checkCmd.Parameters.AddWithValue("@eid", eventId);
@@ -455,6 +500,7 @@ public sealed class DatabaseService
                     {
                         student_id = new { stringValue = studentId },
                         full_name = new { stringValue = Value(reader["full_name"]) },
+                        email = new { stringValue = Value(reader["email"]) }, // Add this line
                         course = new { stringValue = Value(reader["course"]) },
                         year_level = new { stringValue = Value(reader["year_level"]) },
                         section_name = new { stringValue = Value(reader["section_name"]) },
@@ -886,19 +932,19 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
-            // Select ALL pending/un-synced logs (no LIMIT)
-            using var cmd = new MySqlCommand(@"
-                SELECT id, timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks 
-                FROM verification_logs 
+            using var cmd = new MySqlCommand($@"
+                SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, db_query_speed_ms, source_table 
+                FROM ({CombinedLogsQuery}) vl 
                 WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL
                 ORDER BY timestamp ASC", connection);
 
             using var reader = await cmd.ExecuteReaderAsync();
-            var pendingLogs = new List<(int Id, string JSON, string CloudDocId)>();
+            var pendingLogs = new List<(int Id, string JSON, string CloudDocId, string SourceTable)>();
 
             while (await reader.ReadAsync())
             {
                 int dbId = Convert.ToInt32(reader["id"]);
+                string sourceTable = Value(reader["source_table"]);
                 string firestoreTimestamp = Convert.ToDateTime(reader["timestamp"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
                 var firestorePayload = new
@@ -906,6 +952,7 @@ public sealed class DatabaseService
                     fields = new
                     {
                         student_id = new { stringValue = Value(reader["student_id"]) },
+                        student_name = new { stringValue = Value(reader["student_name"]) },
                         nfc_uid = new { stringValue = Value(reader["nfc_uid"]) },
                         transaction_type = new { stringValue = Value(reader["transaction_type"]) },
                         verification_mode = new { stringValue = Value(reader["verification_mode"]) },
@@ -913,28 +960,27 @@ public sealed class DatabaseService
                         error_code = new { stringValue = Value(reader["error_code"]) },
                         error_message = new { stringValue = Value(reader["error_message"]) },
                         remarks = new { stringValue = Value(reader["remarks"]) },
+                        auth_speed_ms = new { doubleValue = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0 },
+                        db_query_speed_ms = new { doubleValue = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0 },
                         timestamp = new { timestampValue = firestoreTimestamp }
                     }
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                pendingLogs.Add((dbId, jsonPayload, $"log_{dbId}"));
+                pendingLogs.Add((dbId, jsonPayload, $"log_{sourceTable}_{dbId}", sourceTable));
             }
             reader.Close();
 
-            // Upload all pending logs to Firebase and mark them as synced in MySQL
             foreach (var log in pendingLogs)
             {
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/verification_logs/{log.CloudDocId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{log.SourceTable}/{log.CloudDocId}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode)
                 {
                     pushedCount++;
-
-                    // Mark as synced locally
-                    using var markCmd = new MySqlCommand("UPDATE verification_logs SET synced_to_cloud = 1 WHERE id = @id", connection);
+                    using var markCmd = new MySqlCommand($"UPDATE {log.SourceTable} SET synced_to_cloud = 1 WHERE id = @id", connection);
                     markCmd.Parameters.AddWithValue("@id", log.Id);
                     await markCmd.ExecuteNonQueryAsync();
                 }
@@ -953,7 +999,6 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
-            // Select ALL pending/un-synced event logs (no LIMIT)
             using var cmd = new MySqlCommand(@"
                 SELECT id, timestamp, event_id, student_id, verification_mode, status, remarks 
                 FROM event_attendance 
@@ -986,7 +1031,6 @@ public sealed class DatabaseService
             }
             reader.Close();
 
-            // Upload all pending logs to Firebase and mark them as synced in MySQL
             foreach (var log in pendingLogs)
             {
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
@@ -996,8 +1040,6 @@ public sealed class DatabaseService
                 if (response.IsSuccessStatusCode)
                 {
                     pushedCount++;
-
-                    // Mark as synced locally
                     using var markCmd = new MySqlCommand("UPDATE event_attendance SET synced_to_cloud = 1 WHERE id = @id", connection);
                     markCmd.Parameters.AddWithValue("@id", log.Id);
                     await markCmd.ExecuteNonQueryAsync();
@@ -1009,7 +1051,6 @@ public sealed class DatabaseService
         return pushedCount;
     }
 
-    // JSON Extractor Helpers
     private string ExtractString(JsonElement fields, string key)
     {
         if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("stringValue", out var val))
@@ -1031,6 +1072,13 @@ public sealed class DatabaseService
         return 0;
     }
 
+    private double ExtractDouble(JsonElement fields, string key)
+    {
+        if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("doubleValue", out var val))
+            return val.GetDouble();
+        return 0;
+    }
+
     private DateTime? ExtractTimestamp(JsonElement fields, string key)
     {
         if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("timestampValue", out var val))
@@ -1044,21 +1092,17 @@ public sealed class DatabaseService
         return null;
     }
 
-    // =========================================================================
-    // OFFLINE SHADOW CACHE INTEGRATION (NEW METHODS)
-    // =========================================================================
-
     public async Task<bool> TestConnectionAsync()
     {
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
-            return true; // XAMPP server is reachable
+            return true;
         }
         catch
         {
-            return false; // Connection failed
+            return false;
         }
     }
 
@@ -1069,7 +1113,6 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
-            // 1. Export Active Students to Shadow Cache
             var students = new List<CachedStudent>();
             using (var cmd = new MySqlCommand("SELECT student_id, full_name, nfc_uid, pin_hash, pin_salt, status, pin_locked FROM students WHERE nfc_uid IS NOT NULL AND nfc_uid != ''", connection))
             using (var reader = await cmd.ExecuteReaderAsync())
@@ -1090,7 +1133,6 @@ public sealed class DatabaseService
             }
             OfflineCacheService.UpdateStudentCache(students);
 
-            // 2. Export Active Events to Shadow Cache
             var events = new List<CachedEvent>();
             using (var cmd = new MySqlCommand("SELECT event_id, event_name, verification_mode, is_restricted, is_active FROM events WHERE is_active = 1", connection))
             using (var reader = await cmd.ExecuteReaderAsync())
@@ -1108,7 +1150,6 @@ public sealed class DatabaseService
                 }
             }
 
-            // 3. Export Event Approved Rosters
             var rostersDict = new Dictionary<string, List<string>>();
             using (var cmd = new MySqlCommand("SELECT event_id, student_id FROM event_approved_students", connection))
             using (var reader = await cmd.ExecuteReaderAsync())
@@ -1133,7 +1174,7 @@ public sealed class DatabaseService
 
             OfflineCacheService.UpdateEventCache(events, rosters);
         }
-        catch { /* Silently fail background updates if XAMPP drops mid-pull */ }
+        catch { }
     }
 
     public async Task SyncOfflineLogsToServerAsync()
@@ -1145,12 +1186,12 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
-            // Push pending gate logs
             var gateLogs = OfflineCacheService.GetPendingGateLogs();
             foreach (var log in gateLogs)
             {
+                // We default offline cache syncs to standard mode logs since they lacked full DB metrics anyway
                 using var cmd = new MySqlCommand(@"
-                    INSERT INTO verification_logs (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
+                    INSERT INTO standard_mode_logs (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
                     VALUES (@ts, @sid, @nfc, @ttype, @vmode, @granted, @err, @rem)", connection);
 
                 cmd.Parameters.AddWithValue("@ts", DateTime.Parse(log.Timestamp));
@@ -1165,7 +1206,6 @@ public sealed class DatabaseService
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // Push pending event logs
             var eventLogs = OfflineCacheService.GetPendingEventLogs();
             foreach (var log in eventLogs)
             {
@@ -1183,13 +1223,10 @@ public sealed class DatabaseService
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            // Successfully pushed, clear local files
             OfflineCacheService.ClearPendingLogs();
         }
-        catch { /* Let it stay in cache and try again next tick */ }
+        catch { }
     }
-
-    // =========================================================================
 
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(
         int limit = 1000,
@@ -1202,13 +1239,12 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Build the dynamic WHERE clause based on UI filters
         var whereClauses = new List<string>();
         var parameters = new Dictionary<string, object>();
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            whereClauses.Add("(student_id LIKE @search OR nfc_uid LIKE @search OR details LIKE @search)");
+            whereClauses.Add("(student_id LIKE @search OR student_name LIKE @search OR nfc_uid LIKE @search OR details LIKE @search)");
             parameters.Add("@search", $"%{searchTerm.Trim()}%");
         }
 
@@ -1234,21 +1270,21 @@ public sealed class DatabaseService
 
         string whereSql = whereClauses.Count > 0 ? " AND " + string.Join(" AND ", whereClauses) : "";
 
-        // Combine both tables into one highly performant searchable view using ANSI SQL CASE WHEN
         string sql = $@"
             SELECT * FROM (
-                SELECT timestamp, student_id, nfc_uid, transaction_type as action, 
+                SELECT timestamp, student_id, student_name, nfc_uid, transaction_type as action, 
                        CASE WHEN is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
-                       error_code, remarks as details, 'GATE LOG' as log_type
-                FROM verification_logs 
+                       error_code, remarks as details, 'GATE LOG' as log_type, auth_speed_ms, db_query_speed_ms
+                FROM ({CombinedLogsQuery}) cl 
                 WHERE transaction_type != 'EventAttendance'
                 
                 UNION ALL 
                 
-                SELECT timestamp, student_id, '' as nfc_uid, alert_type as action, 
+                SELECT timestamp, student_id, '' as student_name, '' as nfc_uid, alert_type as action, 
                        CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'RESOLVED' ELSE 'FLAGGED' END as status, 
                        '' as error_code, message as details, 
-                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type
+                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type,
+                       0 as auth_speed_ms, 0 as db_query_speed_ms
                 FROM alerts
             ) AS MasterLogs
             WHERE 1=1 {whereSql}
@@ -1271,7 +1307,6 @@ public sealed class DatabaseService
             if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
                 details = $"[{error}] {details}";
 
-            // Strip out the "(NFC UID: ...)" from admin/staff logs before displaying
             int nfcIndex = details.IndexOf("(NFC UID:");
             if (nfcIndex != -1)
             {
@@ -1283,7 +1318,8 @@ public sealed class DatabaseService
                 }
             }
 
-            string subject = Value(reader["student_id"]);
+            string subject = Value(reader["student_name"]);
+            if (string.IsNullOrWhiteSpace(subject)) subject = Value(reader["student_id"]);
             if (string.IsNullOrWhiteSpace(subject) && !string.IsNullOrWhiteSpace(Value(reader["nfc_uid"])))
                 subject = $"UID: {Value(reader["nfc_uid"])}";
 
@@ -1295,8 +1331,9 @@ public sealed class DatabaseService
                 Action = Value(reader["action"]),
                 Status = Value(reader["status"]),
                 Details = details,
-                // FIX: Cleaner Date and Time output format
-                DisplayTime = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt")
+                AuthSpeedMs = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0,
+                DbQuerySpeedMs = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0,
+                DisplayTime = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss.fff tt")
             };
 
             if (log.Status == "GRANTED" || log.Status == "RESOLVED")
@@ -1321,13 +1358,13 @@ public sealed class DatabaseService
         int inside = 0;
         int denied = 0;
 
-        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE transaction_type != 'EventAttendance' AND DATE(timestamp) = CURDATE()", connection))
+        using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM ({CombinedLogsQuery}) vl WHERE transaction_type != 'EventAttendance' AND DATE(timestamp) = CURDATE()", connection))
             totalScans = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
         using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE entry_state = 'INSIDE'", connection))
             inside = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
-        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM verification_logs WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
+        using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM ({CombinedLogsQuery}) vl WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
             denied = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
         return (totalScans, inside, denied);
@@ -1338,9 +1375,9 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
+        using var command = new MySqlCommand($@"
             SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
-            FROM verification_logs 
+            FROM ({CombinedLogsQuery}) vl 
             WHERE transaction_type != 'EventAttendance' AND is_granted = 0 
             GROUP BY DATE(timestamp), DateLbl 
             ORDER BY DATE(timestamp) DESC", connection);
@@ -1363,9 +1400,9 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
+        using var command = new MySqlCommand($@"
             SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
-            FROM verification_logs 
+            FROM ({CombinedLogsQuery}) vl 
             WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
             GROUP BY DATE(timestamp), DateLbl
             ORDER BY Total DESC", connection);
@@ -1390,9 +1427,9 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
+        using var command = new MySqlCommand($@"
             SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
-            FROM verification_logs 
+            FROM ({CombinedLogsQuery}) vl 
             WHERE transaction_type = 'Entry' AND is_granted = 1 
             GROUP BY DATE(timestamp), DateLbl 
             ORDER BY DATE(timestamp) DESC 
@@ -1416,10 +1453,10 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
-            SELECT vl.timestamp, vl.student_id, s.full_name, s.course, s.section_name, 
-                   vl.transaction_type, vl.is_granted, vl.verification_mode
-            FROM verification_logs vl
+        using var command = new MySqlCommand($@"
+            SELECT vl.timestamp, vl.student_id, vl.student_name as full_name, s.course, s.section_name, 
+                   vl.transaction_type, vl.is_granted, vl.verification_mode, vl.auth_speed_ms, vl.db_query_speed_ms
+            FROM ({CombinedLogsQuery}) vl
             LEFT JOIN students s ON vl.student_id = s.student_id
             WHERE vl.transaction_type != 'EventAttendance'
             ORDER BY vl.timestamp DESC
@@ -1433,15 +1470,16 @@ public sealed class DatabaseService
 
             list.Add(new VerificationLogRecord
             {
-                // FIX: Cleaner Date and Time output format
-                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
+                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
                 StudentId = Value(reader["student_id"]),
                 FullName = string.IsNullOrWhiteSpace(Value(reader["full_name"])) ? "Unknown / Unregistered" : Value(reader["full_name"]),
                 Course = Value(reader["course"]),
                 Section = Value(reader["section_name"]),
                 Action = Value(reader["transaction_type"]),
                 Status = isGranted ? "GRANTED" : "DENIED",
-                Mode = Value(reader["verification_mode"])
+                Mode = Value(reader["verification_mode"]),
+                AuthSpeedMs = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0,
+                DbQuerySpeedMs = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0
             });
         }
         return list;
@@ -1452,7 +1490,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Student ID must be unique — this window only creates new profiles now.
         bool idExists;
         using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
         {
@@ -1460,8 +1497,7 @@ public sealed class DatabaseService
             idExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
         }
         if (idExists)
-            throw new InvalidOperationException(
-                $"Student ID '{student.StudentId}' is already registered. Editing existing profiles isn't available here.");
+            throw new InvalidOperationException($"Student ID '{student.StudentId}' is already registered.");
 
         if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, student.StudentId))
             throw new InvalidOperationException("This NFC card is already linked to another student.");
@@ -1476,10 +1512,10 @@ public sealed class DatabaseService
         }
 
         string sql = @"
-        INSERT INTO students
-        (student_id, full_name, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
-        VALUES
-        (@student_id, @full_name, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE);";
+    INSERT INTO students
+    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
+    VALUES
+    (@student_id, @full_name, @email, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE);";
 
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
@@ -1488,11 +1524,6 @@ public sealed class DatabaseService
         await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered new student profile for {student.FullName}.");
     }
 
-    /// <summary>
-    /// Looks for existing students whose name closely matches, to catch the case
-    /// where the same physical person is being re-enrolled under a new Student ID
-    /// (e.g. a lost/replaced NFC card with no UID match).
-    /// </summary>
     public async Task<IReadOnlyList<StudentRecord>> FindPotentialDuplicatesByNameAsync(string fullName)
     {
         var results = new List<StudentRecord>();
@@ -1535,8 +1566,7 @@ public sealed class DatabaseService
                 targetExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
             }
             if (targetExists)
-                throw new InvalidOperationException(
-                    $"Cannot rename to '{student.StudentId}' — that ID already belongs to another student.");
+                throw new InvalidOperationException($"Cannot rename to '{student.StudentId}' — that ID already belongs to another student.");
         }
 
         if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, originalStudentId))
@@ -1553,12 +1583,12 @@ public sealed class DatabaseService
 
         string sql = salt != null && hash != null
             ? @"UPDATE students 
-            SET student_id=@student_id, full_name=@full_name, course=@course, year_level=@year_level,
+            SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
                 section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential,
                 pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0
             WHERE student_id=@original_id;"
             : @"UPDATE students 
-            SET student_id=@student_id, full_name=@full_name, course=@course, year_level=@year_level,
+            SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
                 section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential
             WHERE student_id=@original_id;";
 
@@ -1861,9 +1891,9 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
-            SELECT timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks
-            FROM verification_logs
+        using var command = new MySqlCommand($@"
+            SELECT timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks
+            FROM ({CombinedLogsQuery}) vl
             WHERE transaction_type != 'EventAttendance'
             ORDER BY timestamp DESC
             LIMIT @limit", connection);
@@ -1873,13 +1903,11 @@ public sealed class DatabaseService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            // FIX: Cleaner Date and Time output format
             string time = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt");
-            string subject = Value(reader["student_id"]);
-            if (string.IsNullOrWhiteSpace(subject))
-            {
-                subject = $"UID {Value(reader["nfc_uid"])}";
-            }
+            string subject = Value(reader["student_name"]);
+            if (string.IsNullOrWhiteSpace(subject)) subject = Value(reader["student_id"]);
+            if (string.IsNullOrWhiteSpace(subject)) subject = $"UID {Value(reader["nfc_uid"])}";
+
             string result = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true" ? "GRANTED" : "DENIED";
 
             logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {result} | {Value(reader["error_code"])} {Value(reader["remarks"])}".Trim());
@@ -1903,7 +1931,6 @@ public sealed class DatabaseService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            // FIX: Cleaner Date and Time output format
             string time = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt");
             string details = Value(reader["message"]);
 
@@ -1923,17 +1950,26 @@ public sealed class DatabaseService
         return alerts;
     }
 
-    public async Task LogVerificationAsync(StudentRecord? student, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks)
+    public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double authSpeedMs, double dbQuerySpeedMs)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
-            INSERT INTO verification_logs
-            (student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks)
+        string tableName = mode switch
+        {
+            VerificationMode.Fast => "fast_mode_logs",
+            VerificationMode.HighSecurity => "high_security_mode_logs",
+            _ => "standard_mode_logs"
+        };
+
+        using var command = new MySqlCommand($@"
+            INSERT INTO {tableName}
+            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, db_query_speed_ms)
             VALUES
-            (@student_id, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks)", connection);
+            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @auth_speed, @db_speed)", connection);
+
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
+        command.Parameters.AddWithValue("@student_name", NullIfEmpty(studentName));
         command.Parameters.AddWithValue("@nfc_uid", NullIfEmpty(uid));
         command.Parameters.AddWithValue("@transaction_type", ToStorageValue(transactionType));
         command.Parameters.AddWithValue("@verification_mode", ToStorageValue(mode));
@@ -1941,6 +1977,8 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@error_category", NullIfEmpty(errorCategory));
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
+        command.Parameters.AddWithValue("@auth_speed", authSpeedMs);
+        command.Parameters.AddWithValue("@db_speed", dbQuerySpeedMs);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -1975,8 +2013,6 @@ public sealed class DatabaseService
 
         await AddAlertAsync(null, "ADMIN_ACTION", $"Created or updated Event Profile '{eventName}' ({eventId}).");
     }
-
-
 
     public async Task RemoveEventAttendeeAsync(string eventId, string studentId)
     {
@@ -2174,6 +2210,7 @@ public sealed class DatabaseService
     {
         command.Parameters.AddWithValue("@student_id", student.StudentId);
         command.Parameters.AddWithValue("@full_name", student.FullName);
+        command.Parameters.AddWithValue("@email", NullIfEmpty(student.Email)); // Add this line
         command.Parameters.AddWithValue("@course", NullIfEmpty(student.Course));
 
         if (int.TryParse(student.YearLevel, out int year))
@@ -2196,6 +2233,7 @@ public sealed class DatabaseService
         {
             StudentId = Value(reader["student_id"]),
             FullName = Value(reader["full_name"]),
+            Email = Value(reader["email"]), // Add this line
             Course = Value(reader["course"]),
             YearLevel = Value(reader["year_level"]),
             SectionName = Value(reader["section_name"]),
@@ -2364,7 +2402,6 @@ public sealed class DatabaseService
         {
             list.Add(new AttendanceLog
             {
-                // FIX: Cleaner Date and Time output format
                 Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
                 StudentId = Value(reader["student_id"]),
                 FullName = Value(reader["full_name"]),
@@ -2376,6 +2413,7 @@ public sealed class DatabaseService
         }
         return list;
     }
+
 
     private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
     private static string Value(object? value) => value == null || value == DBNull.Value ? "" : value.ToString() ?? "";

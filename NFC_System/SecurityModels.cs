@@ -28,6 +28,8 @@ public sealed class StudentRecord
     public string StudentId { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Course { get; set; } = "";
+
+    public string Email { get; set; } = ""; // NEW
     public string YearLevel { get; set; } = "";
     public string SectionName { get; set; } = "";
     public string Status { get; set; } = "Active";

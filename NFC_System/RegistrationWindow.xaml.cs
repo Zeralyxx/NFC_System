@@ -219,6 +219,7 @@ namespace NFC_System
         {
             string studentId = StudentIdTextBox.Text.Trim();
             string fullName = FullNameTextBox.Text.Trim();
+            string email = EmailTextBox.Text.Trim(); // <-- 1. Extract email input
             string nfcUid = NfcUidTextBox.Text.Trim();
             string pin = PinPasswordBox.Password.Trim();
             string qrCredential = QrCredentialTextBox.Text.Trim();
@@ -231,15 +232,12 @@ namespace NFC_System
                 return;
             }
 
-            // THE FIX: PIN is strictly required 100% of the time now, since this is only for new profiles
             if (string.IsNullOrWhiteSpace(pin) || pin.Length != 4 || !pin.All(char.IsDigit))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] A 4-digit PIN is strictly required for new enrollments.");
                 return;
             }
 
-            // Duplicate-person check (name-based), only runs once per attempt until the
-            // guard either confirms or changes the name field.
             if (!_duplicateWarningAcknowledged)
             {
                 var possibleDupes = await _database.FindPotentialDuplicatesByNameAsync(fullName);
@@ -252,7 +250,7 @@ namespace NFC_System
 
                     UidLogListView.Items.Insert(0, "[ACTION REQUIRED] Verify this isn't a re-enrollment, then press Save again to confirm.");
 
-                    _duplicateWarningAcknowledged = true; // next Save click proceeds
+                    _duplicateWarningAcknowledged = true;
                     return;
                 }
             }
@@ -269,6 +267,7 @@ namespace NFC_System
                 {
                     StudentId = studentId,
                     FullName = fullName,
+                    Email = email, // <-- 2. Assign Email property here
                     Course = course,
                     YearLevel = YearLevelTextBox.Text.Trim(),
                     SectionName = SectionTextBox.Text.Trim(),
@@ -280,7 +279,7 @@ namespace NFC_System
                 await _database.SaveStudentAsync(student, pin);
 
                 UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {fullName}");
-                PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
+                PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nEmail: {email}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
                 ClearForm();
             }
             catch (InvalidOperationException ex)
@@ -297,6 +296,7 @@ namespace NFC_System
         {
             StudentIdTextBox.Text = "";
             FullNameTextBox.Text = "";
+            EmailTextBox.Text = ""; // <-- Add this line to reset the email input
             CourseComboBox.SelectedItem = null;
             YearLevelTextBox.Text = "";
             SectionTextBox.Text = "";

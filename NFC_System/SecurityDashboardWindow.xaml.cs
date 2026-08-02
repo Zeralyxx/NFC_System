@@ -515,8 +515,8 @@ namespace NFC_System
                 int pulledCourses = await _database.PullCoursesFromCloudAsync();
                 int pulledEvents = await _database.PullEventsFromCloudAsync();
                 int pulledApproved = await _database.PullEventApprovedStudentsFromCloudAsync();
-                int pulledLogs = await _database.PullLogsFromCloudAsync(); // NEW
-                int pulledEventLogs = await _database.PullEventAttendanceFromCloudAsync(); // NEW
+                int pulledLogs = await _database.PullLogsFromCloudAsync();
+                int pulledEventLogs = await _database.PullEventAttendanceFromCloudAsync();
 
                 int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved + pulledLogs + pulledEventLogs;
 
@@ -528,8 +528,8 @@ namespace NFC_System
                     if (pulledCourses > 0) additions.Add($"{pulledCourses} Course(s)");
                     if (pulledEvents > 0) additions.Add($"{pulledEvents} Event(s)");
                     if (pulledApproved > 0) additions.Add($"{pulledApproved} Roster Entry(ies)");
-                    if (pulledLogs > 0) additions.Add($"{pulledLogs} Gate Log(s)"); // NEW
-                    if (pulledEventLogs > 0) additions.Add($"{pulledEventLogs} Event Log(s)"); // NEW
+                    if (pulledLogs > 0) additions.Add($"{pulledLogs} Gate Log(s)");
+                    if (pulledEventLogs > 0) additions.Add($"{pulledEventLogs} Event Log(s)");
 
                     string formattedList = "• " + string.Join("\n• ", additions);
                     string message = $"Download complete. The following new updates were synced locally:\n\n{formattedList}";
