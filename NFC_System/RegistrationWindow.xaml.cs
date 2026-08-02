@@ -18,7 +18,6 @@ namespace NFC_System
     {
         private SerialPort? _serialPort;
         private bool _isScanning = false;
-        private bool _isExistingProfile = false;
         private readonly DatabaseService _database = new();
         private bool _duplicateWarningAcknowledged = false;
 
@@ -49,7 +48,7 @@ namespace NFC_System
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
 
                 TryConnectSerial(nfcPort);
-                UidLogListView.Items.Insert(0, $"[INFO] Ready for enrollment. Port: {nfcPort}");
+                UidLogListView.Items.Insert(0, $"[INFO] Ready for new enrollment. Port: {nfcPort}");
             }
             catch (Exception ex)
             {
@@ -57,7 +56,6 @@ namespace NFC_System
             }
         }
 
-        // THE FIX: Updated logic to allow both digits and hyphens for formats like "23-00103"
         private void NumberOnly_TextChanging(TextBox sender, TextBoxTextChangingEventArgs args)
         {
             string text = sender.Text;
@@ -163,47 +161,18 @@ namespace NFC_System
                             UidLogListView.Items.Insert(0, "[WARNING] Invalid hardware read. Please scan again.");
                             PreviewTextBlock.Text = "NFC UID: Corrupted transmission layout - re-tap card";
                         }
+                        else if (existingStudent != null)
+                        {
+                            // THE FIX: Immediately reject cards that are already registered
+                            NfcUidTextBox.Text = "";
+                            UidLogListView.Items.Insert(0, $"[ERROR] Card is already registered to {existingStudent.FullName} ({existingStudent.StudentId}). Please use the Student Management window to edit this profile.");
+                            PreviewTextBlock.Text = "NFC UID: Card already in use by another student.";
+                        }
                         else
                         {
-                            if (existingStudent != null)
-                            {
-                                _isExistingProfile = true;
-                                PinPasswordBox.PlaceholderText = "(Leave blank to keep PIN)";
-
-                                StudentIdTextBox.Text = existingStudent.StudentId;
-                                FullNameTextBox.Text = existingStudent.FullName;
-                                CourseComboBox.SelectedItem = existingStudent.Course;
-                                YearLevelTextBox.Text = existingStudent.YearLevel;
-                                SectionTextBox.Text = existingStudent.SectionName;
-                                NfcUidTextBox.Text = uid;
-
-                                foreach (ComboBoxItem item in StatusComboBox.Items)
-                                {
-                                    if (item.Content?.ToString() == existingStudent.Status)
-                                    {
-                                        StatusComboBox.SelectedItem = item;
-                                        break;
-                                    }
-                                }
-
-                                UidLogListView.Items.Insert(0, $"[INFO] Existing profile loaded: {existingStudent.FullName}");
-                            }
-                            else
-                            {
-                                // THE FIX: Smart Clear
-                                // If the guard was previously looking at an existing profile, but then scanned 
-                                // a completely NEW unassigned card, wipe the fields so they don't accidentally
-                                // bind the previous student's data to the new card!
-                                if (_isExistingProfile)
-                                {
-                                    ClearForm();
-                                }
-
-                                NfcUidTextBox.Text = uid;
-                                _isExistingProfile = false;
-                                PinPasswordBox.PlaceholderText = "****";
-                                UidLogListView.Items.Insert(0, $"[INFO] New unassigned card scanned: {uid}");
-                            }
+                            NfcUidTextBox.Text = uid;
+                            PinPasswordBox.PlaceholderText = "****";
+                            UidLogListView.Items.Insert(0, $"[INFO] New unassigned card scanned: {uid}");
 
                             string currentId = StudentIdTextBox.Text.Trim();
                             string generatedQr = BuildQrCredential(currentId);
@@ -219,10 +188,7 @@ namespace NFC_System
                             {
                                 QrCodeImage.Visibility = Visibility.Collapsed;
                                 QrPlaceholderPanel.Visibility = Visibility.Visible;
-                                if (!_isExistingProfile)
-                                {
-                                    UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
-                                }
+                                UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
                             }
 
                             PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
@@ -265,14 +231,10 @@ namespace NFC_System
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(pin))
+            // THE FIX: PIN is strictly required 100% of the time now, since this is only for new profiles
+            if (string.IsNullOrWhiteSpace(pin) || pin.Length != 4 || !pin.All(char.IsDigit))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] A 4-digit PIN is strictly required for new enrollments.");
-                return;
-            }
-            else if (pin.Length != 4 || !pin.All(char.IsDigit))
-            {
-                UidLogListView.Items.Insert(0, "[ERROR] If setting a PIN, it must be exactly 4 numeric digits.");
                 return;
             }
 
@@ -342,7 +304,6 @@ namespace NFC_System
             PinPasswordBox.Password = "";
             QrCredentialTextBox.Text = "";
             QrCodeImage.Source = null;
-            _isExistingProfile = false;
             PinPasswordBox.PlaceholderText = "****";
             QrCodeImage.Visibility = Visibility.Collapsed;
             QrPlaceholderPanel.Visibility = Visibility.Visible;

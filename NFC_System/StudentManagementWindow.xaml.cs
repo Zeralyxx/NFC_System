@@ -645,6 +645,21 @@ namespace NFC_System
 
         private async void DeleteStudentButton_Click(object sender, RoutedEventArgs e)
         {
+            if (StudentListView.SelectedItem is not StudentRecord selected) return;
+
+            ContentDialog confirmDialog = new ContentDialog
+            {
+                Title = "Confirm Deletion",
+                Content = $"Are you absolutely sure you want to completely delete the profile and credentials for {selected.FullName} ({selected.StudentId})? This action cannot be undone.",
+                PrimaryButtonText = "Delete Profile",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await confirmDialog.ShowAsync();
+            if (result != ContentDialogResult.Primary) return;
+
             _pendingAction = AdminActionType.DeleteIndividual;
 
             // Master Admins bypass the Sudo prompt entirely

@@ -102,7 +102,8 @@ public sealed class DatabaseService
                 is_granted BOOLEAN,
                 error_code VARCHAR(100),
                 error_message TEXT,
-                remarks TEXT
+                remarks TEXT,
+                synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
             CREATE TABLE IF NOT EXISTS alerts (
@@ -140,7 +141,8 @@ public sealed class DatabaseService
                 student_id VARCHAR(50),
                 verification_mode VARCHAR(50),
                 status VARCHAR(50),
-                remarks TEXT
+                remarks TEXT,
+                synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
             CREATE TABLE IF NOT EXISTS staff (
@@ -154,6 +156,51 @@ public sealed class DatabaseService
         {
             await schemaCmd.ExecuteNonQueryAsync();
         }
+
+        // Auto-Migration: If the database already existed before this update, safely inject the new column
+        try
+        {
+            using var alterCmd1 = new MySqlCommand("ALTER TABLE verification_logs ADD COLUMN synced_to_cloud BOOLEAN DEFAULT FALSE;", connection);
+            await alterCmd1.ExecuteNonQueryAsync();
+        }
+        catch { /* Column already exists, safe to ignore */ }
+
+        try
+        {
+            using var alterCmd2 = new MySqlCommand("ALTER TABLE event_attendance ADD COLUMN synced_to_cloud BOOLEAN DEFAULT FALSE;", connection);
+            await alterCmd2.ExecuteNonQueryAsync();
+        }
+        catch { /* Column already exists, safe to ignore */ }
+    }
+
+    // =========================================================================
+    // CLOUD CLEANUP (TRUE MIRRORING FOR DIRECTORIES)
+    // =========================================================================
+    private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
+    {
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{collectionName}?pageSize=1000";
+        try
+        {
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return;
+
+            var json = await response.Content.ReadAsStringAsync();
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return;
+
+            foreach (var document in documents.EnumerateArray())
+            {
+                string docName = document.GetProperty("name").GetString() ?? "";
+                string cloudId = Uri.UnescapeDataString(docName.Split('/').LastOrDefault() ?? "");
+
+                if (!string.IsNullOrWhiteSpace(cloudId) && !localIds.Contains(cloudId))
+                {
+                    await _httpClient.DeleteAsync($"https://firestore.googleapis.com/v1/{docName}");
+                }
+            }
+        }
+        catch { /* Silently handle cleanup failures */ }
     }
 
     // =========================================================================
@@ -237,6 +284,8 @@ public sealed class DatabaseService
     public async Task<int> PushStudentsToCloudAsync()
     {
         int pushedCount = 0;
+        var localIds = new HashSet<string>();
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
@@ -249,6 +298,8 @@ public sealed class DatabaseService
             {
                 string studentId = Value(reader["student_id"]);
                 if (string.IsNullOrWhiteSpace(studentId)) continue;
+
+                localIds.Add(studentId);
 
                 var firestorePayload = new
                 {
@@ -279,6 +330,8 @@ public sealed class DatabaseService
                 if (response.IsSuccessStatusCode) pushedCount++;
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
+
+            await DeleteOrphanedCloudDocumentsAsync("students", localIds);
         }
         catch (Exception ex) { throw new Exception($"Student Upload Error: {ex.Message}"); }
 
@@ -340,6 +393,8 @@ public sealed class DatabaseService
     public async Task<int> PushStaffToCloudAsync()
     {
         int pushedCount = 0;
+        var localIds = new HashSet<string>();
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
@@ -352,6 +407,8 @@ public sealed class DatabaseService
             {
                 string nfcUid = Value(reader["nfc_uid"]);
                 if (string.IsNullOrWhiteSpace(nfcUid)) continue;
+
+                localIds.Add(nfcUid);
 
                 var firestorePayload = new
                 {
@@ -373,6 +430,8 @@ public sealed class DatabaseService
                 if (response.IsSuccessStatusCode) pushedCount++;
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
+
+            await DeleteOrphanedCloudDocumentsAsync("staff", localIds);
         }
         catch (Exception ex) { throw new Exception($"Staff Upload Error: {ex.Message}"); }
 
@@ -425,6 +484,8 @@ public sealed class DatabaseService
     public async Task<int> PushCoursesToCloudAsync()
     {
         int pushedCount = 0;
+        var localIds = new HashSet<string>();
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
@@ -437,6 +498,8 @@ public sealed class DatabaseService
             {
                 string courseName = Value(reader["course_name"]);
                 if (string.IsNullOrWhiteSpace(courseName)) continue;
+
+                localIds.Add(courseName);
 
                 var firestorePayload = new
                 {
@@ -456,6 +519,8 @@ public sealed class DatabaseService
                 if (response.IsSuccessStatusCode) pushedCount++;
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
+
+            await DeleteOrphanedCloudDocumentsAsync("courses", localIds);
         }
         catch (Exception ex) { throw new Exception($"Course Upload Error: {ex.Message}"); }
 
@@ -525,6 +590,8 @@ public sealed class DatabaseService
     public async Task<int> PushEventsToCloudAsync()
     {
         int pushedCount = 0;
+        var localIds = new HashSet<string>();
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
@@ -537,6 +604,8 @@ public sealed class DatabaseService
             {
                 string eventId = Value(reader["event_id"]);
                 if (string.IsNullOrWhiteSpace(eventId)) continue;
+
+                localIds.Add(eventId);
 
                 var firestorePayload = new
                 {
@@ -563,6 +632,8 @@ public sealed class DatabaseService
                 if (response.IsSuccessStatusCode) pushedCount++;
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
+
+            await DeleteOrphanedCloudDocumentsAsync("events", localIds);
         }
         catch (Exception ex) { throw new Exception($"Events Upload Error: {ex.Message}"); }
 
@@ -613,6 +684,8 @@ public sealed class DatabaseService
     public async Task<int> PushEventApprovedStudentsToCloudAsync()
     {
         int pushedCount = 0;
+        var localIds = new HashSet<string>();
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
@@ -628,6 +701,9 @@ public sealed class DatabaseService
 
                 if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(studentId)) continue;
 
+                string combinedId = $"{eventId}_{studentId}";
+                localIds.Add(combinedId);
+
                 var firestorePayload = new
                 {
                     fields = new
@@ -640,12 +716,14 @@ public sealed class DatabaseService
                 string jsonPayload = JsonSerializer.Serialize(firestorePayload);
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-                string docId = Uri.EscapeDataString($"{eventId}_{studentId}");
+                string docId = Uri.EscapeDataString(combinedId);
                 string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students/{docId}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode) pushedCount++;
             }
+
+            await DeleteOrphanedCloudDocumentsAsync("event_approved_students", localIds);
         }
         catch (Exception ex) { throw new Exception($"Approved Roster Upload Error: {ex.Message}"); }
 
@@ -660,15 +738,19 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
+            // Select ALL pending/un-synced logs (no LIMIT)
             using var cmd = new MySqlCommand(@"
                 SELECT id, timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks 
                 FROM verification_logs 
-                ORDER BY timestamp DESC LIMIT 100", connection);
+                WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL
+                ORDER BY timestamp ASC", connection);
 
             using var reader = await cmd.ExecuteReaderAsync();
+            var pendingLogs = new List<(int Id, string JSON, string CloudDocId)>();
+
             while (await reader.ReadAsync())
             {
-                string id = reader["id"].ToString() ?? Guid.NewGuid().ToString();
+                int dbId = Convert.ToInt32(reader["id"]);
                 string firestoreTimestamp = Convert.ToDateTime(reader["timestamp"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
                 var firestorePayload = new
@@ -688,13 +770,26 @@ public sealed class DatabaseService
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                pendingLogs.Add((dbId, jsonPayload, $"log_{dbId}"));
+            }
+            reader.Close();
 
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/verification_logs/log_{id}";
+            // Upload all pending logs to Firebase and mark them as synced in MySQL
+            foreach (var log in pendingLogs)
+            {
+                var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/verification_logs/{log.CloudDocId}";
 
                 var response = await _httpClient.PatchAsync(url, content);
-                if (response.IsSuccessStatusCode) pushedCount++;
-                else throw new Exception(await response.Content.ReadAsStringAsync());
+                if (response.IsSuccessStatusCode)
+                {
+                    pushedCount++;
+
+                    // Mark as synced locally
+                    using var markCmd = new MySqlCommand("UPDATE verification_logs SET synced_to_cloud = 1 WHERE id = @id", connection);
+                    markCmd.Parameters.AddWithValue("@id", log.Id);
+                    await markCmd.ExecuteNonQueryAsync();
+                }
             }
         }
         catch (Exception ex) { throw new Exception($"Log Upload Error: {ex.Message}"); }
@@ -710,15 +805,19 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
+            // Select ALL pending/un-synced event logs (no LIMIT)
             using var cmd = new MySqlCommand(@"
                 SELECT id, timestamp, event_id, student_id, verification_mode, status, remarks 
                 FROM event_attendance 
-                ORDER BY timestamp DESC LIMIT 200", connection);
+                WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL
+                ORDER BY timestamp ASC", connection);
 
             using var reader = await cmd.ExecuteReaderAsync();
+            var pendingLogs = new List<(int Id, string JSON, string CloudDocId)>();
+
             while (await reader.ReadAsync())
             {
-                string id = reader["id"].ToString() ?? Guid.NewGuid().ToString();
+                int dbId = Convert.ToInt32(reader["id"]);
                 string firestoreTimestamp = Convert.ToDateTime(reader["timestamp"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
                 var firestorePayload = new
@@ -735,13 +834,26 @@ public sealed class DatabaseService
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                pendingLogs.Add((dbId, jsonPayload, $"att_{dbId}"));
+            }
+            reader.Close();
 
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance/att_{id}";
+            // Upload all pending logs to Firebase and mark them as synced in MySQL
+            foreach (var log in pendingLogs)
+            {
+                var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance/{log.CloudDocId}";
 
                 var response = await _httpClient.PatchAsync(url, content);
-                if (response.IsSuccessStatusCode) pushedCount++;
-                else throw new Exception(await response.Content.ReadAsStringAsync());
+                if (response.IsSuccessStatusCode)
+                {
+                    pushedCount++;
+
+                    // Mark as synced locally
+                    using var markCmd = new MySqlCommand("UPDATE event_attendance SET synced_to_cloud = 1 WHERE id = @id", connection);
+                    markCmd.Parameters.AddWithValue("@id", log.Id);
+                    await markCmd.ExecuteNonQueryAsync();
+                }
             }
         }
         catch (Exception ex) { throw new Exception($"Event Attendance Upload Error: {ex.Message}"); }
