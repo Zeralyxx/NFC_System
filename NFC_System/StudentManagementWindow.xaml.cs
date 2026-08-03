@@ -145,6 +145,10 @@ namespace NFC_System
         // ====================================================================
         private void TryConnectSerial(string portName)
         {
+            // THE FIX (ITEM 11): Check if the port is already open before trying to connect. 
+            // This prevents "Access Denied" crashes when the data grid refreshes.
+            if (_serialPort != null && _serialPort.IsOpen) return;
+
             try
             {
                 _serialPort = new SerialPort(portName, 115200);
@@ -571,7 +575,14 @@ namespace NFC_System
             string courseFilter = CourseFilterComboBox.SelectedItem?.ToString() ?? "All Courses";
 
             var filteredData = _allStudents.Where(s =>
-                (string.IsNullOrEmpty(searchTerm) || s.FullName.ToLower().Contains(searchTerm) || s.StudentId.Contains(searchTerm)) &&
+                (string.IsNullOrEmpty(searchTerm) ||
+                 (s.FullName != null && s.FullName.ToLower().Contains(searchTerm)) ||
+                 (s.StudentId != null && s.StudentId.ToLower().Contains(searchTerm)) ||
+                 (s.Course != null && s.Course.ToLower().Contains(searchTerm)) ||
+                 (s.YearLevel != null && s.YearLevel.ToLower().Contains(searchTerm)) ||
+                 (s.SectionName != null && s.SectionName.ToLower().Contains(searchTerm)) ||
+                 (s.Status != null && s.Status.ToLower().Contains(searchTerm)) ||
+                 (s.NfcUid != null && s.NfcUid.ToLower().Contains(searchTerm))) &&
                 (statusFilter == "All Students" ||
                  (statusFilter == "Active Only" && s.Status == "Active") ||
                  (statusFilter == "Locked Out" && s.PinLocked) ||
@@ -757,7 +768,11 @@ namespace NFC_System
                 filtered = filtered.Where(s =>
                     (s.FullName != null && s.FullName.ToLower().Contains(query)) ||
                     (s.StudentId != null && s.StudentId.ToLower().Contains(query)) ||
-                    (s.NfcUid != null && s.NfcUid.ToLower().Contains(query)));
+                    (s.NfcUid != null && s.NfcUid.ToLower().Contains(query)) ||
+                    (s.Course != null && s.Course.ToLower().Contains(query)) ||
+                    (s.YearLevel != null && s.YearLevel.ToLower().Contains(query)) ||
+                    (s.SectionName != null && s.SectionName.ToLower().Contains(query)) ||
+                    (s.Status != null && s.Status.ToLower().Contains(query)));
             }
 
             string course = PopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";

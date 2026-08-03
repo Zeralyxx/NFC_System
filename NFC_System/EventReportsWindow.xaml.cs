@@ -409,7 +409,10 @@ namespace NFC_System
             {
                 filtered = filtered.Where(l =>
                     (l.FullName != null && l.FullName.ToLower().Contains(searchQuery)) ||
-                    (l.StudentId != null && l.StudentId.ToLower().Contains(searchQuery)));
+                    (l.StudentId != null && l.StudentId.ToLower().Contains(searchQuery)) ||
+                    (l.Course != null && l.Course.ToLower().Contains(searchQuery)) ||
+                    (l.Section != null && l.Section.ToLower().Contains(searchQuery)) ||
+                    (l.Timestamp != null && l.Timestamp.ToLower().Contains(searchQuery)));
             }
 
             string course = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
@@ -538,7 +541,10 @@ namespace NFC_System
             {
                 filtered = filtered.Where(l =>
                     (l.FullName != null && l.FullName.ToLower().Contains(query)) ||
-                    (l.StudentId != null && l.StudentId.ToLower().Contains(query)));
+                    (l.StudentId != null && l.StudentId.ToLower().Contains(query)) ||
+                    (l.Course != null && l.Course.ToLower().Contains(query)) ||
+                    (l.Section != null && l.Section.ToLower().Contains(query)) ||
+                    (l.Timestamp != null && l.Timestamp.ToLower().Contains(query)));
             }
 
             if (UnivPopupDatePicker.Date.HasValue)
@@ -604,9 +610,9 @@ namespace NFC_System
 
         private async void ExportButton_Click(object sender, RoutedEventArgs e)
         {
-            var logsToExport = AttendanceListView.ItemsSource as IEnumerable<EventAttendanceViewModel>;
+            var rawLogs = AttendanceListView.ItemsSource as IEnumerable<EventAttendanceViewModel>;
 
-            if (logsToExport == null || !logsToExport.Any())
+            if (rawLogs == null || !rawLogs.Any())
             {
                 ContentDialog emptyDialog = new ContentDialog
                 {
@@ -618,6 +624,12 @@ namespace NFC_System
                 await emptyDialog.ShowAsync();
                 return;
             }
+
+            // THE FIX (ITEM 3): Deduplicate by StudentId so each student appears exactly once
+            var logsToExport = rawLogs
+                .GroupBy(l => l.StudentId)
+                .Select(g => g.First())
+                .ToList();
 
             var picker = new Windows.Storage.Pickers.FileSavePicker();
 
@@ -644,7 +656,7 @@ namespace NFC_System
             {
                 var csvData = new System.Text.StringBuilder();
 
-                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Event Completion Status");
+                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Latest Action,Event Completion Status");
 
                 foreach (var log in logsToExport)
                 {
@@ -661,6 +673,66 @@ namespace NFC_System
                     {
                         Title = "Export Complete",
                         Content = $"Your report was successfully exported and saved to:\n\n{file.Path}",
+                        CloseButtonText = "OK",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await successDialog.ShowAsync();
+                }
+            }
+        }
+
+        private async void UnivExportButton_Click(object sender, RoutedEventArgs e)
+        {
+            var logsToExport = UniversityAuditListView.ItemsSource as IEnumerable<VerificationLogRecord>;
+
+            if (logsToExport == null || !logsToExport.Any())
+            {
+                ContentDialog emptyDialog = new ContentDialog
+                {
+                    Title = "Nothing to Export",
+                    Content = "There are no campus traffic records to export based on your current filters.",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await emptyDialog.ShowAsync();
+                return;
+            }
+
+            var picker = new Windows.Storage.Pickers.FileSavePicker();
+
+            IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+            picker.FileTypeChoices.Add("Excel CSV Document", new List<string>() { ".csv" });
+
+            picker.SuggestedFileName = $"Campus_Traffic_Report_{DateTime.Now:yyyyMMdd}";
+
+            Windows.Storage.StorageFile file = await picker.PickSaveFileAsync();
+
+            if (file != null)
+            {
+                var csvData = new System.Text.StringBuilder();
+
+                // Build header
+                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Status");
+
+                // Append rows
+                foreach (var log in logsToExport)
+                {
+                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.Status}\"");
+                }
+
+                Windows.Storage.CachedFileManager.DeferUpdates(file);
+                await Windows.Storage.FileIO.WriteTextAsync(file, csvData.ToString(), Windows.Storage.Streams.UnicodeEncoding.Utf8);
+                Windows.Storage.Provider.FileUpdateStatus status = await Windows.Storage.CachedFileManager.CompleteUpdatesAsync(file);
+
+                if (status == Windows.Storage.Provider.FileUpdateStatus.Complete)
+                {
+                    ContentDialog successDialog = new ContentDialog
+                    {
+                        Title = "Export Complete",
+                        Content = $"Your campus traffic report was successfully exported and saved to:\n\n{file.Path}",
                         CloseButtonText = "OK",
                         XamlRoot = this.Content.XamlRoot
                     };

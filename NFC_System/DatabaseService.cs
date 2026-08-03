@@ -2213,6 +2213,19 @@ public sealed class DatabaseService
         attendeeCommand.Parameters.AddWithValue("@student_id", studentId);
         return Convert.ToInt32(await attendeeCommand.ExecuteScalarAsync()) > 0;
     }
+    public async Task<bool> HasStudentEnteredEventAsync(string eventId, string studentId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            SELECT COUNT(*) FROM event_attendance 
+            WHERE event_id = @eid AND student_id = @sid AND status = 'PRESENT'", connection);
+        command.Parameters.AddWithValue("@eid", eventId);
+        command.Parameters.AddWithValue("@sid", studentId);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
 
     public async Task RecordAttendanceAsync(string? eventId, string studentId, VerificationMode mode, string status, string remarks)
     {

@@ -44,85 +44,96 @@
             </Grid.ColumnDefinitions>
 
             <!-- Left Column: Administration Modules -->
-            <ScrollViewer x:Name="AdminScrollViewer" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
-                <StackPanel Spacing="24">
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                    <!-- Cloud Synchronization Module -->
-                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Database Synchronization" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <TextBlock Text="Sync local gate terminal records with the online master database." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                <!-- THE FIX (ITEM 8): Sticky Status Banner Pinned to Top -->
+                <Border Grid.Row="0" Margin="0,0,16,24" Padding="16,12" CornerRadius="8" Background="#15FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1">
+                    <TextBlock x:Name="StatusTextBlock" Text="System Ready: Waiting for input..." Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                </Border>
 
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                                <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                            </Grid>
+                <ScrollViewer x:Name="AdminScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                    <StackPanel Spacing="24">
 
-                            <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                        </StackPanel>
-                    </Border>
+                        <!-- Cloud Synchronization Module -->
+                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Database Synchronization" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock Text="Sync local gate terminal records with the online master database." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
 
-                    <!-- PIN Lockout Recovery & Reset -->
-                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Change Student PIN" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="ResetStudentIdTextBox" Grid.Column="0" Header="Student ID" PlaceholderText="e.g. 26-00001"/>
-                                <PasswordBox x:Name="NewPinPasswordBox" Grid.Column="1" Header="New 4-Digit PIN" MaxLength="4" PlaceholderText="****"/>
-                            </Grid>
-                            <Button x:Name="ResetPinButton" Content="Set New PIN &amp; Unlock Account" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-                        </StackPanel>
-                    </Border>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                    <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                </Grid>
 
-                    <!-- Academic Course Management -->
-                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <TextBlock Text="Add new degree programs or safely remove existing ones." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-                            <Button Content="Manage Courses" Click="OpenManageCoursesDialog_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                        </StackPanel>
-                    </Border>
+                                <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                            </StackPanel>
+                        </Border>
 
-                    <!-- Staff Access & RBAC Registration -->
-                    <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                        <!-- PIN Lockout Recovery & Reset -->
+                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Change Student PIN" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ResetStudentIdTextBox" Grid.Column="0" Header="Student ID" PlaceholderText="e.g. 26-00001"/>
+                                    <PasswordBox x:Name="NewPinPasswordBox" Grid.Column="1" Header="New 4-Digit PIN" MaxLength="4" PlaceholderText="****"/>
+                                </Grid>
+                                <Button x:Name="ResetPinButton" Content="Set New PIN &amp; Unlock Account" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                            </StackPanel>
+                        </Border>
 
-                            <Grid ColumnSpacing="12" RowSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+                        <!-- Academic Course Management -->
+                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock Text="Add new degree programs or safely remove existing ones." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                <Button Content="Manage Courses" Click="OpenManageCoursesDialog_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                            </StackPanel>
+                        </Border>
 
-                                <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
-                                <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
-                                    <ComboBoxItem Content="Security Personnel"/>
-                                    <ComboBoxItem Content="Administrator"/>
-                                    <ComboBoxItem Content="Master Administrator"/>
-                                </ComboBox>
+                        <!-- Staff Access & RBAC Registration -->
+                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
 
-                                <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
-                                <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="1" Content="Register Staff Member" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+                                <Grid ColumnSpacing="12" RowSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
 
-                    <TextBlock x:Name="StatusTextBlock" Text="Ready" Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
-                </StackPanel>
-            </ScrollViewer>
+                                    <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
+                                    <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
+                                        <ComboBoxItem Content="Security Personnel"/>
+                                        <ComboBoxItem Content="Administrator"/>
+                                        <ComboBoxItem Content="Master Administrator"/>
+                                    </ComboBox>
+
+                                    <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
+                                    <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="1" Content="Register Staff Member" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
 
             <!-- Right Column: Live Feed & Explorer Trigger -->
             <Grid Grid.Column="1" RowSpacing="24">
@@ -202,7 +213,7 @@
                                         <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                        
+
                                         <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                     </Grid>
                                 </DataTemplate>
@@ -328,7 +339,7 @@
                                 <TextBlock Grid.Column="1" Text="Log Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                
+
                                 <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             </Grid>
                         </Border>
@@ -359,7 +370,7 @@
                                         <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                        
+
                                         <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                     </Grid>
                                 </DataTemplate>

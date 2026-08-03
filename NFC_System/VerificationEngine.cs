@@ -140,6 +140,21 @@ public sealed class VerificationEngine
                 return Denied(uid, student, "ACCESS DENIED", "Exit blocked because student is already outside", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | IRREGULAR EXIT");
             }
 
+            if (transactionType == TransactionType.Exit && !string.IsNullOrWhiteSpace(eventId))
+            {
+                dbTimer.Restart();
+                bool hasEntered = await _database.HasStudentEnteredEventAsync(eventId, student.StudentId);
+                dbTimer.Stop();
+                dbQueryMs += dbTimer.Elapsed.TotalMilliseconds;
+
+                if (!hasEntered)
+                {
+                    string error = "IRREGULAR_EVENT_EXIT";
+                    await SafeLogEventAsync(eventId, student.StudentId, mode, "DENIED", "Event exit attempted without prior check-in.");
+                    return Denied(uid, student, "ATTENDANCE DENIED", "Cannot check out without checking in first", error, $"{scanTime} | {student.StudentId} | {student.FullName} | EVENT DENIED | IRREGULAR EXIT");
+                }
+            }
+
             if (transactionType == TransactionType.EventAttendance && !string.IsNullOrWhiteSpace(eventId))
             {
                 dbTimer.Restart();

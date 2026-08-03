@@ -204,7 +204,10 @@
                                 <TextBlock Text="General Access Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
                                 <TextBlock Text="Filterable stream of all main gate interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
                             </StackPanel>
-                            <Button Grid.Column="1" Content="⛶ Open Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                                <Button Content="⛶ Open Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                            </StackPanel>
                         </Grid>
 
                         <!-- University Filter Bar -->

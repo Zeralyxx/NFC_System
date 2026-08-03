@@ -433,13 +433,20 @@ namespace NFC_System
 
             if (newState == AuthenticationStage.AccessGranted)
             {
-                await Task.Delay(1000);
+                // THE FIX: Slash delay to 400ms for Event/Fast modes to allow rapid queue processing. 
+                // Standard campus gates remain at 1000ms to ensure students read the screen.
+                int delayMs = (_originatingMode == "Event" || _currentMode == VerificationMode.Fast) ? 400 : 1000;
+
+                await Task.Delay(delayMs);
                 if (_currentStage == AuthenticationStage.AccessGranted)
                     SetState(AuthenticationStage.Idle);
             }
             else if (newState == AuthenticationStage.AccessDenied)
             {
-                await Task.Delay(3500);
+                // THE FIX: Slash error delay to 1.2s for events, standard gates remain at 3.5s.
+                int delayMs = (_originatingMode == "Event" || _currentMode == VerificationMode.Fast) ? 1200 : 3500;
+
+                await Task.Delay(delayMs);
                 if (_currentStage == AuthenticationStage.AccessDenied)
                     SetState(AuthenticationStage.Idle);
             }

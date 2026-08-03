@@ -55,6 +55,8 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Database setup failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 
@@ -83,6 +85,21 @@ namespace NFC_System
             });
         }
 
+        // THE FIX (ITEM 7): Native Error SFX Beep for failures
+        private void PlayErrorAlert()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(2000, 300);
+                    System.Threading.Thread.Sleep(100);
+                    Console.Beep(2000, 300);
+                }
+                catch { }
+            });
+        }
+
         private void TryConnectSerial(string portName)
         {
             try
@@ -92,10 +109,13 @@ namespace NFC_System
                 _serialPort.DataReceived += SerialPort_DataReceived;
                 _serialPort.Open();
                 StatusTextBlock.Text = $"Ready. NFC connected on {portName}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
             }
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"NFC disconnected: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 
@@ -146,6 +166,7 @@ namespace NFC_System
                                 AdminAuthDialog.Hide();
                                 StatusTextBlock.Text = "Authorization Denied: Tapped card is not an Administrator.";
                                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                                PlayErrorAlert();
                             }
                         }
                         else
@@ -153,6 +174,7 @@ namespace NFC_System
                             StaffNfcUidTextBox.Text = uid;
                             StatusTextBlock.Text = "Card scanned. Ready to register staff.";
                             StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                            PlaySuccessPing();
                         }
                     });
                 }
@@ -190,6 +212,8 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Could not refresh dashboard: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 
@@ -197,8 +221,6 @@ namespace NFC_System
         {
             _ = RefreshDashboardAsync();
         }
-
-
 
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
@@ -295,9 +317,36 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = "Staff Name and NFC UID are strictly required.";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
                 return;
             }
 
+            // THE FIX (ITEM 9): Check for existing staff assignment to prevent accidental overwrites
+            var existingStaff = await _database.GetStaffDetailsAsync(uid);
+            if (existingStaff.Role != null)
+            {
+                ContentDialog overwriteDialog = new ContentDialog
+                {
+                    Title = "NFC Card Already in Use",
+                    Content = $"This NFC card is currently registered to:\n\nName: {existingStaff.FullName}\nRole: {existingStaff.Role}\n\nDo you want to overwrite this assignment and register the card to {fullName}?",
+                    PrimaryButtonText = "Yes, Overwrite",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                PlayErrorAlert(); // Alert the user to the conflict
+                var dialogResult = await overwriteDialog.ShowAsync();
+
+                if (dialogResult != ContentDialogResult.Primary)
+                {
+                    StatusTextBlock.Text = "Staff registration cancelled.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                    return;
+                }
+            }
+
+            // Proceed with registration / Master Admin check
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecuteStaffRegistration(uid, fullName, role, AppSession.CurrentStaffName);
@@ -344,6 +393,7 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"Registration failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 
@@ -403,6 +453,7 @@ namespace NFC_System
             GetNewDataButton.IsEnabled = false;
             SyncProgressBar.Visibility = Visibility.Visible;
             StatusTextBlock.Text = "Uploading local records to cloud database...";
+            StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
             try
             {
@@ -452,6 +503,7 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"Upload failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
 
                 await ShowSyncResultDialog("Upload Failed", $"An error occurred while syncing to the cloud:\n\n{ex.Message}");
             }
@@ -507,6 +559,7 @@ namespace NFC_System
             UploadDataButton.IsEnabled = false;
             SyncProgressBar.Visibility = Visibility.Visible;
             StatusTextBlock.Text = "Downloading latest records and logs from cloud database...";
+            StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
             try
             {
@@ -557,6 +610,7 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"Download failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
 
                 await ShowSyncResultDialog("Download Failed", $"An error occurred while pulling from the cloud:\n\n{ex.Message}");
             }
@@ -579,6 +633,7 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = "Enter a student ID and a 4-digit PIN.";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
                 return;
             }
 
@@ -590,6 +645,7 @@ namespace NFC_System
                 ResetStudentIdTextBox.Text = "";
                 StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
 
                 try
                 {
@@ -603,6 +659,7 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"Could not reset PIN: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 
@@ -639,6 +696,7 @@ namespace NFC_System
             {
                 CourseDialogStatusText.Text = "Please enter a valid course name.";
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
                 return;
             }
 
@@ -648,6 +706,7 @@ namespace NFC_System
 
                 CourseDialogStatusText.Text = $"Course '{courseName}' added successfully.";
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
                 DialogNewCourseTextBox.Text = "";
 
                 await LoadCoursesIntoDialogAsync();
@@ -657,6 +716,7 @@ namespace NFC_System
             {
                 CourseDialogStatusText.Text = $"Could not add course: {ex.Message}";
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 
@@ -668,10 +728,10 @@ namespace NFC_System
             {
                 CourseDialogStatusText.Text = "Please select a course to delete.";
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
                 return;
             }
 
-            // THE FIX: Hide the current ManageCoursesDialog so we can safely open the confirmation/warning dialogs
             ManageCoursesDialog.Hide();
 
             try
@@ -688,9 +748,9 @@ namespace NFC_System
                         CloseButtonText = "Understood",
                         XamlRoot = this.Content.XamlRoot
                     };
+                    PlayErrorAlert();
                     await warningDialog.ShowAsync();
 
-                    // Bring back the main course dialog
                     await ManageCoursesDialog.ShowAsync();
                     return;
                 }
@@ -715,20 +775,20 @@ namespace NFC_System
 
                     CourseDialogStatusText.Text = $"Course '{courseName}' was successfully deleted.";
                     CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                    PlaySuccessPing();
 
                     await LoadCoursesIntoDialogAsync();
                     await RefreshDashboardAsync();
                 }
 
-                // Bring back the main course dialog regardless of if they deleted or cancelled
                 await ManageCoursesDialog.ShowAsync();
             }
             catch (Exception ex)
             {
                 CourseDialogStatusText.Text = $"Could not delete course: {ex.Message}";
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
 
-                // Bring back the main course dialog to show the error
                 await ManageCoursesDialog.ShowAsync();
             }
         }
@@ -749,7 +809,6 @@ namespace NFC_System
                 folderPicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop;
                 folderPicker.FileTypeFilter.Add("*");
 
-                // Required WinUI 3 initialization for Pickers
                 var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
                 WinRT.Interop.InitializeWithWindow.Initialize(folderPicker, hwnd);
 
@@ -770,6 +829,7 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"Export failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
         }
 

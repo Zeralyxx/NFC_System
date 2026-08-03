@@ -34,6 +34,9 @@ namespace NFC_System
         private bool _isFirstTimeSetup = false;
         private string _pendingMasterUid = "";
 
+        // APP LIFECYCLE
+        private bool _isForceClosing = false;
+
         // ====================================================================
         // CLOUD FIRESTORE CONFIGURATION
         // ====================================================================
@@ -46,6 +49,12 @@ namespace NFC_System
             this.InitializeComponent();
             MaximizeWindow();
 
+            // THE FIX (ITEM 10): Hook into native window closing event to intercept exit
+            IntPtr hWnd = WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.Closing += AppWindow_Closing;
+
             this.Closed += MainWindow_Closed;
 
             // Load the dynamic IP configuration BEFORE anything else runs
@@ -54,6 +63,62 @@ namespace NFC_System
             if (this.Content is FrameworkElement rootElement)
             {
                 rootElement.Loaded += MainWindow_Loaded;
+            }
+        }
+
+        private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (_isForceClosing) return;
+
+            args.Cancel = true; // Always intercept the initial close command
+
+            ContentDialog exitDialog = new ContentDialog
+            {
+                Title = "Exit Application",
+                Content = "Wait! You may have unsynced data. Would you like to push it to the cloud before exiting?",
+                PrimaryButtonText = "Push to Cloud & Exit",
+                SecondaryButtonText = "Exit Anyway",
+                CloseButtonText = "Cancel",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await exitDialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary)
+            {
+                // Mask the UI to show syncing status
+                DashboardContent.Visibility = Visibility.Collapsed;
+                SetupOverlay.Visibility = Visibility.Collapsed;
+                LoginOverlay.Visibility = Visibility.Visible;
+
+                LoginStatusText.Text = "Pushing data to cloud. Please do not force close...";
+                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                LoginLoadingRing.IsActive = true;
+                LoginLoadingRing.Visibility = Visibility.Visible;
+
+                try
+                {
+                    if (await _database.TestConnectionAsync())
+                    {
+                        await _database.SyncOfflineLogsToServerAsync();
+                        await _database.PushStudentsToCloudAsync();
+                        await _database.PushStaffToCloudAsync();
+                        await _database.PushCoursesToCloudAsync();
+                        await _database.PushEventsToCloudAsync();
+                        await _database.PushEventApprovedStudentsToCloudAsync();
+                        await _database.PushLogsToCloudAsync();
+                        await _database.PushEventAttendanceToCloudAsync();
+                    }
+                }
+                catch { }
+
+                _isForceClosing = true;
+                Application.Current.Exit();
+            }
+            else if (result == ContentDialogResult.Secondary)
+            {
+                _isForceClosing = true;
+                Application.Current.Exit();
             }
         }
 
@@ -198,7 +263,6 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
-                // THE FIX: Provide the dynamic IP configuration interface if connection fails
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
                 LoginStatusText.Text = "Database connection failed.";
