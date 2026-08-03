@@ -218,8 +218,7 @@ namespace NFC_System
                 AttendeeManagementDialog.Title = $"Manage Event: {clickedEvent.EventId}";
 
                 // Load Event Name into Editor
-                EditEventNameTextBox.Text = clickedEvent.DisplayName ?? "";
-
+                EditEventNameTextBox.Text = clickedEvent.EventName ?? "";
                 // Show or Hide Attendee Management based on Restriction
                 if (!clickedEvent.IsRestricted)
                 {

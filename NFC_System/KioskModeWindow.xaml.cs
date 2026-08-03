@@ -532,6 +532,37 @@ namespace NFC_System
                 return;
             }
 
+            // --- FRONT-LINE RESTRICTION CHECK ---
+            // Blocks uninvited attendees immediately before engines or sessions are invoked
+            if (transType == TransactionType.EventAttendance && !string.IsNullOrEmpty(_eventId))
+            {
+                try
+                {
+                    var student = await _database.GetStudentByUidAsync(uid);
+                    if (student != null)
+                    {
+                        bool isAllowed = await _database.IsStudentAllowedForEventAsync(_eventId, student.StudentId);
+                        if (!isAllowed)
+                        {
+                            PlaySecurityAlert();
+                            _outcomeTitle = "RESTRICTED EVENT";
+                            _outcomeMessage = "You are not on the approved attendee list for this event.";
+                            LoadProfileData(student.FullName, student.StudentId);
+                            ExecuteStateChange(AuthenticationStage.AccessDenied);
+
+                            string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                            OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | UNINVITED");
+
+                            nfcTimer.Stop();
+                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, uid, transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", nfcTimer.Elapsed.TotalMilliseconds, 0));
+                            return;
+                        }
+                    }
+                }
+                catch { /* Ignore exceptions to allow the VerificationEngine to handle offline cache logic safely */ }
+            }
+            // ------------------------------------
+
             if (IsInvalidUid(uid))
             {
                 PlaySecurityAlert();
@@ -734,6 +765,38 @@ namespace NFC_System
                 LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / DOUBLE ENTRY");
                 return;
             }
+
+            // --- FRONT-LINE RESTRICTION CHECK (QR) ---
+            if (transType == TransactionType.EventAttendance && !string.IsNullOrEmpty(_eventId))
+            {
+                try
+                {
+                    var student = await _database.GetStudentByIdAsync(payload.Trim());
+                    if (student != null)
+                    {
+                        bool isAllowed = await _database.IsStudentAllowedForEventAsync(_eventId, student.StudentId);
+                        if (!isAllowed)
+                        {
+                            PlaySecurityAlert();
+                            _outcomeTitle = "RESTRICTED EVENT";
+                            _outcomeMessage = "You are not on the approved attendee list for this event.";
+                            LoadProfileData(student.FullName, student.StudentId);
+                            ExecuteStateChange(AuthenticationStage.AccessDenied);
+
+                            string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                            OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | UNINVITED");
+
+                            qrTimer.Stop();
+                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, payload.Trim(), transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", qrTimer.Elapsed.TotalMilliseconds, 0));
+
+                            LogPerformanceMetric("QR Validation (Restriction Check)", qrTimer.ElapsedMilliseconds, "DENIED / UNINVITED");
+                            return;
+                        }
+                    }
+                }
+                catch { /* Ignore exceptions to allow the VerificationEngine to handle offline cache logic safely */ }
+            }
+            // -----------------------------------------
 
             if (_activeSession == null)
             {
