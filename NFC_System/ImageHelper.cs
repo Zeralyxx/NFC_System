@@ -17,62 +17,92 @@ namespace NFC_System
         {
             if (photoData == null || photoData.Length == 0) return null;
 
+            var bitmap = new BitmapImage();
             using var stream = new InMemoryRandomAccessStream();
             await stream.WriteAsync(photoData.AsBuffer());
             stream.Seek(0);
-
-            var bitmap = new BitmapImage();
             await bitmap.SetSourceAsync(stream);
+
             return bitmap;
         }
 
         /// <summary>
-        /// Takes an uncompressed image stream, centers and crops it to a perfect square, 
-        /// resizes it to 250x250 pixels, and aggressively compresses it into a tiny JPEG byte array.
+        /// Takes an uncompressed image stream, safely calculates rotation, centers and crops it to a perfect square, 
+        /// resizes it to 250x250 pixels, strips transparency, and compresses it into a tiny JPEG byte array.
         /// </summary>
         public static async Task<byte[]> ProcessProfileImageAsync(IRandomAccessStream sourceStream)
         {
             var decoder = await BitmapDecoder.CreateAsync(sourceStream);
 
-            // 1. Calculate perfect square crop from the center
-            uint width = decoder.PixelWidth;
-            uint height = decoder.PixelHeight;
-            uint minDim = Math.Min(width, height);
-            uint xOffset = (width - minDim) / 2;
-            uint yOffset = (height - minDim) / 2;
+            // 1. Get dimensions with EXIF rotation safely applied
+            uint rawWidth = decoder.OrientedPixelWidth;
+            uint rawHeight = decoder.OrientedPixelHeight;
 
-            using var memStream = new InMemoryRandomAccessStream();
+            // 2. Calculate scaling so the shortest side becomes exactly 250 pixels
+            double ratio = (double)rawWidth / rawHeight;
+            uint scaledWidth, scaledHeight;
 
-            // 2. Setup JPEG Encoder at ~60% quality to crush file size
-            var propertySet = new BitmapPropertySet();
-            var qualityValue = new BitmapTypedValue(0.6, Windows.Foundation.PropertyType.Single);
-            propertySet.Add("ImageQuality", qualityValue);
-
-            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, memStream, propertySet);
-            encoder.SetSoftwareBitmap(await decoder.GetSoftwareBitmapAsync());
-
-            // 3. Apply the crop
-            encoder.BitmapTransform.Bounds = new BitmapBounds
+            if (rawWidth > rawHeight)
             {
-                X = xOffset,
-                Y = yOffset,
-                Width = minDim,
-                Height = minDim
+                scaledHeight = 250;
+                scaledWidth = (uint)Math.Round(250 * ratio);
+            }
+            else
+            {
+                scaledWidth = 250;
+                scaledHeight = (uint)Math.Round(250 / ratio);
+            }
+
+            // 3. Set up the Transform
+            // CRITICAL FIX: Because WinRT scales BEFORE it crops, the X/Y Bounds 
+            // must be calculated against the new Scaled dimensions, not the Raw dimensions!
+            var transform = new BitmapTransform
+            {
+                ScaledWidth = scaledWidth,
+                ScaledHeight = scaledHeight,
+                Bounds = new BitmapBounds
+                {
+                    X = (scaledWidth - 250) / 2,
+                    Y = (scaledHeight - 250) / 2,
+                    Width = 250,
+                    Height = 250
+                },
+                InterpolationMode = BitmapInterpolationMode.Fant
             };
 
-            // 4. Resize to exactly 250x250
-            encoder.BitmapTransform.ScaledWidth = 250;
-            encoder.BitmapTransform.ScaledHeight = 250;
-            encoder.BitmapTransform.InterpolationMode = BitmapInterpolationMode.Fant;
+            // 4. Extract the perfect 250x250 pixel data (ignoring transparency for safe JPEG encoding)
+            var pixelData = await decoder.GetPixelDataAsync(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Ignore,
+                transform,
+                ExifOrientationMode.RespectExifOrientation,
+                ColorManagementMode.DoNotColorManage);
+
+            var rawBytes = pixelData.DetachPixelData();
+
+            // 5. Encode the extracted pixels into a lightweight JPEG
+            using var memStream = new InMemoryRandomAccessStream();
+            var propertySet = new BitmapPropertySet();
+            propertySet.Add("ImageQuality", new BitmapTypedValue(0.7f, Windows.Foundation.PropertyType.Single)); // 70% quality
+
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, memStream, propertySet);
+
+            encoder.SetPixelData(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Ignore,
+                250, // Final Output Width
+                250, // Final Output Height
+                96,
+                96,
+                rawBytes);
 
             await encoder.FlushAsync();
 
-            // 5. Output the finished byte array
-            var bytes = new byte[memStream.Size];
+            var resultBytes = new byte[memStream.Size];
             memStream.Seek(0);
-            await memStream.ReadAsync(bytes.AsBuffer(), (uint)memStream.Size, InputStreamOptions.None);
+            await memStream.ReadAsync(resultBytes.AsBuffer(), (uint)memStream.Size, InputStreamOptions.None);
 
-            return bytes;
+            return resultBytes;
         }
     }
 }

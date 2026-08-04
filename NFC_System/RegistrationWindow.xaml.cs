@@ -267,6 +267,9 @@ namespace NFC_System
             string status = StatusComboBox.SelectedItem is ComboBoxItem item ? item.Content?.ToString() ?? "Active" : "Active";
             string course = CourseComboBox.SelectedItem?.ToString() ?? "";
 
+            // Capture the boolean value
+            bool isTemporary = IsTemporaryCheckBox.IsChecked == true;
+
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] Critical structural criteria missing (ID, Name, or NFC).");
@@ -315,13 +318,15 @@ namespace NFC_System
                     Status = status,
                     NfcUid = nfcUid,
                     QrCredential = qrCredential,
-                    PhotoData = _currentPhotoData // <-- THE FIX: Pass the byte array down to the database
+                    PhotoData = _currentPhotoData,
+                    IsTemporary = isTemporary // <-- THE FIX: Save flag to DB
                 };
 
                 await _database.SaveStudentAsync(student, pin);
 
-                UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {fullName}");
-                PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nEmail: {email}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
+                string tempTag = isTemporary ? "[TEMP] " : "";
+                UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {tempTag}{fullName}");
+                PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nEmail: {email}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nTemporary: {isTemporary}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
                 ClearForm();
             }
             catch (InvalidOperationException ex)
@@ -350,9 +355,9 @@ namespace NFC_System
             QrCodeImage.Visibility = Visibility.Collapsed;
             QrPlaceholderPanel.Visibility = Visibility.Visible;
             StatusComboBox.SelectedIndex = 0;
+            IsTemporaryCheckBox.IsChecked = false; // <-- THE FIX: Reset flag
             _duplicateWarningAcknowledged = false;
 
-            // THE FIX: Reset the photo
             _currentPhotoData = null;
             StudentPhotoPreview.ProfilePicture = null;
         }

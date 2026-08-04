@@ -403,6 +403,9 @@ public sealed class VerificationEngine
                 OfflineCacheService.SaveOfflineGateLog(student.StudentId, session.Uid, session.TransactionType.ToString(), session.Mode.ToString(), true, "VERIFIED", remarks);
         }
 
+        // THE FIX: Inject [TEMP] into the logline string
+        string nameForLog = student.IsTemporary ? $"[TEMP] {student.FullName}" : student.FullName;
+
         return new VerificationOutcome
         {
             Step = VerificationStep.Completed,
@@ -411,7 +414,7 @@ public sealed class VerificationEngine
             ResultMessage = session.TransactionType == TransactionType.Exit && !string.IsNullOrWhiteSpace(session.EventId) ? "Event Check-Out Recorded" : remarks,
             Student = student,
             Session = session,
-            LogLine = $"{scanTime} | {student.StudentId} | {student.FullName} | {(isOffline ? "OFFLINE GRANTED" : "GRANTED")} | {DatabaseService.ToStorageValue(session.TransactionType)} | {DatabaseService.ToStorageValue(session.Mode)}"
+            LogLine = $"{scanTime} | {student.StudentId} | {nameForLog} | {(isOffline ? "OFFLINE GRANTED" : "GRANTED")} | {DatabaseService.ToStorageValue(session.TransactionType)} | {DatabaseService.ToStorageValue(session.Mode)}"
         };
     }
 
@@ -419,7 +422,14 @@ public sealed class VerificationEngine
     {
         try
         {
-            await _database.LogVerificationAsync(student, student?.FullName, uid, type, mode, granted, errorCategory, errorCategory, remarks, authSpeedMs, dbQuerySpeedMs);
+            // THE FIX: Intercept the name and append [TEMP] if they are a temporary student
+            string? loggedName = student?.FullName;
+            if (student != null && student.IsTemporary)
+            {
+                loggedName = $"[TEMP] {loggedName}";
+            }
+
+            await _database.LogVerificationAsync(student, loggedName, uid, type, mode, granted, errorCategory, errorCategory, remarks, authSpeedMs, dbQuerySpeedMs);
             if (!granted && student != null) await _database.AddAlertAsync(student.StudentId, errorCategory, remarks);
         }
         catch
@@ -442,6 +452,14 @@ public sealed class VerificationEngine
 
     private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)
     {
-        return new VerificationOutcome { Step = VerificationStep.Completed, IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory, Student = student, LogLine = logLine };
+        string finalLogLine = logLine;
+
+        // THE FIX: Inject [TEMP] into the logline string if the student object is present and flagged
+        if (student != null && student.IsTemporary && !logLine.Contains("[TEMP]"))
+        {
+            finalLogLine = logLine.Replace(student.FullName, $"[TEMP] {student.FullName}");
+        }
+
+        return new VerificationOutcome { Step = VerificationStep.Completed, IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory, Student = student, LogLine = finalLogLine };
     }
 }

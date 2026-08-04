@@ -468,6 +468,9 @@
                         <TextBox x:Name="NfcReplacementReasonBox" Header="Reason for card replacement"
                                 PlaceholderText="e.g. reported lost, found in library, card damaged..."
                                 Visibility="Collapsed"/>
+
+                        <!-- THE FIX: Phase 2 - Temporary CheckBox inside the Edit Dialog -->
+                        <CheckBox x:Name="EditDialogIsTemporaryCheckBox" Content="Flag as Temporary Credential" Foreground="#60A5FA" FontWeight="SemiBold" Margin="0,4,0,0"/>
                     </StackPanel>
                     <PasswordBox x:Name="EditDialogNewPinBox" Header="Reset PIN (leave blank to keep current)" MaxLength="4" PlaceholderText="****"/>
 

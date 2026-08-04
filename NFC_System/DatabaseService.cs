@@ -119,7 +119,8 @@ public sealed class DatabaseService
                 failed_pin_attempts INT DEFAULT 0,
                 pin_locked BOOLEAN DEFAULT FALSE,
                 last_scan_timestamp DATETIME NULL,
-                photo_data MEDIUMBLOB NULL
+                photo_data MEDIUMBLOB NULL,
+                is_temporary BOOLEAN DEFAULT FALSE
             );
 
             CREATE TABLE IF NOT EXISTS courses (
@@ -228,20 +229,27 @@ public sealed class DatabaseService
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
-        // Alterations for existing databases upgrading to Phase 1
+        // Alterations for existing databases upgrading to new phases
         try
         {
             using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection);
             await alterCmd.ExecuteNonQueryAsync();
         }
-        catch { /* Column already exists, safe to ignore */ }
+        catch { /* Safe to ignore */ }
 
         try
         {
             using var alterCmd2 = new MySqlCommand("ALTER TABLE students ADD COLUMN photo_data MEDIUMBLOB NULL;", connection);
             await alterCmd2.ExecuteNonQueryAsync();
         }
-        catch { /* Column already exists, safe to ignore */ }
+        catch { /* Safe to ignore */ }
+
+        try
+        {
+            using var alterCmd3 = new MySqlCommand("ALTER TABLE students ADD COLUMN is_temporary BOOLEAN DEFAULT FALSE;", connection);
+            await alterCmd3.ExecuteNonQueryAsync();
+        }
+        catch { /* Safe to ignore */ }
     }
 
     private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
@@ -271,7 +279,6 @@ public sealed class DatabaseService
         catch { }
     }
 
-    // THE FIX: Extraction helper for decoding the Firestore Base64 Blob payload back to bytes
     private byte[]? ExtractBlob(JsonElement fields, string key)
     {
         if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("bytesValue", out var val))
@@ -326,15 +333,16 @@ public sealed class DatabaseService
                 bool pinLocked = ExtractBool(fields, "pin_locked");
                 int failedAttempts = ExtractInt(fields, "failed_pin_attempts");
                 byte[]? photoData = ExtractBlob(fields, "photo_data");
+                bool isTemporary = ExtractBool(fields, "is_temporary");
 
                 string sql = @"
                     INSERT INTO students 
-                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data)
+                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data, is_temporary)
                     VALUES 
-                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo)
+                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo, @temp)
                     ON DUPLICATE KEY UPDATE 
                     full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
-                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo";
+                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp";
 
                 using var cmd = new MySqlCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@id", studentId);
@@ -351,6 +359,7 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@locked", pinLocked);
                 cmd.Parameters.AddWithValue("@failed", failedAttempts);
                 cmd.Parameters.AddWithValue("@photo", photoData != null ? photoData : DBNull.Value);
+                cmd.Parameters.AddWithValue("@temp", isTemporary);
 
                 int affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) updatedCount++;
@@ -381,7 +390,6 @@ public sealed class DatabaseService
 
                 localIds.Add(studentId);
 
-                // Build fields dictionary dynamically to conditionally include Blob photo_data
                 var fields = new Dictionary<string, object>
                 {
                     { "student_id", new { stringValue = studentId } },
@@ -396,10 +404,10 @@ public sealed class DatabaseService
                     { "pin_hash", new { stringValue = Value(reader["pin_hash"]) } },
                     { "pin_salt", new { stringValue = Value(reader["pin_salt"]) } },
                     { "pin_locked", new { booleanValue = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true" } },
-                    { "failed_pin_attempts", new { integerValue = Value(reader["failed_pin_attempts"]) } }
+                    { "failed_pin_attempts", new { integerValue = Value(reader["failed_pin_attempts"]) } },
+                    { "is_temporary", new { booleanValue = reader["is_temporary"].ToString() == "1" || reader["is_temporary"].ToString()?.ToLower() == "true" } }
                 };
 
-                // Inject base64 string bytes into the payload so Firestore generates a Blob
                 if (reader["photo_data"] is byte[] photoData && photoData.Length > 0)
                 {
                     fields["photo_data"] = new { bytesValue = Convert.ToBase64String(photoData) };
@@ -1580,9 +1588,9 @@ public sealed class DatabaseService
 
         string sql = @"
     INSERT INTO students
-    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, photo_data)
+    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, photo_data, is_temporary)
     VALUES
-    (@student_id, @full_name, @email, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE, @photo_data);";
+    (@student_id, @full_name, @email, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE, @photo_data, @is_temporary);";
 
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
@@ -1602,7 +1610,7 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand(@"
         SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-               pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
+               pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data, is_temporary
         FROM students
         WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(@exact))
            OR full_name LIKE @partial
@@ -1652,11 +1660,11 @@ public sealed class DatabaseService
             ? @"UPDATE students 
             SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
                 section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential,
-                pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0, photo_data=@photo_data
+                pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0, photo_data=@photo_data, is_temporary=@is_temporary
             WHERE student_id=@original_id;"
             : @"UPDATE students 
             SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
-                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential, photo_data=@photo_data
+                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential, photo_data=@photo_data, is_temporary=@is_temporary
             WHERE student_id=@original_id;";
 
         using var cmd = new MySqlCommand(sql, connection);
@@ -1672,7 +1680,7 @@ public sealed class DatabaseService
 
         string sql = @"
             SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data, is_temporary
             FROM students
             WHERE nfc_uid = @uid
             LIMIT 1";
@@ -1696,7 +1704,7 @@ public sealed class DatabaseService
 
         string sql = @"
             SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data, is_temporary
             FROM students
             WHERE student_id = @id
             LIMIT 1";
@@ -1789,7 +1797,7 @@ public sealed class DatabaseService
 
         string sql = $@"
             SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data, is_temporary
             FROM students
             {whereSql}
             ORDER BY full_name ASC
@@ -2168,7 +2176,7 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand(@"
             SELECT eas.student_id, s.full_name, s.email, s.course, s.year_level, s.section_name, s.status, s.nfc_uid, 
-                   s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp, s.photo_data
+                   s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp, s.photo_data, s.is_temporary
             FROM event_approved_students eas
             LEFT JOIN students s ON eas.student_id = s.student_id
             WHERE eas.event_id = @event_id
@@ -2307,6 +2315,7 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@pin_hash", hash != null ? hash : DBNull.Value);
 
         command.Parameters.AddWithValue("@photo_data", student.PhotoData != null ? student.PhotoData : DBNull.Value);
+        command.Parameters.AddWithValue("@is_temporary", student.IsTemporary ? 1 : 0);
     }
 
     private static StudentRecord ReadStudent(MySqlDataReader reader)
@@ -2328,7 +2337,8 @@ public sealed class DatabaseService
             FailedPinAttempts = int.TryParse(Value(reader["failed_pin_attempts"]), out int attempts) ? attempts : 0,
             PinLocked = bool.TryParse(Value(reader["pin_locked"]), out bool locked) && locked || Value(reader["pin_locked"]) == "1",
             LastScanTimestamp = reader["last_scan_timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["last_scan_timestamp"]) : null,
-            PhotoData = reader["photo_data"] as byte[]
+            PhotoData = reader["photo_data"] as byte[],
+            IsTemporary = reader["is_temporary"] != DBNull.Value && (reader["is_temporary"].ToString() == "1" || reader["is_temporary"].ToString()?.ToLower() == "true")
         };
     }
 
@@ -2496,7 +2506,6 @@ public sealed class DatabaseService
         }
         return list;
     }
-
 
     private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
     private static string Value(object? value) => value == null || value == DBNull.Value ? "" : value.ToString() ?? "";

@@ -146,8 +146,14 @@
             <Border x:Name="ProfileBorder" Grid.Column="1" CornerRadius="24" Background="#10FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="2" Padding="32" Opacity="0.3">
                 <Grid VerticalAlignment="Center">
                     <StackPanel Spacing="16">
-                        <!-- THE FIX: Phase 4 - Real Profile Photo -->
-                        <PersonPicture x:Name="StudentPhotoDisplay" Height="200" Width="200" HorizontalAlignment="Center"/>
+
+                        <!-- THE FIX: Temporary Badge overlay -->
+                        <Grid>
+                            <PersonPicture x:Name="StudentPhotoDisplay" Height="200" Width="200" HorizontalAlignment="Center"/>
+                            <Border x:Name="TempBadgeBorder" Background="#EF4444" CornerRadius="4" Padding="12,4" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,-12,0,0" Visibility="Collapsed">
+                                <TextBlock Text="TEMP ID" Foreground="White" FontWeight="Black" FontSize="14" CharacterSpacing="50"/>
+                            </Border>
+                        </Grid>
 
                         <StackPanel Spacing="6" Margin="0,12,0,0">
                             <TextBlock Text="STUDENT NAME" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" CharacterSpacing="100"/>

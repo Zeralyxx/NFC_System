@@ -45,6 +45,7 @@ namespace NFC_System
         private string _origSection = "";
         private string _origStatus = "";
         private string _origNfcUid = "";
+        private bool _origIsTemporary = false; // <-- THE FIX
         private AdminActionType _pendingAction = AdminActionType.None;
 
         public StudentManagementWindow()
@@ -64,6 +65,8 @@ namespace NFC_System
             EditDialogStatusComboBox.SelectionChanged += EditDialog_FieldChanged;
             EditDialogNfcUidBox.TextChanged += EditDialog_FieldChanged;
             EditDialogNewPinBox.PasswordChanged += EditDialog_FieldChanged;
+            EditDialogIsTemporaryCheckBox.Checked += EditDialog_FieldChanged;
+            EditDialogIsTemporaryCheckBox.Unchecked += EditDialog_FieldChanged;
 
             EditStudentDialog.Closed += (s, e) =>
             {
@@ -371,6 +374,8 @@ namespace NFC_System
                 _ => 0
             };
 
+            EditDialogIsTemporaryCheckBox.IsChecked = student.IsTemporary; // <-- THE FIX
+
             // Snapshot original state for dirty-checking
             _origStudentId = student.StudentId;
             _origFullName = student.FullName;
@@ -380,6 +385,7 @@ namespace NFC_System
             _origSection = student.SectionName;
             _origStatus = student.Status;
             _origNfcUid = student.NfcUid;
+            _origIsTemporary = student.IsTemporary; // <-- THE FIX
 
             _isAwaitingNfcReplacementScan = false;
             ChangeNfcButton.IsEnabled = true;
@@ -502,6 +508,7 @@ namespace NFC_System
             string curSection = EditDialogSectionBox.Text.Trim();
             string curStatus = (EditDialogStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
             string curNfcUid = EditDialogNfcUidBox.Text.Trim();
+            bool curIsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true; // <-- THE FIX
             bool hasPinChange = !string.IsNullOrWhiteSpace(EditDialogNewPinBox.Password);
 
             bool nfcActuallyChanged = curNfcUid != _origNfcUid;
@@ -526,6 +533,7 @@ namespace NFC_System
                 curSection != _origSection ||
                 curStatus != _origStatus ||
                 curNfcUid != _origNfcUid ||
+                curIsTemporary != _origIsTemporary || // <-- THE FIX
                 hasPinChange ||
                 _currentPhotoData != _editingStudent.PhotoData; // <-- THE FIX
 
@@ -670,7 +678,8 @@ namespace NFC_System
                             Status = ((ComboBoxItem)EditDialogStatusComboBox.SelectedItem).Content.ToString() ?? "Active",
                             NfcUid = EditDialogNfcUidBox.Text.Trim(),
                             QrCredential = EditDialogStudentIdBox.Text.Trim(), // keep QR aligned to Student ID
-                            PhotoData = _currentPhotoData // <-- THE FIX: Inject the photo byte array here
+                            PhotoData = _currentPhotoData, // <-- THE FIX: Inject the photo byte array here
+                            IsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true // <-- THE FIX
                         };
 
                         await _database.UpdateStudentAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin);

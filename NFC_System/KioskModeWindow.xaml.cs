@@ -455,7 +455,8 @@ namespace NFC_System
 
                 case AuthenticationStage.NFCVerified:
                     TogglePanels(showStatus: true, showPin: false, showQr: false);
-                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
+                    // Temporarily hide badge during verification step
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto, false);
 
                     if (_currentMode == VerificationMode.Fast)
                         ApplyStatusStyle(Colors.Green, "\uE73E", "NFC VERIFIED", "Authenticating...");
@@ -539,8 +540,8 @@ namespace NFC_System
                             _outcomeTitle = "RESTRICTED EVENT";
                             _outcomeMessage = "You are not on the approved attendee list for this event.";
 
-                            // THE FIX: Provide photo data directly here
-                            LoadProfileData(student.FullName, student.StudentId, student.PhotoData);
+                            // THE FIX: Provide photo data and isTemp directly here
+                            LoadProfileData(student.FullName, student.StudentId, student.PhotoData, student.IsTemporary);
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                             string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
@@ -581,6 +582,7 @@ namespace NFC_System
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
                 _tempStudentPhoto = outcome.Student?.PhotoData;
+                bool isTemp = outcome.Student?.IsTemporary ?? false; // <-- Capture IsTemporary
 
                 nfcTimer.Stop();
                 string nfcResult = outcome.IsGranted ? "MATCH (Access Granted)" :
@@ -595,7 +597,9 @@ namespace NFC_System
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
-                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
+
+                    // THE FIX: Provide isTemp directly here
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto, isTemp);
                     ExecuteStateChange(AuthenticationStage.AccessDenied);
                 }
                 else
@@ -733,6 +737,7 @@ namespace NFC_System
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
 
+            // THE FIX: Declare outcome here before assignment
             VerificationOutcome outcome;
 
             var transType = KioskStateController.CurrentType;
@@ -746,7 +751,9 @@ namespace NFC_System
                 PlaySecurityAlert();
                 _outcomeTitle = "ANTI-PROXY TRIGGERED";
                 _outcomeMessage = "This credential has already checked into this event.";
-                LoadProfileData("UNKNOWN USER", payload.Trim(), null);
+
+                // THE FIX: Provide photo data and isTemp directly here
+                LoadProfileData("UNKNOWN USER", payload.Trim(), null, false);
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                 string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
@@ -773,8 +780,8 @@ namespace NFC_System
                             _outcomeTitle = "RESTRICTED EVENT";
                             _outcomeMessage = "You are not on the approved attendee list for this event.";
 
-                            // THE FIX: Add photo logic here too
-                            LoadProfileData(student.FullName, student.StudentId, student.PhotoData);
+                            // THE FIX: Provide photo data and isTemp directly here
+                            LoadProfileData(student.FullName, student.StudentId, student.PhotoData, student.IsTemporary);
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                             string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
@@ -801,6 +808,7 @@ namespace NFC_System
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
                 _tempStudentPhoto = outcome.Student?.PhotoData;
+                bool isTemp = outcome.Student?.IsTemporary ?? false; // <-- Capture IsTemporary
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
@@ -810,7 +818,9 @@ namespace NFC_System
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
-                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
+
+                    // THE FIX: Provide isTemp directly here
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto, isTemp);
 
                     qrTimer.Stop();
                     LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / MISMATCH");
@@ -819,7 +829,8 @@ namespace NFC_System
                 }
                 else if (outcome.Step == VerificationStep.RequiresPin)
                 {
-                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
+                    // THE FIX: Provide isTemp directly here
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto, isTemp);
 
                     qrTimer.Stop();
                     LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "MATCH (Proceeding to PIN)");
@@ -932,8 +943,8 @@ namespace NFC_System
             }
         }
 
-        // THE FIX: Decode the image asynchronously in the UI thread
-        private async void LoadProfileData(string name, string id, byte[]? photoData)
+        // THE FIX: Add the isTemp boolean parameter to trigger the UI badge
+        private async void LoadProfileData(string name, string id, byte[]? photoData, bool isTemp)
         {
             ProfileBorder.Opacity = 1.0;
             StudentNameText.Text = name;
@@ -943,6 +954,8 @@ namespace NFC_System
 
             StudentPhotoDisplay.DisplayName = name == "UNKNOWN USER" || name == "---" ? "" : name;
             StudentPhotoDisplay.ProfilePicture = await ImageHelper.GetBitmapAsync(photoData);
+
+            TempBadgeBorder.Visibility = isTemp ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ResetProfileData()
@@ -953,6 +966,8 @@ namespace NFC_System
 
             StudentPhotoDisplay.ProfilePicture = null;
             StudentPhotoDisplay.DisplayName = "";
+
+            TempBadgeBorder.Visibility = Visibility.Collapsed;
         }
 
         private void EnforceFullScreenMode()

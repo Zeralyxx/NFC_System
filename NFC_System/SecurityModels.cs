@@ -45,6 +45,9 @@ public sealed class StudentRecord
     public DateTime? LastScanTimestamp { get; set; }
     // THE FIX: Phase 1 - Add PhotoData byte array to the model
     public byte[]? PhotoData { get; set; }
+
+    // NEW: Phase 1 of Temp Implementation - Temporary Credential Flag
+    public bool IsTemporary { get; set; }
 }
 
 public sealed class EventRecord

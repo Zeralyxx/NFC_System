@@ -81,6 +81,9 @@
                                 <TextBlock Text="Credential Enrollment" Style="{StaticResource CardTitleStyle}" FontSize="18" Margin="0"/>
                                 <TextBox x:Name="NfcUidTextBox" Header="NFC UID" PlaceholderText="Tap NFC card or type UID for testing"/>
                                 <TextBox x:Name="QrCredentialTextBox" Header="QR Credential Payload" PlaceholderText="Auto-generated from Student ID" IsReadOnly="True"/>
+
+                                <!-- THE FIX: Phase 2 - Temporary Credential Flag -->
+                                <CheckBox x:Name="IsTemporaryCheckBox" Content="Issue as Temporary Credential (NFC Sticker / Paper QR)" Foreground="#60A5FA" FontWeight="SemiBold" Margin="0,4,0,0"/>
                             </StackPanel>
                         </Border>
 
