@@ -70,6 +70,10 @@ namespace NFC_System
         private readonly DispatcherTimer _syncRecoveryTimer = new();
         private DateTime _lastQrScanTime = DateTime.MinValue;
 
+        // THE FIX: NFC Debounce timers to prevent double-taps causing tailgating flags
+        private string _lastScannedNfcUid = string.Empty;
+        private DateTime _lastNfcScanTime = DateTime.MinValue;
+
         private static readonly HashSet<string> _eventAttendanceCache = new();
         private static string? _lastTrackedEventId = null;
 
@@ -415,14 +419,12 @@ namespace NFC_System
 
             if (newState == AuthenticationStage.AccessGranted)
             {
-                // UNIVERSAL FAST DELAY: 400ms across all modes and events
                 await Task.Delay(400);
                 if (_currentStage == AuthenticationStage.AccessGranted)
                     SetState(AuthenticationStage.Idle);
             }
             else if (newState == AuthenticationStage.AccessDenied)
             {
-                // UNIVERSAL FAST DELAY: 1.2s error screen across all modes and events
                 await Task.Delay(1200);
                 if (_currentStage == AuthenticationStage.AccessDenied)
                     SetState(AuthenticationStage.Idle);
@@ -490,6 +492,13 @@ namespace NFC_System
         public async void ProcessNfcScan(string uid)
         {
             if (_currentStage != AuthenticationStage.Idle) return;
+
+            // THE FIX: Ignore identical NFC scans that happen within 3 seconds to prevent double-bounce flags
+            if (uid == _lastScannedNfcUid && (DateTime.Now - _lastNfcScanTime).TotalSeconds < 3)
+                return;
+
+            _lastScannedNfcUid = uid;
+            _lastNfcScanTime = DateTime.Now;
 
             Stopwatch nfcTimer = Stopwatch.StartNew();
 
@@ -772,7 +781,7 @@ namespace NFC_System
                         }
                     }
                 }
-                catch { }
+                catch { /* Ignore exceptions to allow the VerificationEngine to handle offline cache logic safely */ }
             }
 
             if (_activeSession == null)
