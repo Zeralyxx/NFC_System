@@ -423,6 +423,19 @@
 
                     <TextBlock x:Name="EditDialogStatusText" Foreground="#F87171" FontWeight="SemiBold" TextWrapping="Wrap" Visibility="Collapsed"/>
 
+                    <!-- THE FIX: Profile Photo Upload Section -->
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <PersonPicture x:Name="EditDialogPhotoPreview" Grid.Column="0" Height="90" Width="90" Margin="0,0,24,0"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="8">
+                            <TextBlock Text="Profile Photograph" FontWeight="SemiBold"/>
+                            <Button Content="Upload New Image" Click="EditDialogUploadPhoto_Click" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                        </StackPanel>
+                    </Grid>
+
                     <TextBox x:Name="EditDialogStudentIdBox" Header="Student ID" TextChanging="NumberOnly_TextChanging"/>
                     <TextBox x:Name="EditDialogFullNameBox" Header="Full Name"/>
                     <TextBox x:Name="EditDialogEmailBox" Header="Email Address" PlaceholderText="michael.sintay@tcu.edu.ph"/>
@@ -457,7 +470,6 @@
                                 Visibility="Collapsed"/>
                     </StackPanel>
                     <PasswordBox x:Name="EditDialogNewPinBox" Header="Reset PIN (leave blank to keep current)" MaxLength="4" PlaceholderText="****"/>
-
 
                     <Button x:Name="EditDialogSaveButton" Content="Save Changes" Click="EditDialogSaveButton_Click"
                         IsEnabled="False"

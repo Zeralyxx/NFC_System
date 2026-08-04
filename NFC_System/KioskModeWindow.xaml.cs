@@ -94,6 +94,7 @@ namespace NFC_System
 
         private string _tempStudentName = "";
         private string _tempStudentId = "";
+        private byte[]? _tempStudentPhoto = null; // THE FIX: Temporary memory store for the photo
         private string _outcomeTitle = "";
         private string _outcomeMessage = "";
 
@@ -381,6 +382,7 @@ namespace NFC_System
         {
             _tempStudentName = "";
             _tempStudentId = "";
+            _tempStudentPhoto = null;
             _activeSession = null;
             SetState(AuthenticationStage.WaitingForQR);
         }
@@ -443,6 +445,7 @@ namespace NFC_System
                     _isVerifyingPin = false;
                     _tempStudentName = "";
                     _tempStudentId = "";
+                    _tempStudentPhoto = null;
                     _activeSession = null;
 
                     TogglePanels(showStatus: true, showPin: false, showQr: false);
@@ -452,7 +455,7 @@ namespace NFC_System
 
                 case AuthenticationStage.NFCVerified:
                     TogglePanels(showStatus: true, showPin: false, showQr: false);
-                    LoadProfileData(_tempStudentName, _tempStudentId);
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
 
                     if (_currentMode == VerificationMode.Fast)
                         ApplyStatusStyle(Colors.Green, "\uE73E", "NFC VERIFIED", "Authenticating...");
@@ -493,7 +496,6 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.Idle) return;
 
-            // THE FIX: Ignore identical NFC scans that happen within 3 seconds to prevent double-bounce flags
             if (uid == _lastScannedNfcUid && (DateTime.Now - _lastNfcScanTime).TotalSeconds < 3)
                 return;
 
@@ -536,7 +538,9 @@ namespace NFC_System
                             PlaySecurityAlert();
                             _outcomeTitle = "RESTRICTED EVENT";
                             _outcomeMessage = "You are not on the approved attendee list for this event.";
-                            LoadProfileData(student.FullName, student.StudentId);
+
+                            // THE FIX: Provide photo data directly here
+                            LoadProfileData(student.FullName, student.StudentId, student.PhotoData);
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                             string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
@@ -576,6 +580,7 @@ namespace NFC_System
             {
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
+                _tempStudentPhoto = outcome.Student?.PhotoData;
 
                 nfcTimer.Stop();
                 string nfcResult = outcome.IsGranted ? "MATCH (Access Granted)" :
@@ -590,7 +595,7 @@ namespace NFC_System
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
-                    LoadProfileData(_tempStudentName, _tempStudentId);
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
                     ExecuteStateChange(AuthenticationStage.AccessDenied);
                 }
                 else
@@ -741,7 +746,7 @@ namespace NFC_System
                 PlaySecurityAlert();
                 _outcomeTitle = "ANTI-PROXY TRIGGERED";
                 _outcomeMessage = "This credential has already checked into this event.";
-                LoadProfileData("UNKNOWN USER", payload.Trim());
+                LoadProfileData("UNKNOWN USER", payload.Trim(), null);
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                 string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
@@ -767,7 +772,9 @@ namespace NFC_System
                             PlaySecurityAlert();
                             _outcomeTitle = "RESTRICTED EVENT";
                             _outcomeMessage = "You are not on the approved attendee list for this event.";
-                            LoadProfileData(student.FullName, student.StudentId);
+
+                            // THE FIX: Add photo logic here too
+                            LoadProfileData(student.FullName, student.StudentId, student.PhotoData);
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                             string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
@@ -793,6 +800,7 @@ namespace NFC_System
 
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
+                _tempStudentPhoto = outcome.Student?.PhotoData;
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
@@ -802,7 +810,7 @@ namespace NFC_System
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
-                    LoadProfileData(_tempStudentName, _tempStudentId);
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
 
                     qrTimer.Stop();
                     LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "DENIED / MISMATCH");
@@ -811,7 +819,7 @@ namespace NFC_System
                 }
                 else if (outcome.Step == VerificationStep.RequiresPin)
                 {
-                    LoadProfileData(_tempStudentName, _tempStudentId);
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto);
 
                     qrTimer.Stop();
                     LogPerformanceMetric("QR Validation (Fallback Flow)", qrTimer.ElapsedMilliseconds, "MATCH (Proceeding to PIN)");
@@ -924,13 +932,17 @@ namespace NFC_System
             }
         }
 
-        private void LoadProfileData(string name, string id)
+        // THE FIX: Decode the image asynchronously in the UI thread
+        private async void LoadProfileData(string name, string id, byte[]? photoData)
         {
             ProfileBorder.Opacity = 1.0;
             StudentNameText.Text = name;
             StudentIdText.Text = id;
             StudentNameText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
             StudentIdText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
+
+            StudentPhotoDisplay.DisplayName = name == "UNKNOWN USER" || name == "---" ? "" : name;
+            StudentPhotoDisplay.ProfilePicture = await ImageHelper.GetBitmapAsync(photoData);
         }
 
         private void ResetProfileData()
@@ -938,6 +950,9 @@ namespace NFC_System
             ProfileBorder.Opacity = 0.3;
             StudentNameText.Text = "---";
             StudentIdText.Text = "---";
+
+            StudentPhotoDisplay.ProfilePicture = null;
+            StudentPhotoDisplay.DisplayName = "";
         }
 
         private void EnforceFullScreenMode()

@@ -342,6 +342,10 @@ namespace NFC_System
             _editingStudent = student;
             EditDialogStatusText.Visibility = Visibility.Collapsed;
 
+            // THE FIX: Decode and display the student's current photo
+            EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(student.PhotoData);
+            _currentPhotoData = student.PhotoData; // Ensure we keep it if they don't change it
+
             EditDialogStudentIdBox.Text = student.StudentId;
             EditDialogFullNameBox.Text = student.FullName;
             EditDialogEmailBox.Text = student.Email ?? ""; // <-- Add this
@@ -386,6 +390,45 @@ namespace NFC_System
 
             EditStudentDialog.XamlRoot = this.Content.XamlRoot;
             await EditStudentDialog.ShowAsync();
+        }
+
+        // THE FIX: Variable to hold the photo while the popup is open
+        private byte[]? _currentPhotoData = null;
+
+        private async void EditDialogUploadPhoto_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var picker = new Windows.Storage.Pickers.FileOpenPicker();
+
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+                picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.Thumbnail;
+                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.PicturesLibrary;
+                picker.FileTypeFilter.Add(".jpg");
+                picker.FileTypeFilter.Add(".jpeg");
+                picker.FileTypeFilter.Add(".png");
+
+                var file = await picker.PickSingleFileAsync();
+
+                if (file != null)
+                {
+                    using (var stream = await file.OpenReadAsync())
+                    {
+                        // Shrink and update the byte array
+                        _currentPhotoData = await ImageHelper.ProcessProfileImageAsync(stream);
+                        EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(_currentPhotoData);
+
+                        // Trick the system into enabling the "Save Changes" button
+                        EditDialog_FieldChanged(this, new RoutedEventArgs());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowEditDialogError($"Could not process image: {ex.Message}");
+            }
         }
 
         private void ChangeNfcButton_Click(object sender, RoutedEventArgs e)
@@ -483,7 +526,8 @@ namespace NFC_System
                 curSection != _origSection ||
                 curStatus != _origStatus ||
                 curNfcUid != _origNfcUid ||
-                hasPinChange;
+                hasPinChange ||
+                _currentPhotoData != _editingStudent.PhotoData; // <-- THE FIX
 
             EditDialogSaveButton.IsEnabled = isDirty;
         }
@@ -625,7 +669,8 @@ namespace NFC_System
                             SectionName = EditDialogSectionBox.Text.Trim(),
                             Status = ((ComboBoxItem)EditDialogStatusComboBox.SelectedItem).Content.ToString() ?? "Active",
                             NfcUid = EditDialogNfcUidBox.Text.Trim(),
-                            QrCredential = EditDialogStudentIdBox.Text.Trim() // keep QR aligned to Student ID
+                            QrCredential = EditDialogStudentIdBox.Text.Trim(), // keep QR aligned to Student ID
+                            PhotoData = _currentPhotoData // <-- THE FIX: Inject the photo byte array here
                         };
 
                         await _database.UpdateStudentAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin);

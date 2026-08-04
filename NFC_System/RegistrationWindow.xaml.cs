@@ -21,6 +21,9 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private bool _duplicateWarningAcknowledged = false;
 
+        // THE FIX: Hold the processed byte array in memory until the admin hits Save
+        private byte[]? _currentPhotoData = null;
+
         public RegistrationWindow()
         {
             this.InitializeComponent();
@@ -53,6 +56,44 @@ namespace NFC_System
             catch (Exception ex)
             {
                 UidLogListView.Items.Insert(0, $"[ERROR] Setup failed: {ex.Message}");
+            }
+        }
+
+        // --- NEW: Upload Photo Logic ---
+        private async void UploadPhotoButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var picker = new Windows.Storage.Pickers.FileOpenPicker();
+
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+                picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.Thumbnail;
+                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.PicturesLibrary;
+                picker.FileTypeFilter.Add(".jpg");
+                picker.FileTypeFilter.Add(".jpeg");
+                picker.FileTypeFilter.Add(".png");
+
+                var file = await picker.PickSingleFileAsync();
+
+                if (file != null)
+                {
+                    using (var stream = await file.OpenReadAsync())
+                    {
+                        // 1. Crunch the photo down to a tiny 250x250 JPEG byte array
+                        _currentPhotoData = await ImageHelper.ProcessProfileImageAsync(stream);
+
+                        // 2. Decode it back into a BitmapImage so the UI can display it
+                        StudentPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(_currentPhotoData);
+
+                        UidLogListView.Items.Insert(0, $"[INFO] Profile photo attached successfully. ({_currentPhotoData.Length / 1024} KB)");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                UidLogListView.Items.Insert(0, $"[ERROR] Could not load image: {ex.Message}");
             }
         }
 
@@ -219,7 +260,7 @@ namespace NFC_System
         {
             string studentId = StudentIdTextBox.Text.Trim();
             string fullName = FullNameTextBox.Text.Trim();
-            string email = EmailTextBox.Text.Trim(); // <-- 1. Extract email input
+            string email = EmailTextBox.Text.Trim();
             string nfcUid = NfcUidTextBox.Text.Trim();
             string pin = PinPasswordBox.Password.Trim();
             string qrCredential = QrCredentialTextBox.Text.Trim();
@@ -267,13 +308,14 @@ namespace NFC_System
                 {
                     StudentId = studentId,
                     FullName = fullName,
-                    Email = email, // <-- 2. Assign Email property here
+                    Email = email,
                     Course = course,
                     YearLevel = YearLevelTextBox.Text.Trim(),
                     SectionName = SectionTextBox.Text.Trim(),
                     Status = status,
                     NfcUid = nfcUid,
-                    QrCredential = qrCredential
+                    QrCredential = qrCredential,
+                    PhotoData = _currentPhotoData // <-- THE FIX: Pass the byte array down to the database
                 };
 
                 await _database.SaveStudentAsync(student, pin);
@@ -296,7 +338,7 @@ namespace NFC_System
         {
             StudentIdTextBox.Text = "";
             FullNameTextBox.Text = "";
-            EmailTextBox.Text = ""; // <-- Add this line to reset the email input
+            EmailTextBox.Text = "";
             CourseComboBox.SelectedItem = null;
             YearLevelTextBox.Text = "";
             SectionTextBox.Text = "";
@@ -309,6 +351,10 @@ namespace NFC_System
             QrPlaceholderPanel.Visibility = Visibility.Visible;
             StatusComboBox.SelectedIndex = 0;
             _duplicateWarningAcknowledged = false;
+
+            // THE FIX: Reset the photo
+            _currentPhotoData = null;
+            StudentPhotoPreview.ProfilePicture = null;
         }
 
         private WriteableBitmap GenerateQrBitmap(string text)

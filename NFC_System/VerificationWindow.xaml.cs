@@ -15,9 +15,10 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
-
-        // Prevents the system from logging an audit simply because the window opened
         private bool _isInitializing = true;
+
+        // THE FIX: Timer to auto-clear the live feed
+        private readonly DispatcherTimer _liveFeedTimer = new();
 
         public VerificationWindow()
         {
@@ -25,6 +26,15 @@ namespace NFC_System
             _engine = new VerificationEngine(_database);
 
             MaximizeWindow();
+
+            // Set up 10-second auto-clear timer
+            _liveFeedTimer.Interval = TimeSpan.FromSeconds(10);
+            _liveFeedTimer.Tick += (s, e) =>
+            {
+                _liveFeedTimer.Stop();
+                LiveFeedActivePanel.Visibility = Visibility.Collapsed;
+                LiveFeedIdlePanel.Visibility = Visibility.Visible;
+            };
 
             _ = InitializeAsync();
         }
@@ -56,8 +66,6 @@ namespace NFC_System
 
                 VerificationLogListView.Items.Insert(0, "[INFO] Risk-based verification engine ready.");
 
-                // THE FIX: Wait slightly for WinUI to finish drawing the comboboxes 
-                // before enabling active auditing to prevent ghost logs.
                 await Task.Delay(500);
                 _isInitializing = false;
             }
@@ -140,7 +148,7 @@ namespace NFC_System
                 for (int i = 0; i < 3; i++)
                 {
                     Console.Beep(2500, 300);
-                    System.Threading.Thread.Sleep(100);
+                    System.Threading.Tasks.Task.Delay(100).Wait();
                 }
             });
         }
@@ -157,7 +165,6 @@ namespace NFC_System
 
             try
             {
-                // GUARDRAIL: Verify the student actually exists in the database
                 var student = await _database.GetStudentByIdAsync(studentId);
                 if (student == null)
                 {
@@ -183,17 +190,9 @@ namespace NFC_System
             }
         }
 
-        private void ApplyOutcome(VerificationOutcome outcome)
+        // THE FIX: Populate the Live Authentication Feed
+        private async void ApplyOutcome(VerificationOutcome outcome)
         {
-            if (outcome.Student != null)
-            {
-                OverrideStudentIdBox.Text = outcome.Student.StudentId;
-            }
-            else
-            {
-                OverrideStudentIdBox.Text = "";
-            }
-
             if (!string.IsNullOrWhiteSpace(outcome.LogLine))
             {
                 VerificationLogListView.Items.Insert(0, outcome.LogLine);
@@ -203,6 +202,43 @@ namespace NFC_System
             if (severeErrors.Contains(outcome.ErrorCategory))
             {
                 PlaySecurityAlert();
+            }
+
+            // Don't show partial steps (like waiting for PIN), only final outcomes
+            if (outcome.Step == VerificationStep.Completed && outcome.Student != null)
+            {
+                OverrideStudentIdBox.Text = outcome.Student.StudentId;
+
+                // Load the image bytes via our helper
+                LiveStudentPhoto.ProfilePicture = await ImageHelper.GetBitmapAsync(outcome.Student.PhotoData);
+
+                LiveStudentName.Text = outcome.Student.FullName;
+                LiveStudentDetails.Text = $"{outcome.Student.Course} • Year {outcome.Student.YearLevel} • {outcome.Student.SectionName}";
+
+                if (outcome.IsGranted)
+                {
+                    LiveResultBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(26, 52, 211, 153));
+                    LiveResultBorder.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(48, 52, 211, 153));
+                    LiveResultText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                    LiveResultText.Text = "ACCESS GRANTED";
+                }
+                else
+                {
+                    LiveResultBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(26, 248, 113, 113));
+                    LiveResultBorder.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(48, 248, 113, 113));
+                    LiveResultText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    LiveResultText.Text = $"DENIED: {outcome.ErrorCategory.Replace("_", " ")}";
+                }
+
+                LiveFeedIdlePanel.Visibility = Visibility.Collapsed;
+                LiveFeedActivePanel.Visibility = Visibility.Visible;
+
+                _liveFeedTimer.Stop();
+                _liveFeedTimer.Start();
+            }
+            else
+            {
+                OverrideStudentIdBox.Text = "";
             }
         }
 
@@ -223,7 +259,6 @@ namespace NFC_System
             {
                 await _database.SetSettingAsync("verification_mode", modeString);
 
-                // THE FIX: Active UI Auditing for Mode Swapping
                 if (!_isInitializing)
                 {
                     string staff = AppSession.CurrentStaffName;
@@ -239,7 +274,6 @@ namespace NFC_System
             if (SecurityModeComboBox == null || DirectionComboBox == null) return;
             KioskStateController.BroadcastModeChange(GetSelectedMode(), GetSelectedTransactionType());
 
-            // THE FIX: Active UI Auditing for Direction Swapping
             if (!_isInitializing)
             {
                 string direction = DirectionComboBox.SelectedIndex == 1 ? "Exit" : "Entry";

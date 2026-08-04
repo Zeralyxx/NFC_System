@@ -118,7 +118,8 @@ public sealed class DatabaseService
                 entry_state VARCHAR(20) DEFAULT 'OUTSIDE',
                 failed_pin_attempts INT DEFAULT 0,
                 pin_locked BOOLEAN DEFAULT FALSE,
-                last_scan_timestamp DATETIME NULL
+                last_scan_timestamp DATETIME NULL,
+                photo_data MEDIUMBLOB NULL
             );
 
             CREATE TABLE IF NOT EXISTS courses (
@@ -227,10 +228,18 @@ public sealed class DatabaseService
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
+        // Alterations for existing databases upgrading to Phase 1
         try
         {
             using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection);
             await alterCmd.ExecuteNonQueryAsync();
+        }
+        catch { /* Column already exists, safe to ignore */ }
+
+        try
+        {
+            using var alterCmd2 = new MySqlCommand("ALTER TABLE students ADD COLUMN photo_data MEDIUMBLOB NULL;", connection);
+            await alterCmd2.ExecuteNonQueryAsync();
         }
         catch { /* Column already exists, safe to ignore */ }
     }
@@ -260,6 +269,18 @@ public sealed class DatabaseService
             }
         }
         catch { }
+    }
+
+    // THE FIX: Extraction helper for decoding the Firestore Base64 Blob payload back to bytes
+    private byte[]? ExtractBlob(JsonElement fields, string key)
+    {
+        if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("bytesValue", out var val))
+        {
+            string base64 = val.GetString() ?? "";
+            if (!string.IsNullOrWhiteSpace(base64))
+                return Convert.FromBase64String(base64);
+        }
+        return null;
     }
 
     public async Task<int> PullStudentsFromCloudAsync()
@@ -293,7 +314,7 @@ public sealed class DatabaseService
                 if (string.IsNullOrWhiteSpace(studentId)) continue;
 
                 string fullName = ExtractString(fields, "full_name");
-                string email = ExtractString(fields, "email"); // Add this line
+                string email = ExtractString(fields, "email");
                 string course = ExtractString(fields, "course");
                 string yearLvl = ExtractString(fields, "year_level");
                 string section = ExtractString(fields, "section_name");
@@ -304,19 +325,21 @@ public sealed class DatabaseService
                 string pinSalt = ExtractString(fields, "pin_salt");
                 bool pinLocked = ExtractBool(fields, "pin_locked");
                 int failedAttempts = ExtractInt(fields, "failed_pin_attempts");
+                byte[]? photoData = ExtractBlob(fields, "photo_data");
 
                 string sql = @"
                     INSERT INTO students 
-                    (student_id, full_name, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts)
+                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data)
                     VALUES 
-                    (@id, @name, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed)
+                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo)
                     ON DUPLICATE KEY UPDATE 
-                    full_name=@name, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
-                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed";
+                    full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
+                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo";
 
                 using var cmd = new MySqlCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@id", studentId);
                 cmd.Parameters.AddWithValue("@name", fullName);
+                cmd.Parameters.AddWithValue("@email", NullIfEmpty(email));
                 cmd.Parameters.AddWithValue("@course", NullIfEmpty(course));
                 cmd.Parameters.AddWithValue("@year", NullIfEmpty(yearLvl));
                 cmd.Parameters.AddWithValue("@section", NullIfEmpty(section));
@@ -327,6 +350,7 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@salt", NullIfEmpty(pinSalt));
                 cmd.Parameters.AddWithValue("@locked", pinLocked);
                 cmd.Parameters.AddWithValue("@failed", failedAttempts);
+                cmd.Parameters.AddWithValue("@photo", photoData != null ? photoData : DBNull.Value);
 
                 int affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) updatedCount++;
@@ -335,6 +359,70 @@ public sealed class DatabaseService
         catch (Exception ex) { throw new Exception($"Student Sync Error: {ex.Message}"); }
 
         return updatedCount;
+    }
+
+    public async Task<int> PushStudentsToCloudAsync()
+    {
+        int pushedCount = 0;
+        var localIds = new HashSet<string>();
+
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new MySqlCommand("SELECT * FROM students", connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                string studentId = Value(reader["student_id"]);
+                if (string.IsNullOrWhiteSpace(studentId)) continue;
+
+                localIds.Add(studentId);
+
+                // Build fields dictionary dynamically to conditionally include Blob photo_data
+                var fields = new Dictionary<string, object>
+                {
+                    { "student_id", new { stringValue = studentId } },
+                    { "full_name", new { stringValue = Value(reader["full_name"]) } },
+                    { "email", new { stringValue = Value(reader["email"]) } },
+                    { "course", new { stringValue = Value(reader["course"]) } },
+                    { "year_level", new { stringValue = Value(reader["year_level"]) } },
+                    { "section_name", new { stringValue = Value(reader["section_name"]) } },
+                    { "status", new { stringValue = Value(reader["status"]) } },
+                    { "nfc_uid", new { stringValue = Value(reader["nfc_uid"]) } },
+                    { "qr_credential", new { stringValue = Value(reader["qr_credential"]) } },
+                    { "pin_hash", new { stringValue = Value(reader["pin_hash"]) } },
+                    { "pin_salt", new { stringValue = Value(reader["pin_salt"]) } },
+                    { "pin_locked", new { booleanValue = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true" } },
+                    { "failed_pin_attempts", new { integerValue = Value(reader["failed_pin_attempts"]) } }
+                };
+
+                // Inject base64 string bytes into the payload so Firestore generates a Blob
+                if (reader["photo_data"] is byte[] photoData && photoData.Length > 0)
+                {
+                    fields["photo_data"] = new { bytesValue = Convert.ToBase64String(photoData) };
+                }
+
+                var firestorePayload = new { fields = fields };
+
+                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                string docId = Uri.EscapeDataString(studentId);
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students/{docId}";
+
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode) pushedCount++;
+                else throw new Exception(await response.Content.ReadAsStringAsync());
+            }
+
+            await DeleteOrphanedCloudDocumentsAsync("students", localIds);
+        }
+        catch (Exception ex) { throw new Exception($"Student Upload Error: {ex.Message}"); }
+
+        return pushedCount;
     }
 
     public async Task<int> PullLogsFromCloudAsync()
@@ -470,64 +558,6 @@ public sealed class DatabaseService
         catch (Exception ex) { throw new Exception($"Event Attendance Pull Error: {ex.Message}"); }
 
         return updatedCount;
-    }
-
-    public async Task<int> PushStudentsToCloudAsync()
-    {
-        int pushedCount = 0;
-        var localIds = new HashSet<string>();
-
-        try
-        {
-            using var connection = new MySqlConnection(ConnectionString);
-            await connection.OpenAsync();
-
-            using var cmd = new MySqlCommand("SELECT * FROM students", connection);
-            using var reader = await cmd.ExecuteReaderAsync();
-
-            while (await reader.ReadAsync())
-            {
-                string studentId = Value(reader["student_id"]);
-                if (string.IsNullOrWhiteSpace(studentId)) continue;
-
-                localIds.Add(studentId);
-
-                var firestorePayload = new
-                {
-                    fields = new
-                    {
-                        student_id = new { stringValue = studentId },
-                        full_name = new { stringValue = Value(reader["full_name"]) },
-                        email = new { stringValue = Value(reader["email"]) }, // Add this line
-                        course = new { stringValue = Value(reader["course"]) },
-                        year_level = new { stringValue = Value(reader["year_level"]) },
-                        section_name = new { stringValue = Value(reader["section_name"]) },
-                        status = new { stringValue = Value(reader["status"]) },
-                        nfc_uid = new { stringValue = Value(reader["nfc_uid"]) },
-                        qr_credential = new { stringValue = Value(reader["qr_credential"]) },
-                        pin_hash = new { stringValue = Value(reader["pin_hash"]) },
-                        pin_salt = new { stringValue = Value(reader["pin_salt"]) },
-                        pin_locked = new { booleanValue = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true" },
-                        failed_pin_attempts = new { integerValue = Value(reader["failed_pin_attempts"]) }
-                    }
-                };
-
-                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                string docId = Uri.EscapeDataString(studentId);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students/{docId}";
-
-                var response = await _httpClient.PatchAsync(url, content);
-                if (response.IsSuccessStatusCode) pushedCount++;
-                else throw new Exception(await response.Content.ReadAsStringAsync());
-            }
-
-            await DeleteOrphanedCloudDocumentsAsync("students", localIds);
-        }
-        catch (Exception ex) { throw new Exception($"Student Upload Error: {ex.Message}"); }
-
-        return pushedCount;
     }
 
     public async Task<int> PullStaffFromCloudAsync()
@@ -1550,9 +1580,9 @@ public sealed class DatabaseService
 
         string sql = @"
     INSERT INTO students
-    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked)
+    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, photo_data)
     VALUES
-    (@student_id, @full_name, @email, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE);";
+    (@student_id, @full_name, @email, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE, @photo_data);";
 
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
@@ -1572,7 +1602,7 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand(@"
         SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-               pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+               pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
         FROM students
         WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(@exact))
            OR full_name LIKE @partial
@@ -1622,11 +1652,11 @@ public sealed class DatabaseService
             ? @"UPDATE students 
             SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
                 section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential,
-                pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0
+                pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0, photo_data=@photo_data
             WHERE student_id=@original_id;"
             : @"UPDATE students 
             SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
-                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential
+                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential, photo_data=@photo_data
             WHERE student_id=@original_id;";
 
         using var cmd = new MySqlCommand(sql, connection);
@@ -1642,7 +1672,7 @@ public sealed class DatabaseService
 
         string sql = @"
             SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
             FROM students
             WHERE nfc_uid = @uid
             LIMIT 1";
@@ -1666,7 +1696,7 @@ public sealed class DatabaseService
 
         string sql = @"
             SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
             FROM students
             WHERE student_id = @id
             LIMIT 1";
@@ -1759,7 +1789,7 @@ public sealed class DatabaseService
 
         string sql = $@"
             SELECT student_id, full_name, email, course, year_level, section_name, status, nfc_uid,
-                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp
+                   pin_salt, pin_hash, qr_credential, entry_state, failed_pin_attempts, pin_locked, last_scan_timestamp, photo_data
             FROM students
             {whereSql}
             ORDER BY full_name ASC
@@ -2138,7 +2168,7 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand(@"
             SELECT eas.student_id, s.full_name, s.email, s.course, s.year_level, s.section_name, s.status, s.nfc_uid, 
-                   s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp
+                   s.pin_salt, s.pin_hash, s.qr_credential, s.entry_state, s.failed_pin_attempts, s.pin_locked, s.last_scan_timestamp, s.photo_data
             FROM event_approved_students eas
             LEFT JOIN students s ON eas.student_id = s.student_id
             WHERE eas.event_id = @event_id
@@ -2275,6 +2305,8 @@ public sealed class DatabaseService
 
         command.Parameters.AddWithValue("@pin_salt", salt != null ? salt : DBNull.Value);
         command.Parameters.AddWithValue("@pin_hash", hash != null ? hash : DBNull.Value);
+
+        command.Parameters.AddWithValue("@photo_data", student.PhotoData != null ? student.PhotoData : DBNull.Value);
     }
 
     private static StudentRecord ReadStudent(MySqlDataReader reader)
@@ -2295,7 +2327,8 @@ public sealed class DatabaseService
             EntryState = string.IsNullOrWhiteSpace(Value(reader["entry_state"])) ? "OUTSIDE" : Value(reader["entry_state"]),
             FailedPinAttempts = int.TryParse(Value(reader["failed_pin_attempts"]), out int attempts) ? attempts : 0,
             PinLocked = bool.TryParse(Value(reader["pin_locked"]), out bool locked) && locked || Value(reader["pin_locked"]) == "1",
-            LastScanTimestamp = reader["last_scan_timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["last_scan_timestamp"]) : null
+            LastScanTimestamp = reader["last_scan_timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["last_scan_timestamp"]) : null,
+            PhotoData = reader["photo_data"] as byte[]
         };
     }
 

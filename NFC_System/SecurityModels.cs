@@ -43,6 +43,8 @@ public sealed class StudentRecord
 
     // NEW: Added for the 2-minute gate throttle (Anti-Passback)
     public DateTime? LastScanTimestamp { get; set; }
+    // THE FIX: Phase 1 - Add PhotoData byte array to the model
+    public byte[]? PhotoData { get; set; }
 }
 
 public sealed class EventRecord

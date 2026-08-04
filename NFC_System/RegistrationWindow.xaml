@@ -115,7 +115,11 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Credential Preview" Style="{StaticResource CardTitleStyle}"/>
+
+                        <Grid Grid.Row="0">
+                            <TextBlock Text="Credential Preview" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center"/>
+                            <Button x:Name="UploadPhotoButton" Content="Upload Photo" Click="UploadPhotoButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                        </Grid>
 
                         <Grid Grid.Row="1" ColumnSpacing="20">
                             <Grid.ColumnDefinitions>
@@ -126,7 +130,11 @@
                             <!-- Live Student Info Output -->
                             <Border Grid.Column="0" CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <TextBlock x:Name="PreviewTextBlock" Text="Student information will appear here once entered." Style="{StaticResource BodyTextStyle}" FontSize="16" LineHeight="26" TextWrapping="Wrap"/>
+                                    <StackPanel Spacing="16">
+                                        <!-- THE FIX: PersonPicture profile preview -->
+                                        <PersonPicture x:Name="StudentPhotoPreview" ProfilePicture="{x:Null}" Height="120" Width="120" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                        <TextBlock x:Name="PreviewTextBlock" Text="Student information will appear here once entered." Style="{StaticResource BodyTextStyle}" FontSize="16" LineHeight="26" TextWrapping="Wrap"/>
+                                    </StackPanel>
                                 </ScrollViewer>
                             </Border>
 
