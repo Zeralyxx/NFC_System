@@ -76,11 +76,11 @@ namespace NFC_System
         // 1. FAST ZXING CONFIGURATION (Optimized for upright QR codes on phone screens)
         private readonly BarcodeReaderGeneric _barcodeReader = new()
         {
-            AutoRotate = false, // Set to false to save 70% CPU processing time
+            AutoRotate = false,
             Options = new DecodingOptions
             {
                 PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.QR_CODE },
-                TryHarder = false, // Set to false for instant reading of clear screen QR codes
+                TryHarder = false,
                 PureBarcode = false
             }
         };
@@ -161,12 +161,11 @@ namespace NFC_System
                     }
                     else
                     {
-                        // A highly satisfying, rapid ascending major chord (C6 -> E6 -> G6)
                         Console.Beep(1046, 75);  // C6
                         System.Threading.Thread.Sleep(15);
                         Console.Beep(1318, 75);  // E6
                         System.Threading.Thread.Sleep(15);
-                        Console.Beep(1568, 200); // G6 (Held longer for the "ping" resolution)
+                        Console.Beep(1568, 200); // G6
                     }
                 }
                 catch { }
@@ -185,15 +184,11 @@ namespace NFC_System
             });
         }
 
-        // NEW: Fast, responsive beep for hardware keypad input
         private void PlayKeypadBeep()
         {
             Task.Run(() =>
             {
-                try
-                {
-                    Console.Beep(800, 60);
-                }
+                try { Console.Beep(800, 60); }
                 catch { }
             });
         }
@@ -329,18 +324,14 @@ namespace NFC_System
                 if (_originatingMode == "Event")
                 {
                     _currentMode = KioskStateController.CurrentMode;
-
-                    if (_currentMode == VerificationMode.Fast) DebugSecurityLevel.SelectedIndex = 0;
-                    else if (_currentMode == VerificationMode.HighSecurity) DebugSecurityLevel.SelectedIndex = 2;
-                    else DebugSecurityLevel.SelectedIndex = 1;
                 }
                 else
                 {
                     string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
 
-                    if (savedMode == "Fast") { _currentMode = VerificationMode.Fast; DebugSecurityLevel.SelectedIndex = 0; }
-                    else if (savedMode == "High-Security") { _currentMode = VerificationMode.HighSecurity; DebugSecurityLevel.SelectedIndex = 2; }
-                    else { _currentMode = VerificationMode.Standard; DebugSecurityLevel.SelectedIndex = 1; }
+                    if (savedMode == "Fast") _currentMode = VerificationMode.Fast;
+                    else if (savedMode == "High-Security") _currentMode = VerificationMode.HighSecurity;
+                    else _currentMode = VerificationMode.Standard;
                 }
 
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
@@ -349,7 +340,6 @@ namespace NFC_System
             catch
             {
                 _currentMode = VerificationMode.Standard;
-                DebugSecurityLevel.SelectedIndex = 1;
                 TryConnectSerial("COM3");
             }
             SetState(AuthenticationStage.Idle);
@@ -362,12 +352,8 @@ namespace NFC_System
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
-            // 1. Force LEDs OFF before tearing down serial connection
             SetHardwareLeds(false);
-
-            // 2. Small delay (50ms) to ensure the serial buffer pushes "LED=OFF\n" to the ESP32
             System.Threading.Thread.Sleep(50);
-
             CloseSerialPort();
             _ = DisposeCameraAsync();
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
@@ -380,12 +366,8 @@ namespace NFC_System
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
-            // 1. Force LEDs OFF before tearing down serial connection
             SetHardwareLeds(false);
-
-            // 2. Small delay (50ms) to ensure the serial buffer pushes "LED=OFF\n" to the ESP32
             System.Threading.Thread.Sleep(50);
-
             CloseSerialPort();
             _ = DisposeCameraAsync();
             this.Close();
@@ -433,20 +415,15 @@ namespace NFC_System
 
             if (newState == AuthenticationStage.AccessGranted)
             {
-                // THE FIX: Slash delay to 400ms for Event/Fast modes to allow rapid queue processing. 
-                // Standard campus gates remain at 1000ms to ensure students read the screen.
-                int delayMs = (_originatingMode == "Event" || _currentMode == VerificationMode.Fast) ? 400 : 1000;
-
-                await Task.Delay(delayMs);
+                // UNIVERSAL FAST DELAY: 400ms across all modes and events
+                await Task.Delay(400);
                 if (_currentStage == AuthenticationStage.AccessGranted)
                     SetState(AuthenticationStage.Idle);
             }
             else if (newState == AuthenticationStage.AccessDenied)
             {
-                // THE FIX: Slash error delay to 1.2s for events, standard gates remain at 3.5s.
-                int delayMs = (_originatingMode == "Event" || _currentMode == VerificationMode.Fast) ? 1200 : 3500;
-
-                await Task.Delay(delayMs);
+                // UNIVERSAL FAST DELAY: 1.2s error screen across all modes and events
+                await Task.Delay(1200);
                 if (_currentStage == AuthenticationStage.AccessDenied)
                     SetState(AuthenticationStage.Idle);
             }
@@ -455,8 +432,6 @@ namespace NFC_System
         private void UpdateUiForState(AuthenticationStage state)
         {
             UpdateProgressIndicator();
-
-            // The Fix: By default, turn LEDs off unless explicitly waiting for a QR scan
             SetHardwareLeds(state == AuthenticationStage.WaitingForQR);
 
             switch (state)
@@ -539,8 +514,6 @@ namespace NFC_System
                 return;
             }
 
-            // --- FRONT-LINE RESTRICTION CHECK ---
-            // Blocks uninvited attendees immediately before engines or sessions are invoked
             if (transType == TransactionType.EventAttendance && !string.IsNullOrEmpty(_eventId))
             {
                 try
@@ -566,9 +539,8 @@ namespace NFC_System
                         }
                     }
                 }
-                catch { /* Ignore exceptions to allow the VerificationEngine to handle offline cache logic safely */ }
+                catch { }
             }
-            // ------------------------------------
 
             if (IsInvalidUid(uid))
             {
@@ -615,7 +587,7 @@ namespace NFC_System
                 else
                 {
                     ExecuteStateChange(AuthenticationStage.NFCVerified);
-                    await Task.Delay(800);
+                    await Task.Delay(400);
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
@@ -707,7 +679,7 @@ namespace NFC_System
                     else
                     {
                         SetState(AuthenticationStage.PINVerified);
-                        await Task.Delay(800);
+                        await Task.Delay(400);
 
                         if (outcome.IsGranted)
                         {
@@ -773,7 +745,6 @@ namespace NFC_System
                 return;
             }
 
-            // --- FRONT-LINE RESTRICTION CHECK (QR) ---
             if (transType == TransactionType.EventAttendance && !string.IsNullOrEmpty(_eventId))
             {
                 try
@@ -801,9 +772,8 @@ namespace NFC_System
                         }
                     }
                 }
-                catch { /* Ignore exceptions to allow the VerificationEngine to handle offline cache logic safely */ }
+                catch { }
             }
-            // -----------------------------------------
 
             if (_activeSession == null)
             {
@@ -1021,7 +991,6 @@ namespace NFC_System
             return false;
         }
 
-        // 2. CAMERA INITIALIZATION WITH MACRO FOCUS TUNING
         private async Task InitializeCameraAsync()
         {
             try
@@ -1040,7 +1009,6 @@ namespace NFC_System
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu
                 });
 
-                // ENHANCED AUTO-FOCUS: Set focus range to Macro for phone screens held close
                 var focusControl = _mediaCapture.VideoDeviceController.FocusControl;
                 if (focusControl.Supported)
                 {
@@ -1067,13 +1035,12 @@ namespace NFC_System
             catch { }
         }
 
-        // 3. FAST FRAME ARRIVED (Scans every 120ms instead of 500ms)
         private void FrameReader_FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
         {
             if (_isClosing || _currentStage != AuthenticationStage.WaitingForQR) return;
 
-            bool processPreview = !_isUpdatingPreview && (DateTime.Now - _lastPreviewTime).TotalMilliseconds >= 33; // ~30 FPS preview
-            bool processDecode = !_isDecoding && (DateTime.Now - _lastFrameProcessTime).TotalMilliseconds >= 120;  // ~8 scans/sec
+            bool processPreview = !_isUpdatingPreview && (DateTime.Now - _lastPreviewTime).TotalMilliseconds >= 33;
+            bool processDecode = !_isDecoding && (DateTime.Now - _lastFrameProcessTime).TotalMilliseconds >= 120;
 
             if (!processPreview && !processDecode) return;
 
@@ -1147,7 +1114,6 @@ namespace NFC_System
             }
         }
 
-        // 4. ZERO-LATENCY PIXEL EXTRACTION (Replaces Jpeg Encoder/Decoder)
         private string? DecodeQrPayloadDirect(SoftwareBitmap bitmap)
         {
             try
@@ -1155,11 +1121,9 @@ namespace NFC_System
                 int width = bitmap.PixelWidth;
                 int height = bitmap.PixelHeight;
 
-                // Extract raw pixel buffer straight into memory
                 byte[] bytes = new byte[4 * width * height];
                 bitmap.CopyToBuffer(bytes.AsBuffer());
 
-                // Hand raw BGRA bytes directly to ZXing
                 var source = new RGBLuminanceSource(bytes, width, height, RGBLuminanceSource.BitmapFormat.BGRA32);
                 Result? result = _barcodeReader.Decode(source);
 
@@ -1206,14 +1170,12 @@ namespace NFC_System
             {
                 if (_serialPort != null && _serialPort.IsOpen)
                 {
-                    // If the window is closing, write immediately on the calling thread
                     if (_isClosing)
                     {
                         _serialPort.WriteLine(turnOn ? "LED=ON" : "LED=OFF");
                     }
                     else
                     {
-                        // Otherwise, run asynchronously off the UI thread
                         Task.Run(() =>
                         {
                             try
@@ -1229,56 +1191,6 @@ namespace NFC_System
                 }
             }
             catch { }
-        }
-
-        private void DebugSecurityLevel_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (DebugSecurityLevel.SelectedIndex == 0) _currentMode = VerificationMode.Fast;
-            else if (DebugSecurityLevel.SelectedIndex == 1) _currentMode = VerificationMode.Standard;
-            else if (DebugSecurityLevel.SelectedIndex == 2) _currentMode = VerificationMode.HighSecurity;
-
-            SetState(AuthenticationStage.Idle);
-        }
-
-        private void SimulateNfc_Click(object sender, RoutedEventArgs e) => ProcessNfcScan("04:A1:B2:C3");
-
-        private async void SimulatePin_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentStage != AuthenticationStage.WaitingForPIN) return;
-
-            string[] strokes = { "1", "2", "3", "4", "ENTER" };
-            foreach (var stroke in strokes)
-            {
-                if (stroke == "ENTER") ProcessHardwareKeypadStroke("", true, false, false);
-                else ProcessHardwareKeypadStroke(stroke, false, false, false);
-
-                await Task.Delay(150);
-            }
-        }
-
-        private void SimulateQr_Click(object sender, RoutedEventArgs e) => ProcessQrScan("26-00001");
-
-        private async void SimulateFail_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentStage == AuthenticationStage.Idle)
-            {
-                ProcessNfcScan("00:00:00:00");
-            }
-            else if (_currentStage == AuthenticationStage.WaitingForPIN)
-            {
-                string[] strokes = { "9", "9", "9", "9", "ENTER" };
-                foreach (var stroke in strokes)
-                {
-                    if (stroke == "ENTER") ProcessHardwareKeypadStroke("", true, false, false);
-                    else ProcessHardwareKeypadStroke(stroke, false, false, false);
-
-                    await Task.Delay(150);
-                }
-            }
-            else if (_currentStage == AuthenticationStage.WaitingForQR)
-            {
-                ProcessQrScan("INVALID");
-            }
         }
     }
 }
