@@ -91,7 +91,6 @@
                                 <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
                                 <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
 
-                                <!-- UPDATED: Hardware Button Hint added to text -->
                                 <Button x:Name="ForgotIdButton" Content="Forgot ID? Use QR (Press D)" Click="ForgotIdButton_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF" Foreground="White" CornerRadius="8" Padding="16,10" Margin="0,24,0,0" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
@@ -115,7 +114,6 @@
                                 <TextBlock Text="Press A to Confirm" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
                                 <TextBlock Text="Press B to Delete" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
                                 <TextBlock Text="Press C = Abort" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                                <!-- NEW: D button hint -->
                                 <TextBlock Text="Press D = Scan QR" FontSize="16" FontFamily="Consolas" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </StackPanel>
@@ -167,18 +165,5 @@
                 </Grid>
             </Border>
         </Grid>
-
-        <!-- Temporary Debug Panel -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8" Margin="0,24,0,0" Opacity="0.4">
-            <ComboBox x:Name="DebugSecurityLevel" SelectedIndex="2" Width="120" SelectionChanged="DebugSecurityLevel_SelectionChanged">
-                <ComboBoxItem Content="Fast"/>
-                <ComboBoxItem Content="Standard"/>
-                <ComboBoxItem Content="High"/>
-            </ComboBox>
-            <Button Content="Simulate NFC" Click="SimulateNfc_Click"/>
-            <Button Content="Simulate PIN (1234)" Click="SimulatePin_Click"/>
-            <Button Content="Simulate QR" Click="SimulateQr_Click"/>
-            <Button Content="Simulate Fail" Click="SimulateFail_Click"/>
-        </StackPanel>
     </Grid>
 </Window>
