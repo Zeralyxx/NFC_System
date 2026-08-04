@@ -148,6 +148,11 @@ namespace NFC_System
 
         // --- UNIVERSITY LEDGER FILTERING ---
 
+        private void SearchUnivNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            ApplyUnivLedgerFilters();
+        }
+
         private void UnivFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             ApplyUnivLedgerFilters();
@@ -155,23 +160,41 @@ namespace NFC_System
 
         private void ClearUnivFilters_Click(object sender, RoutedEventArgs e)
         {
-            if (UnivFilterCourse == null || UnivFilterSection == null || UnivFilterStatus == null) return;
+            if (UnivFilterCourse == null || UnivFilterSection == null || UnivFilterStatus == null || UnivFilterTime == null || UnivFilterSortBox == null || SearchUnivNameTextBox == null) return;
+
+            SearchUnivNameTextBox.Text = string.Empty;
+            UnivFilterSortBox.SelectedIndex = 0;
 
             if (UnivFilterCourse.Items.Count > 0) UnivFilterCourse.SelectedIndex = 0;
             if (UnivFilterSection.Items.Count > 0) UnivFilterSection.SelectedIndex = 0;
             UnivFilterStatus.SelectedIndex = 0;
+            UnivFilterTime.SelectedIndex = 0;
+
+            ApplyUnivLedgerFilters();
         }
 
         private void ApplyUnivLedgerFilters()
         {
-            if (_univMasterLogs == null || UnivFilterCourse == null || UnivFilterSection == null || UnivFilterStatus == null || UniversityAuditListView == null)
+            if (_univMasterLogs == null || UnivFilterCourse == null || UnivFilterSection == null || UnivFilterStatus == null || UnivFilterTime == null || UnivFilterSortBox == null || UniversityAuditListView == null)
                 return;
 
             var filtered = _univMasterLogs.AsEnumerable();
 
+            string searchQuery = SearchUnivNameTextBox.Text?.Trim().ToLower() ?? "";
+            if (!string.IsNullOrEmpty(searchQuery))
+            {
+                filtered = filtered.Where(l =>
+                    (l.FullName != null && l.FullName.ToLower().Contains(searchQuery)) ||
+                    (l.StudentId != null && l.StudentId.ToLower().Contains(searchQuery)) ||
+                    (l.Course != null && l.Course.ToLower().Contains(searchQuery)) ||
+                    (l.Section != null && l.Section.ToLower().Contains(searchQuery)) ||
+                    (l.Timestamp != null && l.Timestamp.ToLower().Contains(searchQuery)));
+            }
+
             string course = UnivFilterCourse.SelectedItem?.ToString() ?? "All Courses";
             string section = UnivFilterSection.SelectedItem?.ToString() ?? "All Sections";
             string status = (UnivFilterStatus.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
+            string time = (UnivFilterTime.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Times";
 
             if (course != "All Courses")
                 filtered = filtered.Where(l => l.Course == course);
@@ -181,6 +204,18 @@ namespace NFC_System
 
             if (status != "All Statuses")
                 filtered = filtered.Where(l => l.Status == status);
+
+            if (time == "Morning (AM)")
+                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("AM"));
+            else if (time == "Afternoon (PM)")
+                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("PM"));
+
+            string sortOrder = (UnivFilterSortBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default (Time)";
+
+            if (sortOrder == "Name (A-Z)")
+                filtered = filtered.OrderBy(l => l.FullName);
+            else if (sortOrder == "Name (Z-A)")
+                filtered = filtered.OrderByDescending(l => l.FullName);
 
             var finalData = filtered.ToList();
             UniversityAuditListView.ItemsSource = finalData;
@@ -432,9 +467,9 @@ namespace NFC_System
                 filtered = filtered.Where(l => _incompleteStudentIds.Contains(l.StudentId));
 
             if (time == "Morning (AM)")
-                filtered = filtered.Where(l => l.Timestamp.Contains("AM"));
+                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("AM"));
             else if (time == "Afternoon (PM)")
-                filtered = filtered.Where(l => l.Timestamp.Contains("PM"));
+                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("PM"));
 
             var viewModels = filtered.Select(l => {
                 bool isCompleted = _completedStudentIds.Contains(l.StudentId);
@@ -483,7 +518,7 @@ namespace NFC_System
             UnivPopupExpandToggle.IsChecked = false;
             UnivPopupExpandToggle.Content = "⛶ Expand View";
 
-            // Populate the dropdown filters dynamically based on the current data pool
+            // Populate the dropdown filters dynamically based on current data
             var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
             courses.Insert(0, "All Courses");
             UnivPopupCourseFilter.ItemsSource = courses;
@@ -511,21 +546,22 @@ namespace NFC_System
             }
         }
 
-        // --- NEW: DEDICATED UNIVERSITY POPUP FILTERING LOGIC ---
+        // --- DEDICATED UNIVERSITY POPUP FILTERING LOGIC ---
 
         private void UnivPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyUnivPopupFilters();
+        private void UnivPopupFilter_Changed(object sender, SelectionChangedEventArgs e) => ApplyUnivPopupFilters();
 
         private void UnivPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyUnivPopupFilters();
 
         private void UnivPopupClear_Click(object sender, RoutedEventArgs e)
         {
-            UnivPopupSearchBox.Text = "";
-            UnivPopupDatePicker.Date = null;
-            UnivPopupSortBox.SelectedIndex = 0;
+            if (UnivPopupSearchBox != null) UnivPopupSearchBox.Text = "";
+            if (UnivPopupDatePicker != null) UnivPopupDatePicker.Date = null;
+            if (UnivPopupSortBox != null) UnivPopupSortBox.SelectedIndex = 0;
 
-            if (UnivPopupCourseFilter.Items.Count > 0) UnivPopupCourseFilter.SelectedIndex = 0;
-            if (UnivPopupSectionFilter.Items.Count > 0) UnivPopupSectionFilter.SelectedIndex = 0;
-            UnivPopupStatusFilter.SelectedIndex = 0;
+            if (UnivPopupCourseFilter != null && UnivPopupCourseFilter.Items.Count > 0) UnivPopupCourseFilter.SelectedIndex = 0;
+            if (UnivPopupSectionFilter != null && UnivPopupSectionFilter.Items.Count > 0) UnivPopupSectionFilter.SelectedIndex = 0;
+            if (UnivPopupStatusFilter != null) UnivPopupStatusFilter.SelectedIndex = 0;
 
             ApplyUnivPopupFilters();
         }
@@ -536,7 +572,7 @@ namespace NFC_System
 
             var filtered = _univMasterLogs.AsEnumerable();
 
-            string query = UnivPopupSearchBox.Text?.Trim().ToLower() ?? "";
+            string query = UnivPopupSearchBox?.Text?.Trim().ToLower() ?? "";
             if (!string.IsNullOrEmpty(query))
             {
                 filtered = filtered.Where(l =>
@@ -547,21 +583,21 @@ namespace NFC_System
                     (l.Timestamp != null && l.Timestamp.ToLower().Contains(query)));
             }
 
-            if (UnivPopupDatePicker.Date.HasValue)
+            if (UnivPopupDatePicker != null && UnivPopupDatePicker.Date.HasValue)
             {
                 string targetDateStr = UnivPopupDatePicker.Date.Value.ToString("MMM dd"); // Log format is "MMM dd - hh:mm tt"
                 filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.StartsWith(targetDateStr));
             }
 
-            string course = UnivPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
-            string section = UnivPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
-            string status = (UnivPopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
+            string course = UnivPopupCourseFilter?.SelectedItem?.ToString() ?? "All Courses";
+            string section = UnivPopupSectionFilter?.SelectedItem?.ToString() ?? "All Sections";
+            string status = (UnivPopupStatusFilter?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
 
             if (course != "All Courses") filtered = filtered.Where(l => l.Course == course);
             if (section != "All Sections") filtered = filtered.Where(l => l.Section == section);
             if (status != "All Statuses") filtered = filtered.Where(l => l.Status == status);
 
-            string sortOrder = (UnivPopupSortBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Newest First";
+            string sortOrder = (UnivPopupSortBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Newest First";
             if (sortOrder == "Oldest First")
             {
                 filtered = filtered.Reverse(); // Original db pull is strictly DESC, so reverse gives exact ASC order
@@ -578,7 +614,7 @@ namespace NFC_System
             UnivPopupListView.ItemsSource = filtered.ToList();
         }
 
-        // --- EVENT POPUP EXPLORER ---
+        // --- DEDICATED EVENT POPUP EXPLORER LOGIC ---
 
         private async void OpenEventExplorer_Click(object sender, RoutedEventArgs e)
         {
@@ -587,7 +623,15 @@ namespace NFC_System
             EventPopupExpandToggle.IsChecked = false;
             EventPopupExpandToggle.Content = "⛶ Expand View";
 
-            EventPopupListView.ItemsSource = AttendanceListView.ItemsSource;
+            var courses = _eventMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+            courses.Insert(0, "All Courses");
+            EventPopupCourseFilter.ItemsSource = courses;
+
+            var sections = _eventMasterLogs.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+            sections.Insert(0, "All Sections");
+            EventPopupSectionFilter.ItemsSource = sections;
+
+            EventPopupClear_Click(null, null);
 
             await EventExplorerDialog.ShowAsync();
         }
@@ -604,6 +648,109 @@ namespace NFC_System
                 EventDialogContainer.Width = 1000;
                 EventPopupExpandToggle.Content = "⛶ Expand View";
             }
+        }
+
+        private void EventPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyEventPopupFilters();
+        private void EventPopupFilter_Changed(object sender, SelectionChangedEventArgs e) => ApplyEventPopupFilters();
+        private void EventPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyEventPopupFilters();
+
+        private void EventPopupClear_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventPopupSearchBox != null) EventPopupSearchBox.Text = string.Empty;
+            if (EventPopupDatePicker != null) EventPopupDatePicker.Date = null;
+            if (EventPopupSortBox != null) EventPopupSortBox.SelectedIndex = 0;
+
+            if (EventPopupCourseFilter != null && EventPopupCourseFilter.Items.Count > 0) EventPopupCourseFilter.SelectedIndex = 0;
+            if (EventPopupSectionFilter != null && EventPopupSectionFilter.Items.Count > 0) EventPopupSectionFilter.SelectedIndex = 0;
+            if (EventPopupStatusFilter != null) EventPopupStatusFilter.SelectedIndex = 0;
+
+            ApplyEventPopupFilters();
+        }
+
+        private void ApplyEventPopupFilters()
+        {
+            if (_eventMasterLogs == null || EventPopupListView == null || EventPopupCourseFilter == null || EventPopupSectionFilter == null || EventPopupStatusFilter == null || EventPopupSortBox == null)
+                return;
+
+            bool isEventLive = false;
+            if (_currentSelectedEvent != null)
+            {
+                isEventLive = _currentSelectedEvent.DisplayText.Contains("🟢 LIVE");
+            }
+
+            var filtered = _eventMasterLogs.AsEnumerable();
+
+            string searchQuery = EventPopupSearchBox?.Text?.Trim().ToLower() ?? "";
+            if (!string.IsNullOrEmpty(searchQuery))
+            {
+                filtered = filtered.Where(l =>
+                    (l.FullName != null && l.FullName.ToLower().Contains(searchQuery)) ||
+                    (l.StudentId != null && l.StudentId.ToLower().Contains(searchQuery)) ||
+                    (l.Course != null && l.Course.ToLower().Contains(searchQuery)) ||
+                    (l.Section != null && l.Section.ToLower().Contains(searchQuery)) ||
+                    (l.Timestamp != null && l.Timestamp.ToLower().Contains(searchQuery)));
+            }
+
+            if (EventPopupDatePicker != null && EventPopupDatePicker.Date.HasValue)
+            {
+                string targetDateStr = EventPopupDatePicker.Date.Value.ToString("MMM dd");
+                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.StartsWith(targetDateStr));
+            }
+
+            string course = EventPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+            string section = EventPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
+            string status = (EventPopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Attendees";
+
+            if (course != "All Courses")
+                filtered = filtered.Where(l => l.Course == course);
+
+            if (section != "All Sections")
+                filtered = filtered.Where(l => l.Section == section);
+
+            if (status == "Completed Event" || status == "Ongoing")
+                filtered = filtered.Where(l => _completedStudentIds.Contains(l.StudentId));
+            else if (status == "Incomplete / Left Early")
+                filtered = filtered.Where(l => _incompleteStudentIds.Contains(l.StudentId));
+
+            var viewModels = filtered.Select(l => {
+                bool isCompleted = _completedStudentIds.Contains(l.StudentId);
+
+                string statusText = isCompleted ? (isEventLive ? "Ongoing" : "Completed") : "Incomplete";
+                SolidColorBrush statusColor = isCompleted
+                    ? (isEventLive
+                        ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250))
+                        : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)))
+                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+
+                return new EventAttendanceViewModel
+                {
+                    Timestamp = l.Timestamp,
+                    FullName = l.FullName ?? "Unknown",
+                    StudentId = l.StudentId ?? "",
+                    Course = l.Course ?? "",
+                    Section = l.Section ?? "",
+                    Action = l.Status ?? "",
+                    CompletionStatus = statusText,
+                    CompletionColor = statusColor
+                };
+            }).ToList();
+
+            string sortOrder = (EventPopupSortBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Newest First";
+
+            if (sortOrder == "Oldest First")
+            {
+                viewModels.Reverse();
+            }
+            else if (sortOrder == "Name (A-Z)")
+            {
+                viewModels = viewModels.OrderBy(v => v.FullName).ToList();
+            }
+            else if (sortOrder == "Name (Z-A)")
+            {
+                viewModels = viewModels.OrderByDescending(v => v.FullName).ToList();
+            }
+
+            EventPopupListView.ItemsSource = viewModels;
         }
 
         // --- EXPORT LOGIC ---
@@ -625,7 +772,6 @@ namespace NFC_System
                 return;
             }
 
-            // THE FIX (ITEM 3): Deduplicate by StudentId so each student appears exactly once
             var logsToExport = rawLogs
                 .GroupBy(l => l.StudentId)
                 .Select(g => g.First())
@@ -714,10 +860,8 @@ namespace NFC_System
             {
                 var csvData = new System.Text.StringBuilder();
 
-                // Build header
                 csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Status");
 
-                // Append rows
                 foreach (var log in logsToExport)
                 {
                     csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.Status}\"");

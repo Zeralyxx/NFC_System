@@ -210,16 +210,31 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- University Filter Bar -->
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-                            <ComboBox x:Name="UnivFilterCourse" PlaceholderText="Course" Width="160" SelectionChanged="UnivFilter_SelectionChanged"/>
-                            <ComboBox x:Name="UnivFilterSection" PlaceholderText="Section" Width="130" SelectionChanged="UnivFilter_SelectionChanged"/>
-                            <ComboBox x:Name="UnivFilterStatus" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
-                                <ComboBoxItem Content="All Statuses"/>
-                                <ComboBoxItem Content="GRANTED"/>
-                                <ComboBoxItem Content="DENIED"/>
-                            </ComboBox>
-                            <Button Content="Clear Filters" Click="ClearUnivFilters_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <!-- Unified University Filter Bar -->
+                        <StackPanel Grid.Row="1" Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox x:Name="SearchUnivNameTextBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="SearchUnivNameTextBox_TextChanged"/>
+                                <ComboBox x:Name="UnivFilterSortBox" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
+                                    <ComboBoxItem Content="Default (Time)"/>
+                                    <ComboBoxItem Content="Name (A-Z)"/>
+                                    <ComboBoxItem Content="Name (Z-A)"/>
+                                </ComboBox>
+                                <ComboBox x:Name="UnivFilterCourse" PlaceholderText="Course" Width="160" SelectionChanged="UnivFilter_SelectionChanged"/>
+                                <ComboBox x:Name="UnivFilterSection" PlaceholderText="Section" Width="130" SelectionChanged="UnivFilter_SelectionChanged"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ComboBox x:Name="UnivFilterStatus" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
+                                    <ComboBoxItem Content="All Statuses"/>
+                                    <ComboBoxItem Content="GRANTED"/>
+                                    <ComboBoxItem Content="DENIED"/>
+                                </ComboBox>
+                                <ComboBox x:Name="UnivFilterTime" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
+                                    <ComboBoxItem Content="All Times"/>
+                                    <ComboBoxItem Content="Morning (AM)"/>
+                                    <ComboBoxItem Content="Afternoon (PM)"/>
+                                </ComboBox>
+                                <Button Content="Clear Filters" Click="ClearUnivFilters_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                            </StackPanel>
                         </StackPanel>
                     </Grid>
 
@@ -313,8 +328,6 @@
                                                 HorizontalAlignment="Stretch" 
                                                 Height="36"/>
                             </StackPanel>
-
-                            <Button x:Name="ExportButton" Content="Export to Excel" Click="ExportButton_Click" HorizontalAlignment="Stretch" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" Margin="0,8,0,0" IsEnabled="False"/>
                         </StackPanel>
                     </Border>
 
@@ -445,8 +458,14 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Event Attendance Ledger" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" Margin="0"/>
-                            <Button Grid.Column="1" Content="⛶ Open Explorer" Click="OpenEventExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="Event Attendance Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
+                                <TextBlock Text="Filterable stream of all event interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Button x:Name="ExportButton" Content="Export to Excel" Click="ExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold" IsEnabled="False"/>
+                                <Button Content="⛶ Open Explorer" Click="OpenEventExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                            </StackPanel>
                         </Grid>
 
                         <StackPanel Grid.Row="1" Spacing="12">
@@ -552,7 +571,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <!-- NEW: Advanced Filters Row -->
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
@@ -566,7 +584,7 @@
                     <ToggleButton x:Name="UnivPopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="UnivPopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </Grid>
 
-                <!-- NEW: Unified Explorer Filter Bar -->
+                <!-- Unified Explorer Filter Bar -->
                 <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,16">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBox x:Name="UnivPopupSearchBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="UnivPopupFilter_Changed"/>
@@ -657,6 +675,7 @@
             <Grid x:Name="EventDialogContainer" Width="1000" Margin="0,16,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
@@ -669,7 +688,31 @@
                     <ToggleButton x:Name="EventPopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="EventPopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </Grid>
 
-                <Border Grid.Row="1" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
+                <!-- Unified Explorer Filter Bar for Events -->
+                <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox x:Name="EventPopupSearchBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="EventPopupFilter_Changed"/>
+                        <CalendarDatePicker x:Name="EventPopupDatePicker" PlaceholderText="Filter by Date" DateChanged="EventPopupDatePicker_DateChanged" Width="160"/>
+                        <ComboBox x:Name="EventPopupSortBox" SelectedIndex="0" Width="160" SelectionChanged="EventPopupFilter_Changed">
+                            <ComboBoxItem Content="Newest First"/>
+                            <ComboBoxItem Content="Oldest First"/>
+                            <ComboBoxItem Content="Name (A-Z)"/>
+                            <ComboBoxItem Content="Name (Z-A)"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox x:Name="EventPopupCourseFilter" PlaceholderText="Course" Width="160" SelectionChanged="EventPopupFilter_Changed"/>
+                        <ComboBox x:Name="EventPopupSectionFilter" PlaceholderText="Section" Width="130" SelectionChanged="EventPopupFilter_Changed"/>
+                        <ComboBox x:Name="EventPopupStatusFilter" SelectedIndex="0" Width="190" SelectionChanged="EventPopupFilter_Changed">
+                            <ComboBoxItem Content="All Attendees"/>
+                            <ComboBoxItem Content="Completed Event"/>
+                            <ComboBoxItem Content="Incomplete / Left Early"/>
+                        </ComboBox>
+                        <Button Content="Clear Filters" Click="EventPopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
