@@ -29,6 +29,13 @@ public sealed class VerificationLogRecord
             : new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red
 }
 
+public sealed class StaffRecord
+{
+    public string NfcUid { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public string Role { get; set; } = "";
+}
+
 public sealed class SystemAuditLog
 {
     public DateTime Timestamp { get; set; }
@@ -815,6 +822,27 @@ public sealed class DatabaseService
         catch (Exception ex) { throw new Exception($"Events Sync Error: {ex.Message}"); }
 
         return updatedCount;
+    }
+
+    public async Task<IReadOnlyList<StaffRecord>> GetAllStaffAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand("SELECT nfc_uid, full_name, role FROM staff ORDER BY full_name ASC", connection);
+
+        var list = new List<StaffRecord>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new StaffRecord
+            {
+                NfcUid = Value(reader["nfc_uid"]),
+                FullName = Value(reader["full_name"]),
+                Role = Value(reader["role"])
+            });
+        }
+        return list;
     }
 
     public async Task<int> PushEventsToCloudAsync()

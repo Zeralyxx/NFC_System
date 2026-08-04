@@ -138,6 +138,19 @@ namespace NFC_System
 
                             if (details.Role == "Administrator" || details.Role == "Master Administrator")
                             {
+                                // THE FIX: Strict RBAC check. Standard Admins cannot create Master Admins.
+                                if (_pendingAdminAction == "REGISTER_STAFF" && _pendingStaffRole == "Master Administrator" && details.Role != "Master Administrator")
+                                {
+                                    _isAwaitingAdminAuth = false;
+                                    _pendingAdminAction = "";
+                                    AdminAuthDialog.Hide();
+
+                                    StatusTextBlock.Text = "Authorization Denied: Only an existing Master Administrator can create another Master Administrator.";
+                                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                                    PlayErrorAlert();
+                                    return;
+                                }
+
                                 _isAwaitingAdminAuth = false;
                                 AdminAuthDialog.Hide();
                                 PlaySuccessPing();
@@ -392,6 +405,24 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Registration failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
+        }
+
+        private async void OpenStaffDirectoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            StaffDirectoryDialog.XamlRoot = this.Content.XamlRoot;
+
+            try
+            {
+                var staffList = await _database.GetAllStaffAsync();
+                StaffListView.ItemsSource = staffList;
+                await StaffDirectoryDialog.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Could not load staff directory: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
             }

@@ -50,7 +50,7 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- THE FIX (ITEM 8): Sticky Status Banner Pinned to Top -->
+                <!-- Sticky Status Banner Pinned to Top -->
                 <Border Grid.Row="0" Margin="0,0,16,24" Padding="16,12" CornerRadius="8" Background="#15FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1">
                     <TextBlock x:Name="StatusTextBlock" Text="System Ready: Waiting for input..." Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                 </Border>
@@ -105,8 +105,19 @@
                         <!-- Staff Access & RBAC Registration -->
                         <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                             <StackPanel Spacing="16">
-                                <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                <!-- THE FIX: Added Staff Directory Button -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                        <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="View Staff Directory" Click="OpenStaffDirectoryButton_Click" Height="36" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" VerticalAlignment="Top"/>
+                                </Grid>
 
                                 <Grid ColumnSpacing="12" RowSpacing="12">
                                     <Grid.ColumnDefinitions>
@@ -395,6 +406,7 @@
                         <TextBlock Text="Please tap your Admin NFC card..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
+                <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
             </StackPanel>
         </ContentDialog>
 
@@ -425,6 +437,37 @@
                     <ComboBoxItem Content="Group by Log Type"/>
                     <ComboBoxItem Content="Sort alphabetically by Subject"/>
                 </ComboBox>
+            </StackPanel>
+        </ContentDialog>
+
+        <!-- Staff Directory Dialog -->
+        <ContentDialog x:Name="StaffDirectoryDialog"
+                       Title="Staff Directory"
+                       CloseButtonText="Close"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
+                <TextBlock Text="List of all registered personnel and their assigned system roles." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">
+                    <ListView x:Name="StaffListView" Height="350" SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:StaffRecord">
+                                <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind FullName}" FontWeight="SemiBold" FontSize="15"/>
+                                        <TextBlock Text="{x:Bind NfcUid}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind Role}" Foreground="#60A5FA" FontSize="12" FontWeight="SemiBold"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Border>
             </StackPanel>
         </ContentDialog>
 
