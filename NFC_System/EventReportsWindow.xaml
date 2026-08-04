@@ -768,5 +768,36 @@
                 </Border>
             </Grid>
         </ContentDialog>
+        <!-- ========================================================= -->
+        <!-- POPUP: EVENT EXPORT CONFIGURATION                         -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="ExportConfigDialog"
+                       Title="Configure Export Data"
+                       PrimaryButtonText="Export to CSV"
+                       CloseButtonText="Cancel"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
+                <TextBlock Text="Select the columns you want to include in the exported report:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                <Border Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="12">
+                        <CheckBox x:Name="ExportColTimestamp" Content="Timestamp" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColStudentId" Content="Student ID" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColName" Content="Student Name" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColCourse" Content="Course" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColSection" Content="Section" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColAction" Content="Latest Action (Present/Departed)" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColStatus" Content="Event Completion Status" IsChecked="True"/>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="Data Grouping &amp; Sorting:" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0"/>
+                <ComboBox x:Name="ExportSortComboBox" SelectedIndex="0" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Default (Time of Entry)"/>
+                    <ComboBoxItem Content="Group by Course, then Section, then Name"/>
+                    <ComboBoxItem Content="Group by Section, then Name"/>
+                    <ComboBoxItem Content="Sort alphabetically by Name only"/>
+                </ComboBox>
+            </StackPanel>
+        </ContentDialog>
     </Grid>
 </Window>

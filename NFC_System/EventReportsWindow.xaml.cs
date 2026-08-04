@@ -155,6 +155,28 @@ namespace NFC_System
 
         private void UnivFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (UnivFilterCourse == null || UnivFilterSection == null) return;
+
+            // DYNAMIC SECTION UPDATING: If the course changed, update the available sections
+            if (sender == UnivFilterCourse && _univMasterLogs != null)
+            {
+                string course = UnivFilterCourse.SelectedItem?.ToString() ?? "All Courses";
+                var sectionQuery = _univMasterLogs.AsEnumerable();
+
+                if (course != "All Courses")
+                    sectionQuery = sectionQuery.Where(l => l.Course == course);
+
+                var sections = sectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                sections.Insert(0, "All Sections");
+
+                string currentSection = UnivFilterSection.SelectedItem?.ToString() ?? "All Sections";
+
+                UnivFilterSection.SelectionChanged -= UnivFilter_SelectionChanged; // Prevent infinite loop
+                UnivFilterSection.ItemsSource = sections;
+                UnivFilterSection.SelectedItem = sections.Contains(currentSection) ? currentSection : "All Sections";
+                UnivFilterSection.SelectionChanged += UnivFilter_SelectionChanged;
+            }
+
             ApplyUnivLedgerFilters();
         }
 
@@ -401,6 +423,28 @@ namespace NFC_System
 
         private void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (FilterCourseComboBox == null || FilterSectionComboBox == null) return;
+
+            // DYNAMIC SECTION UPDATING
+            if (sender == FilterCourseComboBox && _eventMasterLogs != null)
+            {
+                string course = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
+                var sectionQuery = _eventMasterLogs.AsEnumerable();
+
+                if (course != "All Courses")
+                    sectionQuery = sectionQuery.Where(l => l.Course == course);
+
+                var sections = sectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                sections.Insert(0, "All Sections");
+
+                string currentSection = FilterSectionComboBox.SelectedItem?.ToString() ?? "All Sections";
+
+                FilterSectionComboBox.SelectionChanged -= Filter_SelectionChanged;
+                FilterSectionComboBox.ItemsSource = sections;
+                FilterSectionComboBox.SelectedItem = sections.Contains(currentSection) ? currentSection : "All Sections";
+                FilterSectionComboBox.SelectionChanged += Filter_SelectionChanged;
+            }
+
             ApplyLedgerFilters();
         }
 
@@ -549,7 +593,29 @@ namespace NFC_System
         // --- DEDICATED UNIVERSITY POPUP FILTERING LOGIC ---
 
         private void UnivPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyUnivPopupFilters();
-        private void UnivPopupFilter_Changed(object sender, SelectionChangedEventArgs e) => ApplyUnivPopupFilters();
+        private void UnivPopupFilter_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (UnivPopupCourseFilter != null && UnivPopupSectionFilter != null && sender == UnivPopupCourseFilter && _univMasterLogs != null)
+            {
+                string course = UnivPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+                var sectionQuery = _univMasterLogs.AsEnumerable();
+
+                if (course != "All Courses")
+                    sectionQuery = sectionQuery.Where(l => l.Course == course);
+
+                var sections = sectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                sections.Insert(0, "All Sections");
+
+                string currentSection = UnivPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
+
+                UnivPopupSectionFilter.SelectionChanged -= UnivPopupFilter_Changed;
+                UnivPopupSectionFilter.ItemsSource = sections;
+                UnivPopupSectionFilter.SelectedItem = sections.Contains(currentSection) ? currentSection : "All Sections";
+                UnivPopupSectionFilter.SelectionChanged += UnivPopupFilter_Changed;
+            }
+
+            ApplyUnivPopupFilters();
+        }
 
         private void UnivPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyUnivPopupFilters();
 
@@ -651,7 +717,29 @@ namespace NFC_System
         }
 
         private void EventPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyEventPopupFilters();
-        private void EventPopupFilter_Changed(object sender, SelectionChangedEventArgs e) => ApplyEventPopupFilters();
+        private void EventPopupFilter_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (EventPopupCourseFilter != null && EventPopupSectionFilter != null && sender == EventPopupCourseFilter && _eventMasterLogs != null)
+            {
+                string course = EventPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+                var sectionQuery = _eventMasterLogs.AsEnumerable();
+
+                if (course != "All Courses")
+                    sectionQuery = sectionQuery.Where(l => l.Course == course);
+
+                var sections = sectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                sections.Insert(0, "All Sections");
+
+                string currentSection = EventPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
+
+                EventPopupSectionFilter.SelectionChanged -= EventPopupFilter_Changed;
+                EventPopupSectionFilter.ItemsSource = sections;
+                EventPopupSectionFilter.SelectedItem = sections.Contains(currentSection) ? currentSection : "All Sections";
+                EventPopupSectionFilter.SelectionChanged += EventPopupFilter_Changed;
+            }
+
+            ApplyEventPopupFilters();
+        }
         private void EventPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyEventPopupFilters();
 
         private void EventPopupClear_Click(object sender, RoutedEventArgs e)
@@ -772,10 +860,44 @@ namespace NFC_System
                 return;
             }
 
+            // 1. Show the new Export Configuration Dialog
+            ExportConfigDialog.XamlRoot = this.Content.XamlRoot;
+            var dialogResult = await ExportConfigDialog.ShowAsync();
+
+            // If they click cancel, abort the export.
+            if (dialogResult != ContentDialogResult.Primary) return;
+
+            // 2. Deduplicate by StudentId so each student appears exactly once
             var logsToExport = rawLogs
                 .GroupBy(l => l.StudentId)
                 .Select(g => g.First())
                 .ToList();
+
+            // 3. Apply the selected Grouping / Sorting
+            string sortOption = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+
+            if (sortOption == "Group by Course, then Section, then Name")
+            {
+                logsToExport = logsToExport
+                    .OrderBy(l => l.Course)
+                    .ThenBy(l => l.Section)
+                    .ThenBy(l => l.FullName)
+                    .ToList();
+            }
+            else if (sortOption == "Group by Section, then Name")
+            {
+                logsToExport = logsToExport
+                    .OrderBy(l => l.Section)
+                    .ThenBy(l => l.FullName)
+                    .ToList();
+            }
+            else if (sortOption == "Sort alphabetically by Name only")
+            {
+                logsToExport = logsToExport
+                    .OrderBy(l => l.FullName)
+                    .ToList();
+            }
+            // If "Default (Time of Entry)", leave it exactly as it came from the rawLogs.
 
             var picker = new Windows.Storage.Pickers.FileSavePicker();
 
@@ -802,11 +924,32 @@ namespace NFC_System
             {
                 var csvData = new System.Text.StringBuilder();
 
-                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Latest Action,Event Completion Status");
+                // 4. Build dynamic headers based on CheckBox selection
+                var headers = new List<string>();
+                if (ExportColTimestamp.IsChecked == true) headers.Add("Timestamp");
+                if (ExportColStudentId.IsChecked == true) headers.Add("Student ID");
+                if (ExportColName.IsChecked == true) headers.Add("Student Name");
+                if (ExportColCourse.IsChecked == true) headers.Add("Course");
+                if (ExportColSection.IsChecked == true) headers.Add("Section");
+                if (ExportColAction.IsChecked == true) headers.Add("Latest Action");
+                if (ExportColStatus.IsChecked == true) headers.Add("Event Completion Status");
 
+                csvData.AppendLine(string.Join(",", headers));
+
+                // 5. Build dynamic rows based on CheckBox selection
                 foreach (var log in logsToExport)
                 {
-                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.CompletionStatus}\"");
+                    var row = new List<string>();
+
+                    if (ExportColTimestamp.IsChecked == true) row.Add($"\"{log.Timestamp}\"");
+                    if (ExportColStudentId.IsChecked == true) row.Add($"\"{log.StudentId}\"");
+                    if (ExportColName.IsChecked == true) row.Add($"\"{log.FullName}\"");
+                    if (ExportColCourse.IsChecked == true) row.Add($"\"{log.Course}\"");
+                    if (ExportColSection.IsChecked == true) row.Add($"\"{log.Section}\"");
+                    if (ExportColAction.IsChecked == true) row.Add($"\"{log.Action}\"");
+                    if (ExportColStatus.IsChecked == true) row.Add($"\"{log.CompletionStatus}\"");
+
+                    csvData.AppendLine(string.Join(",", row));
                 }
 
                 Windows.Storage.CachedFileManager.DeferUpdates(file);
@@ -818,7 +961,7 @@ namespace NFC_System
                     ContentDialog successDialog = new ContentDialog
                     {
                         Title = "Export Complete",
-                        Content = $"Your report was successfully exported and saved to:\n\n{file.Path}",
+                        Content = $"Your custom report was successfully exported and saved to:\n\n{file.Path}",
                         CloseButtonText = "OK",
                         XamlRoot = this.Content.XamlRoot
                     };
