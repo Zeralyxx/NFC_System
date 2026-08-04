@@ -30,6 +30,12 @@ namespace NFC_System
         private bool _isAwaitingNfcReplacementScan = false;
         private StudentRecord? _editingStudent = null;
 
+        // Sorting State Variables
+        private string _currentSortColumn = "FullName";
+        private bool _isSortAscending = true;
+        private string _popupSortColumn = "FullName";
+        private bool _isPopupSortAscending = true;
+
         // Snapshot of original values to detect unsaved changes
         private string _origStudentId = "";
         private string _origFullName = "";
@@ -104,10 +110,111 @@ namespace NFC_System
                 TryConnectSerial(nfcPort);
 
                 RefreshDataGrid();
+
+                UpdateSortIcons(isPopup: false);
+                UpdateSortIcons(isPopup: true);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[DB ERROR] {ex.Message}");
+            }
+        }
+
+        // ====================================================================
+        // SORTING LOGIC & ICON MANAGEMENT
+        // ====================================================================
+
+        private void SortHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string columnName)
+            {
+                if (_currentSortColumn == columnName)
+                    _isSortAscending = !_isSortAscending;
+                else
+                {
+                    _currentSortColumn = columnName;
+                    _isSortAscending = true;
+                }
+
+                UpdateSortIcons(isPopup: false);
+                RefreshDataGrid();
+            }
+        }
+
+        private void PopupSortHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string columnName)
+            {
+                if (_popupSortColumn == columnName)
+                    _isPopupSortAscending = !_isPopupSortAscending;
+                else
+                {
+                    _popupSortColumn = columnName;
+                    _isPopupSortAscending = true;
+                }
+
+                UpdateSortIcons(isPopup: true);
+                ApplyPopupFilters();
+            }
+        }
+
+        private void UpdateSortIcons(bool isPopup)
+        {
+            string activeColumn = isPopup ? _popupSortColumn : _currentSortColumn;
+            bool isAsc = isPopup ? _isPopupSortAscending : _isSortAscending;
+            string glyph = isAsc ? "\uE70E" : "\uE70D"; // \uE70E is ChevronUp, \uE70D is ChevronDown
+
+            if (!isPopup)
+            {
+                SortIcon_StudentId.Visibility = Visibility.Collapsed;
+                SortIcon_FullName.Visibility = Visibility.Collapsed;
+                SortIcon_Course.Visibility = Visibility.Collapsed;
+                SortIcon_Year.Visibility = Visibility.Collapsed;
+                SortIcon_Section.Visibility = Visibility.Collapsed;
+                SortIcon_Status.Visibility = Visibility.Collapsed;
+
+                FontIcon? activeIcon = activeColumn switch
+                {
+                    "StudentId" => SortIcon_StudentId,
+                    "FullName" => SortIcon_FullName,
+                    "Course" => SortIcon_Course,
+                    "Year" => SortIcon_Year,
+                    "Section" => SortIcon_Section,
+                    "Status" => SortIcon_Status,
+                    _ => null
+                };
+
+                if (activeIcon != null)
+                {
+                    activeIcon.Visibility = Visibility.Visible;
+                    activeIcon.Glyph = glyph;
+                }
+            }
+            else
+            {
+                PopupSortIcon_StudentId.Visibility = Visibility.Collapsed;
+                PopupSortIcon_FullName.Visibility = Visibility.Collapsed;
+                PopupSortIcon_Course.Visibility = Visibility.Collapsed;
+                PopupSortIcon_Year.Visibility = Visibility.Collapsed;
+                PopupSortIcon_Section.Visibility = Visibility.Collapsed;
+                PopupSortIcon_Status.Visibility = Visibility.Collapsed;
+
+                FontIcon? activeIcon = activeColumn switch
+                {
+                    "StudentId" => PopupSortIcon_StudentId,
+                    "FullName" => PopupSortIcon_FullName,
+                    "Course" => PopupSortIcon_Course,
+                    "Year" => PopupSortIcon_Year,
+                    "Section" => PopupSortIcon_Section,
+                    "Status" => PopupSortIcon_Status,
+                    _ => null
+                };
+
+                if (activeIcon != null)
+                {
+                    activeIcon.Visibility = Visibility.Visible;
+                    activeIcon.Glyph = glyph;
+                }
             }
         }
 
@@ -590,6 +697,18 @@ namespace NFC_System
                 (courseFilter == "All Courses" || s.Course == courseFilter)
             ).ToList();
 
+            // APPLY SORTING FOR MAIN GRID
+            filteredData = _currentSortColumn switch
+            {
+                "StudentId" => _isSortAscending ? filteredData.OrderBy(s => s.StudentId).ToList() : filteredData.OrderByDescending(s => s.StudentId).ToList(),
+                "FullName" => _isSortAscending ? filteredData.OrderBy(s => s.FullName).ToList() : filteredData.OrderByDescending(s => s.FullName).ToList(),
+                "Course" => _isSortAscending ? filteredData.OrderBy(s => s.Course).ToList() : filteredData.OrderByDescending(s => s.Course).ToList(),
+                "Year" => _isSortAscending ? filteredData.OrderBy(s => s.YearLevel).ToList() : filteredData.OrderByDescending(s => s.YearLevel).ToList(),
+                "Section" => _isSortAscending ? filteredData.OrderBy(s => s.SectionName).ToList() : filteredData.OrderByDescending(s => s.SectionName).ToList(),
+                "Status" => _isSortAscending ? filteredData.OrderBy(s => s.Status).ToList() : filteredData.OrderByDescending(s => s.Status).ToList(),
+                _ => filteredData
+            };
+
             int totalItems = filteredData.Count;
             int totalPages = (int)Math.Ceiling(totalItems / (double)PageSize);
             _currentPage = Math.Clamp(_currentPage, 1, totalPages == 0 ? 1 : totalPages);
@@ -783,7 +902,18 @@ namespace NFC_System
             else if (status == "Locked Out") filtered = filtered.Where(s => s.PinLocked);
             else if (status == "Inactive") filtered = filtered.Where(s => s.Status == "Inactive");
 
-            filtered = filtered.OrderBy(s => s.FullName);
+            // APPLY SORTING FOR POPUP GRID
+            filtered = _popupSortColumn switch
+            {
+                "StudentId" => _isPopupSortAscending ? filtered.OrderBy(s => s.StudentId) : filtered.OrderByDescending(s => s.StudentId),
+                "FullName" => _isPopupSortAscending ? filtered.OrderBy(s => s.FullName) : filtered.OrderByDescending(s => s.FullName),
+                "Course" => _isPopupSortAscending ? filtered.OrderBy(s => s.Course) : filtered.OrderByDescending(s => s.Course),
+                "Year" => _isPopupSortAscending ? filtered.OrderBy(s => s.YearLevel) : filtered.OrderByDescending(s => s.YearLevel),
+                "Section" => _isPopupSortAscending ? filtered.OrderBy(s => s.SectionName) : filtered.OrderByDescending(s => s.SectionName),
+                "Status" => _isPopupSortAscending ? filtered.OrderBy(s => s.Status) : filtered.OrderByDescending(s => s.Status),
+                _ => filtered.OrderBy(s => s.FullName)
+            };
+
             PopupStudentListView.ItemsSource = filtered.ToList();
         }
 
