@@ -1003,11 +1003,11 @@ namespace NFC_System
             {
                 var csvData = new System.Text.StringBuilder();
 
-                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Status");
+                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Status,Auth Speed (ms),DB Query Speed (ms)");
 
                 foreach (var log in logsToExport)
                 {
-                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.Status}\"");
+                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.Status}\",\"{log.AuthSpeedMs}\",\"{log.DbQuerySpeedMs}\"");
                 }
 
                 Windows.Storage.CachedFileManager.DeferUpdates(file);
