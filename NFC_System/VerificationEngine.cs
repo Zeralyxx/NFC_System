@@ -35,10 +35,22 @@ public sealed class VerificationEngine
 
                 if (isNewFile)
                 {
-                    writer.WriteLine("Timestamp,Operation,Elapsed Time (ms),Result");
+                    // Updated Header to specify Module
+                    writer.WriteLine("Timestamp,Operation (Module),Elapsed Time,Result");
                 }
 
-                writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},\"{operation}\",{elapsedMs},\"{result}\"");
+                // Format the elapsed time to hours/mins/secs/ms
+                TimeSpan t = TimeSpan.FromMilliseconds(elapsedMs);
+                var parts = new System.Collections.Generic.List<string>();
+                if (t.Hours > 0) parts.Add($"{t.Hours}h");
+                if (t.Minutes > 0) parts.Add($"{t.Minutes}m");
+                if (t.Seconds > 0) parts.Add($"{t.Seconds}s");
+                if (t.Milliseconds > 0 || parts.Count == 0) parts.Add($"{t.Milliseconds}ms");
+
+                string formattedTime = string.Join(" ", parts);
+
+                // Write with quotes to ensure spaces don't break CSV columns
+                writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},\"{operation}\",\"{formattedTime}\",\"{result}\"");
             }
             catch { /* Failsafe: Ignore IO errors so the verification flow never crashes */ }
         });

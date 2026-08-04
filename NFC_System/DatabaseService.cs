@@ -1431,25 +1431,51 @@ public sealed class DatabaseService
             string filePath = Path.Combine(folderPath, $"{table}.csv");
             using var writer = new StreamWriter(filePath);
 
-            // CSV Header
-            await writer.WriteLineAsync("Date & Time,Student Name,Verification Mode,Auth Speed (ms),DB Query Speed (ms)");
+            // CSV Header updated for clarity
+            await writer.WriteLineAsync("Date & Time,Student Name,Verification Flow,Modules Evaluated,Auth Speed,DB Query Speed");
 
             while (await reader.ReadAsync())
             {
-                // Format down to the millisecond (.fff)
                 string ts = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd HH:mm:ss.fff");
 
-                // Remove commas from names so they don't break the CSV columns
                 string name = Value(reader["student_name"]).Replace(",", " ");
                 if (string.IsNullOrWhiteSpace(name)) name = "Unknown";
 
                 string mode = Value(reader["verification_mode"]);
-                string auth = reader["auth_speed_ms"]?.ToString() ?? "0";
-                string db = reader["db_query_speed_ms"]?.ToString() ?? "0";
 
-                await writer.WriteLineAsync($"{ts},{name},{mode},{auth},{db}");
+                // Dynamically label the exact modules used based on the flow
+                string modules = mode switch
+                {
+                    "Fast" => "NFC Only",
+                    "Standard" => "NFC + PIN",
+                    "HighSecurity" => "NFC + PIN + QR",
+                    _ => "Unknown"
+                };
+
+                double authMs = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0;
+                double dbMs = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0;
+
+                string authSpeedStr = FormatTimeSpan(authMs);
+                string dbSpeedStr = FormatTimeSpan(dbMs);
+
+                await writer.WriteLineAsync($"{ts},{name},{mode},{modules},{authSpeedStr},{dbSpeedStr}");
             }
         }
+    }
+
+    // Helper to turn raw milliseconds into "1m 4s 300ms" format
+    private string FormatTimeSpan(double milliseconds)
+    {
+        if (milliseconds <= 0) return "0ms";
+        TimeSpan t = TimeSpan.FromMilliseconds(milliseconds);
+
+        var parts = new List<string>();
+        if (t.Hours > 0) parts.Add($"{t.Hours}h");
+        if (t.Minutes > 0) parts.Add($"{t.Minutes}m");
+        if (t.Seconds > 0) parts.Add($"{t.Seconds}s");
+        if (t.Milliseconds > 0 || parts.Count == 0) parts.Add($"{t.Milliseconds}ms");
+
+        return string.Join(" ", parts);
     }
 
     public async Task<(int TotalScansToday, int CurrentlyInside, int DeniedToday)> GetUniversityMetricsAsync()
