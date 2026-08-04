@@ -378,7 +378,7 @@
                             </Grid>
                         </Border>
 
-                        <ListView Grid.Row="1" x:Name="PopupStudentListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                        <ListView Grid.Row="1" x:Name="PopupStudentListView" Background="Transparent" Padding="0,8" SelectionMode="None">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
