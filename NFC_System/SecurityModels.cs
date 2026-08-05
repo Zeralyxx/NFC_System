@@ -2,34 +2,16 @@ using System;
 
 namespace NFC_System;
 
-public enum VerificationMode
-{
-    Fast,
-    Standard,
-    HighSecurity
-}
-
-public enum TransactionType
-{
-    Entry,
-    Exit,
-    EventAttendance
-}
-
-public enum VerificationStep
-{
-    Completed,
-    RequiresPin,
-    RequiresQr
-}
+public enum VerificationMode { Fast, Standard, HighSecurity }
+public enum TransactionType { Entry, Exit, EventAttendance }
+public enum VerificationStep { Completed, RequiresPin, RequiresQr }
 
 public sealed class StudentRecord
 {
     public string StudentId { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Course { get; set; } = "";
-
-    public string Email { get; set; } = ""; // NEW
+    public string Email { get; set; } = "";
     public string YearLevel { get; set; } = "";
     public string SectionName { get; set; } = "";
     public string Status { get; set; } = "Active";
@@ -40,13 +22,8 @@ public sealed class StudentRecord
     public string EntryState { get; set; } = "OUTSIDE";
     public int FailedPinAttempts { get; set; }
     public bool PinLocked { get; set; }
-
-    // NEW: Added for the 2-minute gate throttle (Anti-Passback)
     public DateTime? LastScanTimestamp { get; set; }
-    // THE FIX: Phase 1 - Add PhotoData byte array to the model
     public byte[]? PhotoData { get; set; }
-
-    // NEW: Phase 1 of Temp Implementation - Temporary Credential Flag
     public bool IsTemporary { get; set; }
 }
 
@@ -68,7 +45,6 @@ public sealed class EventRecord
         }
     }
 
-    // ADD THIS LINE SO THE UI LIST SHOWS THE STATUS
     public string IsRestrictedText => IsRestricted ? "Restricted" : "Open";
 }
 
@@ -78,12 +54,14 @@ public sealed class VerificationSession
     public string Uid { get; init; } = "";
     public VerificationMode Mode { get; init; }
     public TransactionType TransactionType { get; init; }
-
-    // NEW: Made nullable (?) so main gate entries don't throw null reference errors
     public string? EventId { get; init; }
-
-    // NEW: Tells the engine a QR was used, preventing premature Fast Mode database logging
     public bool IsQrFallback { get; init; } = false;
+
+    // THE FIX: Performance Tracking Variables
+    public double NfcSpeedMs { get; set; }
+    public double PinSpeedMs { get; set; }
+    public double QrSpeedMs { get; set; }
+    public double TotalDbQueryMs { get; set; }
 }
 
 public sealed class VerificationOutcome

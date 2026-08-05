@@ -17,9 +17,6 @@ public sealed class VerificationEngine
         _database = database;
     }
 
-    // ====================================================================
-    // EVALUATION MODULE: DATABASE QUERY PERFORMANCE MONITOR
-    // ====================================================================
     private void LogPerformanceMetric(string operation, double elapsedMs, string result)
     {
         Task.Run(() =>
@@ -35,11 +32,9 @@ public sealed class VerificationEngine
 
                 if (isNewFile)
                 {
-                    // Updated Header to specify Module
                     writer.WriteLine("Timestamp,Operation (Module),Elapsed Time,Result");
                 }
 
-                // Format the elapsed time to hours/mins/secs/ms
                 TimeSpan t = TimeSpan.FromMilliseconds(elapsedMs);
                 var parts = new System.Collections.Generic.List<string>();
                 if (t.Hours > 0) parts.Add($"{t.Hours}h");
@@ -49,10 +44,9 @@ public sealed class VerificationEngine
 
                 string formattedTime = string.Join(" ", parts);
 
-                // Write with quotes to ensure spaces don't break CSV columns
                 writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},\"{operation}\",\"{formattedTime}\",\"{result}\"");
             }
-            catch { /* Failsafe: Ignore IO errors so the verification flow never crashes */ }
+            catch { }
         });
     }
 
@@ -65,9 +59,6 @@ public sealed class VerificationEngine
         StudentRecord? student = null;
         bool isOffline = false;
 
-        // ---------------------------------------------------------
-        // 1. ONLINE VS OFFLINE ROUTING
-        // ---------------------------------------------------------
         dbTimer.Start();
         try
         {
@@ -80,11 +71,8 @@ public sealed class VerificationEngine
         dbTimer.Stop();
         double dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
 
-        LogPerformanceMetric($"DB Query: Retrieve Profile ({(isOffline ? "OFFLINE CACHE" : "ONLINE")})", dbQueryMs, student != null ? "Found" : "Not Found");
+        LogPerformanceMetric("Database Query Performance Monitor", dbQueryMs, student != null ? $"Initial Profile Retrieval: Found ({(isOffline ? "OFFLINE CACHE" : "ONLINE")})" : "Initial Profile Retrieval: Not Found");
 
-        // ---------------------------------------------------------
-        // 2. OFFLINE VERIFICATION FLOW
-        // ---------------------------------------------------------
         if (isOffline)
         {
             var offlineResult = OfflineCacheService.VerifyStudentOffline(uid);
@@ -119,36 +107,33 @@ public sealed class VerificationEngine
                 }
             }
         }
-        // ---------------------------------------------------------
-        // 3. ONLINE VERIFICATION FLOW (Standard Checks)
-        // ---------------------------------------------------------
         else
         {
             if (student == null)
             {
                 string error = "NOT_REGISTERED";
-                await SafeLogGateAsync(null, uid, transactionType, mode, false, error, "NFC UID is not linked to a student record.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+                await SafeLogGateAsync(null, uid, transactionType, mode, false, error, "NFC UID is not linked to a student record.", authTimer.Elapsed.TotalMilliseconds, 0, 0, dbQueryMs);
                 return Denied(uid, null, "UNAUTHORIZED", "NFC credential is not registered", error, $"{scanTime} | UID {uid} | DENIED | NOT REGISTERED");
             }
 
             if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "INACTIVE_STUDENT";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, $"Student status is {student.Status}.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, $"Student status is {student.Status}.", authTimer.Elapsed.TotalMilliseconds, 0, 0, dbQueryMs);
                 return Denied(uid, student, "ACCESS DENIED", $"Student status is {student.Status}", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {student.Status.ToUpper()}");
             }
 
             if (transactionType == TransactionType.Entry && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "ANTI_TAILGATING_VIOLATION";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Consecutive entry attempt detected before an exit transaction.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Consecutive entry attempt detected before an exit transaction.", authTimer.Elapsed.TotalMilliseconds, 0, 0, dbQueryMs);
                 return Denied(uid, student, "ACCESS DENIED", "Anti-tailgating rule blocked repeated entry", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | TAILGATING");
             }
 
             if (transactionType == TransactionType.Exit && string.IsNullOrWhiteSpace(eventId) && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "IRREGULAR_EXIT_SEQUENCE";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Exit attempted while student is already marked OUTSIDE.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Exit attempted while student is already marked OUTSIDE.", authTimer.Elapsed.TotalMilliseconds, 0, 0, dbQueryMs);
                 return Denied(uid, student, "ACCESS DENIED", "Exit blocked because student is already outside", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | IRREGULAR EXIT");
             }
 
@@ -183,9 +168,8 @@ public sealed class VerificationEngine
             }
         }
 
-        // ---------------------------------------------------------
-        // 4. SESSION CREATION & MODE ROUTING
-        // ---------------------------------------------------------
+        // THE FIX: Save the finalized distinct module speed accurately in the session memory
+        authTimer.Stop();
         var session = new VerificationSession
         {
             Student = student!,
@@ -193,7 +177,9 @@ public sealed class VerificationEngine
             Mode = mode,
             TransactionType = transactionType,
             EventId = eventId,
-            IsQrFallback = isQrFallback
+            IsQrFallback = isQrFallback,
+            NfcSpeedMs = isQrFallback ? 0 : authTimer.Elapsed.TotalMilliseconds,
+            TotalDbQueryMs = dbQueryMs
         };
 
         if (isQrFallback)
@@ -212,13 +198,13 @@ public sealed class VerificationEngine
 
         if (mode == VerificationMode.Fast || transactionType == TransactionType.Exit)
         {
-            return await GrantAsync(session, transactionType == TransactionType.Exit ? "NFC validation passed." : "NFC validation passed in Fast Mode.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+            return await GrantAsync(session, transactionType == TransactionType.Exit ? "NFC validation passed." : "NFC validation passed in Fast Mode.");
         }
 
         if (student!.PinLocked)
         {
             string error = "PIN_LOCKED";
-            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", session.NfcSpeedMs, 0, 0, session.TotalDbQueryMs);
             return Denied(uid, student, isOffline ? "OFFLINE: ACCESS DENIED" : "ACCESS DENIED", "PIN is locked after repeated failed attempts", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | PIN LOCKED");
         }
 
@@ -234,7 +220,8 @@ public sealed class VerificationEngine
         };
     }
 
-    public async Task<VerificationOutcome> SubmitPinAsync(VerificationSession session, string pin)
+    // THE FIX: Accept the UI Pin Duration as a parameter
+    public async Task<VerificationOutcome> SubmitPinAsync(VerificationSession session, string pin, double uiPinTimeMs = 0)
     {
         Stopwatch authTimer = Stopwatch.StartNew();
         Stopwatch dbTimer = new Stopwatch();
@@ -260,11 +247,16 @@ public sealed class VerificationEngine
                 dbTimer.Stop();
                 dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
 
-                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+                authTimer.Stop();
+                session.PinSpeedMs = uiPinTimeMs + authTimer.Elapsed.TotalMilliseconds;
+                session.TotalDbQueryMs += dbQueryMs;
+
+                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", session.NfcSpeedMs, session.PinSpeedMs, session.QrSpeedMs, session.TotalDbQueryMs);
                 await _database.AddAlertAsync(student.StudentId, error, locked ? $"{student.FullName} reached three failed PIN attempts and has been locked." : $"{student.FullName} entered an incorrect PIN ({failedAttempts}/3).");
             }
             catch
             {
+                authTimer.Stop();
                 OfflineCacheService.SaveOfflineGateLog(student.StudentId, session.Uid, session.TransactionType.ToString(), session.Mode.ToString(), false, error, $"[OFFLINE] Failed PIN attempt {failedAttempts}/3.");
             }
 
@@ -278,10 +270,14 @@ public sealed class VerificationEngine
             dbTimer.Stop();
             dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
         }
-        catch { /* Server is offline, continue verifying against cached JSON */ }
+        catch { }
 
         student.FailedPinAttempts = 0;
         student.PinLocked = false;
+
+        authTimer.Stop();
+        session.PinSpeedMs = uiPinTimeMs + authTimer.Elapsed.TotalMilliseconds;
+        session.TotalDbQueryMs += dbQueryMs;
 
         if (session.Mode == VerificationMode.HighSecurity && !session.IsQrFallback)
         {
@@ -297,10 +293,11 @@ public sealed class VerificationEngine
             };
         }
 
-        return await GrantAsync(session, session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.", authTimer.Elapsed.TotalMilliseconds, dbQueryMs);
+        return await GrantAsync(session, session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.");
     }
 
-    public async Task<VerificationOutcome> SubmitQrAsync(VerificationSession session, string qrCredential)
+    // THE FIX: Accept the UI Qr Duration as a parameter
+    public async Task<VerificationOutcome> SubmitQrAsync(VerificationSession session, string qrCredential, double uiQrTimeMs = 0)
     {
         Stopwatch authTimer = Stopwatch.StartNew();
 
@@ -309,17 +306,20 @@ public sealed class VerificationEngine
         string normalizedStored = student.QrCredential.Trim();
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
+        authTimer.Stop();
+        session.QrSpeedMs = uiQrTimeMs + authTimer.Elapsed.TotalMilliseconds;
+
         if (string.IsNullOrWhiteSpace(normalizedStored) || !normalizedStored.Equals(normalizedInput, StringComparison.OrdinalIgnoreCase))
         {
             string error = "CREDENTIAL_MISMATCH";
-            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.", authTimer.Elapsed.TotalMilliseconds, 0);
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.", session.NfcSpeedMs, session.PinSpeedMs, session.QrSpeedMs, session.TotalDbQueryMs);
             return Denied(session.Uid, student, "ACCESS DENIED", "QR credential mismatch detected", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | QR MISMATCH");
         }
 
-        return await GrantAsync(session, "NFC, PIN, and QR credential validation passed.", authTimer.Elapsed.TotalMilliseconds, 0);
+        return await GrantAsync(session, "NFC, PIN, and QR credential validation passed.");
     }
 
-    public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId)
+    public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId, double uiQrTimeMs = 0)
     {
         string extractedStudentId = qrPayload.Trim();
 
@@ -327,13 +327,14 @@ public sealed class VerificationEngine
             return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "QR payload is empty or unreadable." };
 
         StudentRecord? student = null;
+        Stopwatch dbTimer = Stopwatch.StartNew();
+
         try
         {
             student = await _database.GetStudentByIdAsync(extractedStudentId);
         }
         catch
         {
-            // Offline fallback: Read directly from JSON shadow cache
             string cacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NFC_System", "Cache", "local_students.json");
             if (File.Exists(cacheFile))
             {
@@ -359,17 +360,23 @@ public sealed class VerificationEngine
             }
         }
 
+        dbTimer.Stop();
+
         if (student == null)
             return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "Student ID not found in database or offline cache." };
 
-        return await BeginNfcVerificationAsync(student.NfcUid, mode, transactionType, eventId, isQrFallback: true);
+        var outcome = await BeginNfcVerificationAsync(student.NfcUid, mode, transactionType, eventId, isQrFallback: true);
+
+        if (outcome.Session != null)
+        {
+            outcome.Session.QrSpeedMs = uiQrTimeMs;
+            outcome.Session.TotalDbQueryMs += dbTimer.Elapsed.TotalMilliseconds;
+        }
+
+        return outcome;
     }
 
-    // ====================================================================
-    // OFFLINE-SAFE DATABASE HELPERS
-    // ====================================================================
-
-    private async Task<VerificationOutcome> GrantAsync(VerificationSession session, string remarks, double authSpeedMs, double dbQueryMs)
+    private async Task<VerificationOutcome> GrantAsync(VerificationSession session, string remarks)
     {
         StudentRecord student = session.Student;
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
@@ -402,9 +409,9 @@ public sealed class VerificationEngine
             }
 
             updateTimer.Stop();
-            dbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
+            session.TotalDbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
 
-            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, authSpeedMs, dbQueryMs);
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, session.NfcSpeedMs, session.PinSpeedMs, session.QrSpeedMs, session.TotalDbQueryMs);
         }
         catch
         {
@@ -415,7 +422,6 @@ public sealed class VerificationEngine
                 OfflineCacheService.SaveOfflineGateLog(student.StudentId, session.Uid, session.TransactionType.ToString(), session.Mode.ToString(), true, "VERIFIED", remarks);
         }
 
-        // THE FIX: Inject [TEMP] into the logline string
         string nameForLog = student.IsTemporary ? $"[TEMP] {student.FullName}" : student.FullName;
 
         return new VerificationOutcome
@@ -430,18 +436,24 @@ public sealed class VerificationEngine
         };
     }
 
-    private async Task SafeLogGateAsync(StudentRecord? student, string uid, TransactionType type, VerificationMode mode, bool granted, string errorCategory, string remarks, double authSpeedMs, double dbQuerySpeedMs)
+    private async Task SafeLogGateAsync(StudentRecord? student, string uid, TransactionType type, VerificationMode mode, bool granted, string errorCategory, string remarks, double nfcMs, double pinMs, double qrMs, double dbQuerySpeedMs)
     {
+        double totalAuthMs = nfcMs + pinMs + qrMs;
+
+        if (dbQuerySpeedMs > 0)
+        {
+            LogPerformanceMetric("Database Query Performance Monitor", dbQuerySpeedMs, "Total Aggregated Transaction Queries");
+        }
+
         try
         {
-            // THE FIX: Intercept the name and append [TEMP] if they are a temporary student
             string? loggedName = student?.FullName;
             if (student != null && student.IsTemporary)
             {
                 loggedName = $"[TEMP] {loggedName}";
             }
 
-            await _database.LogVerificationAsync(student, loggedName, uid, type, mode, granted, errorCategory, errorCategory, remarks, authSpeedMs, dbQuerySpeedMs);
+            await _database.LogVerificationAsync(student, loggedName, uid, type, mode, granted, errorCategory, errorCategory, remarks, totalAuthMs, nfcMs, pinMs, qrMs, dbQuerySpeedMs);
             if (!granted && student != null) await _database.AddAlertAsync(student.StudentId, errorCategory, remarks);
         }
         catch
@@ -466,7 +478,6 @@ public sealed class VerificationEngine
     {
         string finalLogLine = logLine;
 
-        // THE FIX: Inject [TEMP] into the logline string if the student object is present and flagged
         if (student != null && student.IsTemporary && !logLine.Contains("[TEMP]"))
         {
             finalLogLine = logLine.Replace(student.FullName, $"[TEMP] {student.FullName}");
