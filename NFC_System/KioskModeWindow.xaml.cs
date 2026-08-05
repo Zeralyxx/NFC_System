@@ -70,7 +70,7 @@ namespace NFC_System
         private readonly DispatcherTimer _syncRecoveryTimer = new();
         private DateTime _lastQrScanTime = DateTime.MinValue;
 
-        // THE FIX: Elevated Class-Level Logging Timers
+        // Elevated Class-Level Logging Timers
         private readonly Stopwatch _pinEntryTimer = new();
         private readonly Stopwatch _qrScanTimer = new();
 
@@ -432,7 +432,6 @@ namespace NFC_System
             else
                 _inactivityTimer.Stop();
 
-            // THE FIX: Manage the elevated Module Timers
             if (newState == AuthenticationStage.WaitingForQR)
             {
                 _qrScanTimer.Restart();
@@ -545,8 +544,8 @@ namespace NFC_System
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | DOUBLE ENTRY");
 
                 nfcTimer.Stop();
-                // THE FIX: Failures logged immediately bypass engine processing, feed directly to DB 
-                _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0));
+                // THE FIX: Added 15th param (machineProcessingMs)
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0, nfcTimer.Elapsed.TotalMilliseconds));
                 return;
             }
 
@@ -571,7 +570,8 @@ namespace NFC_System
                             OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | UNINVITED");
 
                             nfcTimer.Stop();
-                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, uid, transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0));
+                            // THE FIX: Added 15th param (machineProcessingMs)
+                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, uid, transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0, nfcTimer.Elapsed.TotalMilliseconds));
                             return;
                         }
                     }
@@ -590,7 +590,8 @@ namespace NFC_System
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | BAD READ: Please tap again");
 
                 nfcTimer.Stop();
-                _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "BAD_READ", "BAD_NFC_READ", "Card couldn't be read properly. User prompted to tap again.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0));
+                // THE FIX: Added 15th param (machineProcessingMs)
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "BAD_READ", "BAD_NFC_READ", "Card couldn't be read properly. User prompted to tap again.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0, nfcTimer.Elapsed.TotalMilliseconds));
                 return;
             }
 
@@ -656,7 +657,6 @@ namespace NFC_System
 
             PlayKeypadBeep();
 
-            // THE FIX: Start the total duration timer the moment they press their first digit
             if (_currentPinBuffer.Length == 0 && !string.IsNullOrEmpty(digit) && !_pinEntryTimer.IsRunning)
             {
                 _pinEntryTimer.Restart();
@@ -680,7 +680,6 @@ namespace NFC_System
             {
                 if (_currentPinBuffer.Length < 4) return;
 
-                // THE FIX: Stop the total elapsed timer
                 _pinEntryTimer.Stop();
                 _isVerifyingPin = true;
 
@@ -692,7 +691,6 @@ namespace NFC_System
                 {
                     await Task.Delay(400);
 
-                    // THE FIX: Pass the UI duration to the engine
                     VerificationOutcome outcome = await _engine.SubmitPinAsync(_activeSession, _currentPinBuffer, _pinEntryTimer.Elapsed.TotalMilliseconds);
 
                     string pinResult = "MISMATCH";
@@ -766,7 +764,6 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
 
-            // THE FIX: Stop the total elapsed timer 
             _qrScanTimer.Stop();
 
             _inactivityTimer.Stop();
@@ -792,7 +789,8 @@ namespace NFC_System
                 string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
 
-                _ = Task.Run(() => _database.LogVerificationAsync(null, null, payload.Trim(), transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0));
+                // THE FIX: Added 15th param (machineProcessingMs)
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, payload.Trim(), transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
 
                 LogPerformanceMetric("QR Credential Validation Timer", _qrScanTimer.ElapsedMilliseconds, "DENIED / DOUBLE ENTRY");
                 _qrScanTimer.Restart();
@@ -819,7 +817,8 @@ namespace NFC_System
                             string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
                             OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | UNINVITED");
 
-                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, payload.Trim(), transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0));
+                            // THE FIX: Added 15th param (machineProcessingMs)
+                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, payload.Trim(), transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
 
                             LogPerformanceMetric("QR Credential Validation Timer", _qrScanTimer.ElapsedMilliseconds, "DENIED / UNINVITED");
                             _qrScanTimer.Restart();
@@ -832,7 +831,6 @@ namespace NFC_System
 
             if (_activeSession == null)
             {
-                // THE FIX: Pass the UI duration to the engine
                 outcome = await _engine.BeginQrFallbackVerificationAsync(payload, _currentMode, transType, _eventId, _qrScanTimer.Elapsed.TotalMilliseconds);
                 if (outcome.Session != null) _activeSession = outcome.Session;
 
@@ -867,7 +865,6 @@ namespace NFC_System
                 return;
             }
 
-            // THE FIX: Pass the UI duration to the engine
             outcome = await _engine.SubmitQrAsync(_activeSession, payload, _qrScanTimer.Elapsed.TotalMilliseconds);
             if (outcome.Session != null) _activeSession = outcome.Session;
 
