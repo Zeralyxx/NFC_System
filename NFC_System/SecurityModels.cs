@@ -57,11 +57,14 @@ public sealed class VerificationSession
     public string? EventId { get; init; }
     public bool IsQrFallback { get; init; } = false;
 
-    // THE FIX: Performance Tracking Variables
+    // PERFORMANCE TRACKING VARIABLES
     public double NfcSpeedMs { get; set; }
     public double PinSpeedMs { get; set; }
     public double QrSpeedMs { get; set; }
     public double TotalDbQueryMs { get; set; }
+
+    // THE FIX: Isolate the Pure Machine Latency from the Human Workflow Time
+    public double MachineProcessingMs { get; set; }
 }
 
 public sealed class VerificationOutcome
