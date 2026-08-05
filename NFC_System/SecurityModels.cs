@@ -76,5 +76,5 @@ public sealed class VerificationOutcome
     public string LogLine { get; init; } = "";
     public StudentRecord? Student { get; init; }
     public VerificationSession? Session { get; init; }
-    public DateTime Timestamp { get; init; } = DateTime.now;
+    public DateTime Timestamp { get; init; } = DateTime.Now;
 }
