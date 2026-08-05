@@ -65,13 +65,13 @@ public sealed class DatabaseService
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
-    // THE FIX: ADD machine_processing_ms to dynamic union
+    // THE FIX: DYNAMIC UNION FOR ALL 3 LOG TABLES WITH NEW METRIC COLUMNS
     private const string CombinedLogsQuery = @"
-        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
         UNION ALL 
-        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms, synced_to_cloud, 'standard_mode_logs' AS source_table FROM standard_mode_logs 
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'standard_mode_logs' AS source_table FROM standard_mode_logs 
         UNION ALL 
-        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms, synced_to_cloud, 'high_security_mode_logs' AS source_table FROM high_security_mode_logs";
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'high_security_mode_logs' AS source_table FROM high_security_mode_logs";
 
     public static void LoadConfig()
     {
@@ -145,12 +145,14 @@ public sealed class DatabaseService
                 error_code VARCHAR(100),
                 error_message TEXT,
                 remarks TEXT,
-                auth_speed_ms DOUBLE,
-                nfc_speed_ms DOUBLE DEFAULT 0,
-                pin_speed_ms DOUBLE DEFAULT 0,
-                qr_speed_ms DOUBLE DEFAULT 0,
+                nfc_system_ms DOUBLE DEFAULT 0,
+                pin_workflow_ms DOUBLE DEFAULT 0,
+                pin_system_ms DOUBLE DEFAULT 0,
+                qr_workflow_ms DOUBLE DEFAULT 0,
+                qr_system_ms DOUBLE DEFAULT 0,
+                total_workflow_ms DOUBLE DEFAULT 0,
+                total_system_ms DOUBLE DEFAULT 0,
                 db_query_speed_ms DOUBLE,
-                machine_processing_ms DOUBLE DEFAULT 0,
                 synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
@@ -166,12 +168,14 @@ public sealed class DatabaseService
                 error_code VARCHAR(100),
                 error_message TEXT,
                 remarks TEXT,
-                auth_speed_ms DOUBLE,
-                nfc_speed_ms DOUBLE DEFAULT 0,
-                pin_speed_ms DOUBLE DEFAULT 0,
-                qr_speed_ms DOUBLE DEFAULT 0,
+                nfc_system_ms DOUBLE DEFAULT 0,
+                pin_workflow_ms DOUBLE DEFAULT 0,
+                pin_system_ms DOUBLE DEFAULT 0,
+                qr_workflow_ms DOUBLE DEFAULT 0,
+                qr_system_ms DOUBLE DEFAULT 0,
+                total_workflow_ms DOUBLE DEFAULT 0,
+                total_system_ms DOUBLE DEFAULT 0,
                 db_query_speed_ms DOUBLE,
-                machine_processing_ms DOUBLE DEFAULT 0,
                 synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
@@ -187,12 +191,14 @@ public sealed class DatabaseService
                 error_code VARCHAR(100),
                 error_message TEXT,
                 remarks TEXT,
-                auth_speed_ms DOUBLE,
-                nfc_speed_ms DOUBLE DEFAULT 0,
-                pin_speed_ms DOUBLE DEFAULT 0,
-                qr_speed_ms DOUBLE DEFAULT 0,
+                nfc_system_ms DOUBLE DEFAULT 0,
+                pin_workflow_ms DOUBLE DEFAULT 0,
+                pin_system_ms DOUBLE DEFAULT 0,
+                qr_workflow_ms DOUBLE DEFAULT 0,
+                qr_system_ms DOUBLE DEFAULT 0,
+                total_workflow_ms DOUBLE DEFAULT 0,
+                total_system_ms DOUBLE DEFAULT 0,
                 db_query_speed_ms DOUBLE,
-                machine_processing_ms DOUBLE DEFAULT 0,
                 synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
@@ -250,14 +256,11 @@ public sealed class DatabaseService
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN photo_data MEDIUMBLOB NULL;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN is_temporary BOOLEAN DEFAULT FALSE;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-        try { using var alterCmd = new MySqlCommand("ALTER TABLE fast_mode_logs ADD COLUMN nfc_speed_ms DOUBLE DEFAULT 0, ADD COLUMN pin_speed_ms DOUBLE DEFAULT 0, ADD COLUMN qr_speed_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-        try { using var alterCmd = new MySqlCommand("ALTER TABLE standard_mode_logs ADD COLUMN nfc_speed_ms DOUBLE DEFAULT 0, ADD COLUMN pin_speed_ms DOUBLE DEFAULT 0, ADD COLUMN qr_speed_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-        try { using var alterCmd = new MySqlCommand("ALTER TABLE high_security_mode_logs ADD COLUMN nfc_speed_ms DOUBLE DEFAULT 0, ADD COLUMN pin_speed_ms DOUBLE DEFAULT 0, ADD COLUMN qr_speed_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
 
-        // THE FIX: Safe Schema Update for the new Machine Processing latency separation
-        try { using var alterCmd = new MySqlCommand("ALTER TABLE fast_mode_logs ADD COLUMN machine_processing_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-        try { using var alterCmd = new MySqlCommand("ALTER TABLE standard_mode_logs ADD COLUMN machine_processing_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-        try { using var alterCmd = new MySqlCommand("ALTER TABLE high_security_mode_logs ADD COLUMN machine_processing_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
+        // THE FIX: Safe Schema Updates for explicitly defined workflow and system times
+        try { using var alterCmd = new MySqlCommand("ALTER TABLE fast_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
+        try { using var alterCmd = new MySqlCommand("ALTER TABLE standard_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
+        try { using var alterCmd = new MySqlCommand("ALTER TABLE high_security_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
     }
 
     private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
@@ -476,12 +479,16 @@ public sealed class DatabaseService
                     string errorCode = ExtractString(fields, "error_code");
                     string errorMessage = ExtractString(fields, "error_message");
                     string remarks = ExtractString(fields, "remarks");
-                    double authSpeed = ExtractDouble(fields, "auth_speed_ms");
-                    double nfcSpeed = ExtractDouble(fields, "nfc_speed_ms");
-                    double pinSpeed = ExtractDouble(fields, "pin_speed_ms");
-                    double qrSpeed = ExtractDouble(fields, "qr_speed_ms");
+
+                    double nfcSys = ExtractDouble(fields, "nfc_system_ms");
+                    double pinWf = ExtractDouble(fields, "pin_workflow_ms");
+                    double pinSys = ExtractDouble(fields, "pin_system_ms");
+                    double qrWf = ExtractDouble(fields, "qr_workflow_ms");
+                    double qrSys = ExtractDouble(fields, "qr_system_ms");
+                    double totalWf = ExtractDouble(fields, "total_workflow_ms");
+                    double totalSys = ExtractDouble(fields, "total_system_ms");
                     double dbQuerySpeed = ExtractDouble(fields, "db_query_speed_ms");
-                    double machineProcessingSpeed = ExtractDouble(fields, "machine_processing_ms");
+
                     DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
 
                     if (timestamp == null) continue;
@@ -494,8 +501,8 @@ public sealed class DatabaseService
 
                     string sql = $@"
                         INSERT INTO {tableName} 
-                        (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms, synced_to_cloud) 
-                        VALUES (@ts, @sid, @sname, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, @authSpeed, @nfcSpeed, @pinSpeed, @qrSpeed, @dbSpeed, @machSpeed, 1)";
+                        (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud) 
+                        VALUES (@ts, @sid, @sname, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, @nfcSys, @pinWf, @pinSys, @qrWf, @qrSys, @totWf, @totSys, @dbSpeed, 1)";
 
                     using var cmd = new MySqlCommand(sql, connection);
                     cmd.Parameters.AddWithValue("@ts", timestamp.Value);
@@ -508,12 +515,14 @@ public sealed class DatabaseService
                     cmd.Parameters.AddWithValue("@errCode", NullIfEmpty(errorCode));
                     cmd.Parameters.AddWithValue("@errMsg", NullIfEmpty(errorMessage));
                     cmd.Parameters.AddWithValue("@rem", NullIfEmpty(remarks));
-                    cmd.Parameters.AddWithValue("@authSpeed", authSpeed);
-                    cmd.Parameters.AddWithValue("@nfcSpeed", nfcSpeed);
-                    cmd.Parameters.AddWithValue("@pinSpeed", pinSpeed);
-                    cmd.Parameters.AddWithValue("@qrSpeed", qrSpeed);
+                    cmd.Parameters.AddWithValue("@nfcSys", nfcSys);
+                    cmd.Parameters.AddWithValue("@pinWf", pinWf);
+                    cmd.Parameters.AddWithValue("@pinSys", pinSys);
+                    cmd.Parameters.AddWithValue("@qrWf", qrWf);
+                    cmd.Parameters.AddWithValue("@qrSys", qrSys);
+                    cmd.Parameters.AddWithValue("@totWf", totalWf);
+                    cmd.Parameters.AddWithValue("@totSys", totalSys);
                     cmd.Parameters.AddWithValue("@dbSpeed", dbQuerySpeed);
-                    cmd.Parameters.AddWithValue("@machSpeed", machineProcessingSpeed);
 
                     await cmd.ExecuteNonQueryAsync();
                     updatedCount++;
@@ -1006,7 +1015,7 @@ public sealed class DatabaseService
             await connection.OpenAsync();
 
             using var cmd = new MySqlCommand($@"
-                SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms, source_table 
+                SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, source_table 
                 FROM ({CombinedLogsQuery}) vl 
                 WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL
                 ORDER BY timestamp ASC", connection);
@@ -1033,12 +1042,14 @@ public sealed class DatabaseService
                         error_code = new { stringValue = Value(reader["error_code"]) },
                         error_message = new { stringValue = Value(reader["error_message"]) },
                         remarks = new { stringValue = Value(reader["remarks"]) },
-                        auth_speed_ms = new { doubleValue = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0 },
-                        nfc_speed_ms = new { doubleValue = reader["nfc_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["nfc_speed_ms"]) : 0 },
-                        pin_speed_ms = new { doubleValue = reader["pin_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_speed_ms"]) : 0 },
-                        qr_speed_ms = new { doubleValue = reader["qr_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_speed_ms"]) : 0 },
+                        nfc_system_ms = new { doubleValue = reader["nfc_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["nfc_system_ms"]) : 0 },
+                        pin_workflow_ms = new { doubleValue = reader["pin_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_workflow_ms"]) : 0 },
+                        pin_system_ms = new { doubleValue = reader["pin_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_system_ms"]) : 0 },
+                        qr_workflow_ms = new { doubleValue = reader["qr_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_workflow_ms"]) : 0 },
+                        qr_system_ms = new { doubleValue = reader["qr_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_system_ms"]) : 0 },
+                        total_workflow_ms = new { doubleValue = reader["total_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_workflow_ms"]) : 0 },
+                        total_system_ms = new { doubleValue = reader["total_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_system_ms"]) : 0 },
                         db_query_speed_ms = new { doubleValue = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0 },
-                        machine_processing_ms = new { doubleValue = reader["machine_processing_ms"] != DBNull.Value ? Convert.ToDouble(reader["machine_processing_ms"]) : 0 },
                         timestamp = new { timestampValue = firestoreTimestamp }
                     }
                 };
@@ -1422,7 +1433,7 @@ public sealed class DatabaseService
         return masterLogs;
     }
 
-    // THE FIX: ADD PURE MACHINE LATENCY COLUMN TO CSV EXPORT
+    // THE FIX: ADD EXPLICIT NEW COLUMNS TO THE CSV EXPORT
     public async Task ExportCleanLogsToCsvAsync(string folderPath)
     {
         using var connection = new MySqlConnection(ConnectionString);
@@ -1433,7 +1444,8 @@ public sealed class DatabaseService
         foreach (var table in tables)
         {
             string sql = $@"
-                SELECT timestamp, student_name, verification_mode, is_granted, error_code, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms 
+                SELECT timestamp, student_name, verification_mode, is_granted, error_code, 
+                       nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms 
                 FROM {table} 
                 ORDER BY timestamp DESC";
 
@@ -1443,11 +1455,13 @@ public sealed class DatabaseService
             string filePath = Path.Combine(folderPath, $"{table}.csv");
             using var writer = new StreamWriter(filePath);
 
-            await writer.WriteLineAsync("Date & Time,Student Name,Verification Flow,Verdict,NFC Module Time,PIN Module Time,QR Module Time,Total DB Query Time,Pure Machine Latency");
+            await writer.WriteLineAsync("Date & Time,Student Name,Verification Flow,Verdict,NFC System Latency,PIN User Workflow,PIN System Latency,QR User Workflow,QR System Latency,Total User Workflow Time,Total System Latency,Total DB Query Time");
 
             while (await reader.ReadAsync())
             {
+                // THE FIX: Use an Excel literal string formula (="...") to force exact text format so Excel does not clip the Date and Hour
                 string ts = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd HH:mm:ss.fff");
+                string tsEscaped = $"=\"{ts}\"";
 
                 string name = Value(reader["student_name"]).Replace(",", " ");
                 if (string.IsNullOrWhiteSpace(name)) name = "Unknown";
@@ -1458,13 +1472,16 @@ public sealed class DatabaseService
                 string errorCode = Value(reader["error_code"]);
                 string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
-                string nfcStr = FormatTimeSpan(reader["nfc_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["nfc_speed_ms"]) : 0);
-                string pinStr = FormatTimeSpan(reader["pin_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_speed_ms"]) : 0);
-                string qrStr = FormatTimeSpan(reader["qr_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_speed_ms"]) : 0);
+                string nfcSysStr = FormatTimeSpan(reader["nfc_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["nfc_system_ms"]) : 0);
+                string pinWfStr = FormatTimeSpan(reader["pin_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_workflow_ms"]) : 0);
+                string pinSysStr = FormatTimeSpan(reader["pin_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_system_ms"]) : 0);
+                string qrWfStr = FormatTimeSpan(reader["qr_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_workflow_ms"]) : 0);
+                string qrSysStr = FormatTimeSpan(reader["qr_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_system_ms"]) : 0);
+                string totalWfStr = FormatTimeSpan(reader["total_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_workflow_ms"]) : 0);
+                string totalSysStr = FormatTimeSpan(reader["total_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_system_ms"]) : 0);
                 string dbStr = FormatTimeSpan(reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0);
-                string machStr = FormatTimeSpan(reader["machine_processing_ms"] != DBNull.Value ? Convert.ToDouble(reader["machine_processing_ms"]) : 0);
 
-                await writer.WriteLineAsync($"{ts},{name},{mode},{verdict},{nfcStr},{pinStr},{qrStr},{dbStr},{machStr}");
+                await writer.WriteLineAsync($"{tsEscaped},{name},{mode},{verdict},{nfcSysStr},{pinWfStr},{pinSysStr},{qrWfStr},{qrSysStr},{totalWfStr},{totalSysStr},{dbStr}");
             }
         }
     }
@@ -2084,8 +2101,7 @@ public sealed class DatabaseService
         return alerts;
     }
 
-    // THE FIX: Inject the explicit Machine Processing metric dynamically
-    public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double authSpeedMs, double nfcSpeedMs, double pinSpeedMs, double qrSpeedMs, double dbQuerySpeedMs, double machineProcessingMs)
+    public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
@@ -2097,11 +2113,16 @@ public sealed class DatabaseService
             _ => "standard_mode_logs"
         };
 
+        // Calculate Totals
+        double totalWorkflowMs = pinWorkflowMs + qrWorkflowMs;
+        double totalSystemMs = nfcSystemMs + pinSystemMs + qrSystemMs;
+        double authSpeedMs = totalWorkflowMs + totalSystemMs;
+
         using var command = new MySqlCommand($@"
             INSERT INTO {tableName}
-            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, machine_processing_ms)
+            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
             VALUES
-            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @auth_speed, @nfc_speed, @pin_speed, @qr_speed, @db_speed, @mach_speed)", connection);
+            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @auth_speed, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
 
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
         command.Parameters.AddWithValue("@student_name", NullIfEmpty(studentName));
@@ -2114,11 +2135,14 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
 
         command.Parameters.AddWithValue("@auth_speed", authSpeedMs);
-        command.Parameters.AddWithValue("@nfc_speed", nfcSpeedMs);
-        command.Parameters.AddWithValue("@pin_speed", pinSpeedMs);
-        command.Parameters.AddWithValue("@qr_speed", qrSpeedMs);
+        command.Parameters.AddWithValue("@nfc_speed", nfcSystemMs);
+        command.Parameters.AddWithValue("@pin_wf", pinWorkflowMs);
+        command.Parameters.AddWithValue("@pin_sys", pinSystemMs);
+        command.Parameters.AddWithValue("@qr_wf", qrWorkflowMs);
+        command.Parameters.AddWithValue("@qr_sys", qrSystemMs);
+        command.Parameters.AddWithValue("@tot_wf", totalWorkflowMs);
+        command.Parameters.AddWithValue("@tot_sys", totalSystemMs);
         command.Parameters.AddWithValue("@db_speed", dbQuerySpeedMs);
-        command.Parameters.AddWithValue("@mach_speed", machineProcessingMs);
 
         await command.ExecuteNonQueryAsync();
     }

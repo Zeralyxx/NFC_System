@@ -57,14 +57,13 @@ public sealed class VerificationSession
     public string? EventId { get; init; }
     public bool IsQrFallback { get; init; } = false;
 
-    // PERFORMANCE TRACKING VARIABLES
-    public double NfcSpeedMs { get; set; }
-    public double PinSpeedMs { get; set; }
-    public double QrSpeedMs { get; set; }
+    // THE FIX: Explicit Separation of Human vs System Performance
+    public double NfcSystemMs { get; set; }
+    public double PinWorkflowMs { get; set; }
+    public double PinSystemMs { get; set; }
+    public double QrWorkflowMs { get; set; }
+    public double QrSystemMs { get; set; }
     public double TotalDbQueryMs { get; set; }
-
-    // THE FIX: Isolate the Pure Machine Latency from the Human Workflow Time
-    public double MachineProcessingMs { get; set; }
 }
 
 public sealed class VerificationOutcome
@@ -77,5 +76,5 @@ public sealed class VerificationOutcome
     public string LogLine { get; init; } = "";
     public StudentRecord? Student { get; init; }
     public VerificationSession? Session { get; init; }
-    public DateTime Timestamp { get; init; } = DateTime.Now;
+    public DateTime Timestamp { get; init; } = DateTime.now;
 }
