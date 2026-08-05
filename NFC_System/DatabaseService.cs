@@ -65,7 +65,6 @@ public sealed class DatabaseService
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
-    // THE FIX: DYNAMIC UNION FOR ALL 3 LOG TABLES WITH NEW METRIC COLUMNS
     private const string CombinedLogsQuery = @"
         SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
         UNION ALL 
@@ -244,12 +243,9 @@ public sealed class DatabaseService
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
-        // Alterations for existing databases upgrading to new phases
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN photo_data MEDIUMBLOB NULL;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN is_temporary BOOLEAN DEFAULT FALSE;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-
-        // THE FIX: Safe Schema Update for distinct speeds
         try { using var alterCmd = new MySqlCommand("ALTER TABLE fast_mode_logs ADD COLUMN nfc_speed_ms DOUBLE DEFAULT 0, ADD COLUMN pin_speed_ms DOUBLE DEFAULT 0, ADD COLUMN qr_speed_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE standard_mode_logs ADD COLUMN nfc_speed_ms DOUBLE DEFAULT 0, ADD COLUMN pin_speed_ms DOUBLE DEFAULT 0, ADD COLUMN qr_speed_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE high_security_mode_logs ADD COLUMN nfc_speed_ms DOUBLE DEFAULT 0, ADD COLUMN pin_speed_ms DOUBLE DEFAULT 0, ADD COLUMN qr_speed_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
@@ -472,9 +468,9 @@ public sealed class DatabaseService
                     string errorMessage = ExtractString(fields, "error_message");
                     string remarks = ExtractString(fields, "remarks");
                     double authSpeed = ExtractDouble(fields, "auth_speed_ms");
-                    double nfcSpeed = ExtractDouble(fields, "nfc_speed_ms"); // NEW
-                    double pinSpeed = ExtractDouble(fields, "pin_speed_ms"); // NEW
-                    double qrSpeed = ExtractDouble(fields, "qr_speed_ms");   // NEW
+                    double nfcSpeed = ExtractDouble(fields, "nfc_speed_ms");
+                    double pinSpeed = ExtractDouble(fields, "pin_speed_ms");
+                    double qrSpeed = ExtractDouble(fields, "qr_speed_ms");
                     double dbQuerySpeed = ExtractDouble(fields, "db_query_speed_ms");
                     DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
 
@@ -1414,7 +1410,7 @@ public sealed class DatabaseService
         return masterLogs;
     }
 
-    // THE FIX: UPDATE EXPORT LOGIC FOR EXPLICIT CSV OUTPUT
+    // THE FIX: UPDATE EXPORT LOGIC TO INCLUDE VERDICT
     public async Task ExportCleanLogsToCsvAsync(string folderPath)
     {
         using var connection = new MySqlConnection(ConnectionString);
@@ -1425,7 +1421,7 @@ public sealed class DatabaseService
         foreach (var table in tables)
         {
             string sql = $@"
-                SELECT timestamp, student_name, verification_mode, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms 
+                SELECT timestamp, student_name, verification_mode, is_granted, error_code, nfc_speed_ms, pin_speed_ms, qr_speed_ms, db_query_speed_ms 
                 FROM {table} 
                 ORDER BY timestamp DESC";
 
@@ -1435,7 +1431,7 @@ public sealed class DatabaseService
             string filePath = Path.Combine(folderPath, $"{table}.csv");
             using var writer = new StreamWriter(filePath);
 
-            await writer.WriteLineAsync("Date & Time,Student Name,Verification Flow,NFC Module Time,PIN Module Time,QR Module Time,Total DB Query Time");
+            await writer.WriteLineAsync("Date & Time,Student Name,Verification Flow,Verdict,NFC Module Time,PIN Module Time,QR Module Time,Total DB Query Time");
 
             while (await reader.ReadAsync())
             {
@@ -1446,12 +1442,16 @@ public sealed class DatabaseService
 
                 string mode = Value(reader["verification_mode"]);
 
+                bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
+                string errorCode = Value(reader["error_code"]);
+                string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
+
                 string nfcStr = FormatTimeSpan(reader["nfc_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["nfc_speed_ms"]) : 0);
                 string pinStr = FormatTimeSpan(reader["pin_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_speed_ms"]) : 0);
                 string qrStr = FormatTimeSpan(reader["qr_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_speed_ms"]) : 0);
                 string dbStr = FormatTimeSpan(reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0);
 
-                await writer.WriteLineAsync($"{ts},{name},{mode},{nfcStr},{pinStr},{qrStr},{dbStr}");
+                await writer.WriteLineAsync($"{ts},{name},{mode},{verdict},{nfcStr},{pinStr},{qrStr},{dbStr}");
             }
         }
     }
@@ -2071,7 +2071,6 @@ public sealed class DatabaseService
         return alerts;
     }
 
-    // THE FIX: Accept exact performance metrics for database injection
     public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double authSpeedMs, double nfcSpeedMs, double pinSpeedMs, double qrSpeedMs, double dbQuerySpeedMs)
     {
         using var connection = new MySqlConnection(ConnectionString);
