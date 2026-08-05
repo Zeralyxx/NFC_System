@@ -65,7 +65,6 @@ public sealed class DatabaseService
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
-    // THE FIX: DYNAMIC UNION FOR ALL 3 LOG TABLES WITH NEW METRIC COLUMNS
     private const string CombinedLogsQuery = @"
         SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
         UNION ALL 
@@ -256,8 +255,6 @@ public sealed class DatabaseService
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN photo_data MEDIUMBLOB NULL;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN is_temporary BOOLEAN DEFAULT FALSE;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
-
-        // THE FIX: Safe Schema Updates for explicitly defined workflow and system times
         try { using var alterCmd = new MySqlCommand("ALTER TABLE fast_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE standard_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE high_security_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
@@ -479,7 +476,6 @@ public sealed class DatabaseService
                     string errorCode = ExtractString(fields, "error_code");
                     string errorMessage = ExtractString(fields, "error_message");
                     string remarks = ExtractString(fields, "remarks");
-
                     double nfcSys = ExtractDouble(fields, "nfc_system_ms");
                     double pinWf = ExtractDouble(fields, "pin_workflow_ms");
                     double pinSys = ExtractDouble(fields, "pin_system_ms");
@@ -488,7 +484,6 @@ public sealed class DatabaseService
                     double totalWf = ExtractDouble(fields, "total_workflow_ms");
                     double totalSys = ExtractDouble(fields, "total_system_ms");
                     double dbQuerySpeed = ExtractDouble(fields, "db_query_speed_ms");
-
                     DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
 
                     if (timestamp == null) continue;
@@ -1444,7 +1439,7 @@ public sealed class DatabaseService
         foreach (var table in tables)
         {
             string sql = $@"
-                SELECT timestamp, student_name, verification_mode, is_granted, error_code, 
+                SELECT timestamp, student_name, transaction_type, verification_mode, is_granted, error_code, 
                        nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms 
                 FROM {table} 
                 ORDER BY timestamp DESC";
@@ -1455,7 +1450,7 @@ public sealed class DatabaseService
             string filePath = Path.Combine(folderPath, $"{table}.csv");
             using var writer = new StreamWriter(filePath);
 
-            await writer.WriteLineAsync("Date & Time,Student Name,Verification Flow,Verdict,NFC System Latency,PIN User Workflow,PIN System Latency,QR User Workflow,QR System Latency,Total User Workflow Time,Total System Latency,Total DB Query Time");
+            await writer.WriteLineAsync("Date & Time,Student Name,Action,Verification Flow,Verdict,NFC System Latency,PIN User Workflow,PIN System Latency,QR User Workflow,QR System Latency,Total User Workflow Time,Total System Latency,Total DB Query Time");
 
             while (await reader.ReadAsync())
             {
@@ -1467,30 +1462,58 @@ public sealed class DatabaseService
                 if (string.IsNullOrWhiteSpace(name)) name = "Unknown";
 
                 string mode = Value(reader["verification_mode"]);
+                string action = Value(reader["transaction_type"]);
 
                 bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
                 string errorCode = Value(reader["error_code"]);
                 string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
-                string nfcSysStr = FormatTimeSpan(reader["nfc_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["nfc_system_ms"]) : 0);
-                string pinWfStr = FormatTimeSpan(reader["pin_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_workflow_ms"]) : 0);
-                string pinSysStr = FormatTimeSpan(reader["pin_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["pin_system_ms"]) : 0);
-                string qrWfStr = FormatTimeSpan(reader["qr_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_workflow_ms"]) : 0);
-                string qrSysStr = FormatTimeSpan(reader["qr_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["qr_system_ms"]) : 0);
-                string totalWfStr = FormatTimeSpan(reader["total_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_workflow_ms"]) : 0);
-                string totalSysStr = FormatTimeSpan(reader["total_system_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_system_ms"]) : 0);
-                string dbStr = FormatTimeSpan(reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0);
+                // LOGIC: Did this transaction actually use PIN or QR?
+                bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
+                               (mode.Equals("Standard", StringComparison.OrdinalIgnoreCase) || mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase));
 
-                await writer.WriteLineAsync($"{tsEscaped},{name},{mode},{verdict},{nfcSysStr},{pinWfStr},{pinSysStr},{qrWfStr},{qrSysStr},{totalWfStr},{totalSysStr},{dbStr}");
+                bool usedQr = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
+                              mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase);
+
+                // Rejections before getting to PIN/QR
+                if (!isGranted && (errorCode == "NOT_REGISTERED" || errorCode == "INACTIVE_STUDENT" || errorCode == "ANTI_TAILGATING_VIOLATION" || errorCode == "IRREGULAR_EXIT_SEQUENCE" || errorCode == "IRREGULAR_EVENT_EXIT" || errorCode == "UNAUTHORIZED_EVENT_ACCESS" || errorCode == "BAD_READ" || errorCode == "DOUBLE_ENTRY" || errorCode == "ANTI_PROXY_VIOLATION" || errorCode == "PIN_LOCKED"))
+                {
+                    usedPin = false;
+                    usedQr = false;
+                }
+                if (!isGranted && errorCode == "PIN_FAILURE")
+                {
+                    usedQr = false;
+                }
+
+                string nfcSysStr = FormatTimeSpan(reader["nfc_system_ms"]);
+                string pinWfStr = usedPin ? FormatTimeSpan(reader["pin_workflow_ms"]) : "N/A (Bypassed)";
+                string pinSysStr = usedPin ? FormatTimeSpan(reader["pin_system_ms"]) : "N/A (Bypassed)";
+                string qrWfStr = usedQr ? FormatTimeSpan(reader["qr_workflow_ms"]) : "N/A (Bypassed)";
+                string qrSysStr = usedQr ? FormatTimeSpan(reader["qr_system_ms"]) : "N/A (Bypassed)";
+
+                double totWf = reader["total_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_workflow_ms"]) : 0;
+                string totalWfStr = totWf > 0 ? FormatTimeSpan(totWf) : "N/A";
+
+                string totalSysStr = FormatTimeSpan(reader["total_system_ms"]);
+                string dbStr = FormatTimeSpan(reader["db_query_speed_ms"]);
+
+                await writer.WriteLineAsync($"{tsEscaped},{name},{action},{mode},{verdict},{nfcSysStr},{pinWfStr},{pinSysStr},{qrWfStr},{qrSysStr},{totalWfStr},{totalSysStr},{dbStr}");
             }
         }
     }
 
-    private string FormatTimeSpan(double milliseconds)
+    private string FormatTimeSpan(object dbValue)
     {
-        if (milliseconds <= 0) return "0ms";
-        TimeSpan t = TimeSpan.FromMilliseconds(milliseconds);
+        if (dbValue == DBNull.Value) return "0ms";
+        double milliseconds = Convert.ToDouble(dbValue);
 
+        if (milliseconds == 0) return "0ms";
+
+        // THE FIX: Prove that QR and Memory checks are lightning-fast instead of 0
+        if (milliseconds > 0 && milliseconds < 1) return "< 1ms";
+
+        TimeSpan t = TimeSpan.FromMilliseconds(milliseconds);
         var parts = new List<string>();
         if (t.Hours > 0) parts.Add($"{t.Hours}h");
         if (t.Minutes > 0) parts.Add($"{t.Minutes}m");
@@ -1606,7 +1629,7 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand($@"
             SELECT vl.timestamp, vl.student_id, vl.student_name as full_name, s.course, s.section_name, 
-                   vl.transaction_type, vl.is_granted, vl.verification_mode, vl.auth_speed_ms, vl.db_query_speed_ms
+                   vl.transaction_type, vl.is_granted, vl.verification_mode, vl.db_query_speed_ms
             FROM ({CombinedLogsQuery}) vl
             LEFT JOIN students s ON vl.student_id = s.student_id
             WHERE vl.transaction_type != 'EventAttendance'
@@ -1629,7 +1652,6 @@ public sealed class DatabaseService
                 Action = Value(reader["transaction_type"]),
                 Status = isGranted ? "GRANTED" : "DENIED",
                 Mode = Value(reader["verification_mode"]),
-                AuthSpeedMs = reader["auth_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["auth_speed_ms"]) : 0,
                 DbQuerySpeedMs = reader["db_query_speed_ms"] != DBNull.Value ? Convert.ToDouble(reader["db_query_speed_ms"]) : 0
             });
         }
