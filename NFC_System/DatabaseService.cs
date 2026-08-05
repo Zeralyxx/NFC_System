@@ -1272,8 +1272,16 @@ public sealed class DatabaseService
             var gateLogs = OfflineCacheService.GetPendingGateLogs();
             foreach (var log in gateLogs)
             {
-                using var cmd = new MySqlCommand(@"
-                    INSERT INTO standard_mode_logs (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
+                // THE FIX: Dynamically route offline logs to the correct table based on their recorded mode
+                string targetTable = log.VerificationMode switch
+                {
+                    "Fast" => "fast_mode_logs",
+                    "HighSecurity" => "high_security_mode_logs",
+                    _ => "standard_mode_logs"
+                };
+
+                using var cmd = new MySqlCommand($@"
+                    INSERT INTO {targetTable} (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
                     VALUES (@ts, @sid, @nfc, @ttype, @vmode, @granted, @err, @rem)", connection);
 
                 cmd.Parameters.AddWithValue("@ts", DateTime.Parse(log.Timestamp));
@@ -1428,7 +1436,6 @@ public sealed class DatabaseService
         return masterLogs;
     }
 
-    // THE FIX: ADD EXPLICIT NEW COLUMNS TO THE CSV EXPORT
     public async Task ExportCleanLogsToCsvAsync(string folderPath)
     {
         using var connection = new MySqlConnection(ConnectionString);
@@ -1454,7 +1461,6 @@ public sealed class DatabaseService
 
             while (await reader.ReadAsync())
             {
-                // THE FIX: Use an Excel literal string formula (="...") to force exact text format so Excel does not clip the Date and Hour
                 string ts = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd HH:mm:ss.fff");
                 string tsEscaped = $"=\"{ts}\"";
 
@@ -1468,14 +1474,12 @@ public sealed class DatabaseService
                 string errorCode = Value(reader["error_code"]);
                 string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
-                // LOGIC: Did this transaction actually use PIN or QR?
                 bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
                                (mode.Equals("Standard", StringComparison.OrdinalIgnoreCase) || mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase));
 
                 bool usedQr = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
                               mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase);
 
-                // Rejections before getting to PIN/QR
                 if (!isGranted && (errorCode == "NOT_REGISTERED" || errorCode == "INACTIVE_STUDENT" || errorCode == "ANTI_TAILGATING_VIOLATION" || errorCode == "IRREGULAR_EXIT_SEQUENCE" || errorCode == "IRREGULAR_EVENT_EXIT" || errorCode == "UNAUTHORIZED_EVENT_ACCESS" || errorCode == "BAD_READ" || errorCode == "DOUBLE_ENTRY" || errorCode == "ANTI_PROXY_VIOLATION" || errorCode == "PIN_LOCKED"))
                 {
                     usedPin = false;
@@ -1510,7 +1514,6 @@ public sealed class DatabaseService
 
         if (milliseconds == 0) return "0ms";
 
-        // THE FIX: Prove that QR and Memory checks are lightning-fast instead of 0
         if (milliseconds > 0 && milliseconds < 1) return "< 1ms";
 
         TimeSpan t = TimeSpan.FromMilliseconds(milliseconds);
@@ -2128,10 +2131,11 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        string tableName = mode switch
+        string modeString = ToStorageValue(mode);
+        string tableName = modeString switch
         {
-            VerificationMode.Fast => "fast_mode_logs",
-            VerificationMode.HighSecurity => "high_security_mode_logs",
+            "Fast" => "fast_mode_logs",
+            "HighSecurity" => "high_security_mode_logs",
             _ => "standard_mode_logs"
         };
 
@@ -2142,21 +2146,20 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand($@"
             INSERT INTO {tableName}
-            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
+            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
             VALUES
-            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @auth_speed, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
+            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
 
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
         command.Parameters.AddWithValue("@student_name", NullIfEmpty(studentName));
         command.Parameters.AddWithValue("@nfc_uid", NullIfEmpty(uid));
         command.Parameters.AddWithValue("@transaction_type", ToStorageValue(transactionType));
-        command.Parameters.AddWithValue("@verification_mode", ToStorageValue(mode));
+        command.Parameters.AddWithValue("@verification_mode", modeString);
         command.Parameters.AddWithValue("@is_granted", granted ? 1 : 0);
         command.Parameters.AddWithValue("@error_category", NullIfEmpty(errorCategory));
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
 
-        command.Parameters.AddWithValue("@auth_speed", authSpeedMs);
         command.Parameters.AddWithValue("@nfc_speed", nfcSystemMs);
         command.Parameters.AddWithValue("@pin_wf", pinWorkflowMs);
         command.Parameters.AddWithValue("@pin_sys", pinSystemMs);

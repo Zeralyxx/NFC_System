@@ -33,13 +33,24 @@ namespace NFC_System
             MaximizeWindow();
 
             this.Closed += Window_Closed;
-            ResetPinButton.Click += ResetPinButton_Click;
+
+            // THE FIX: Hook into the Activated event here instead of overriding.
+            // This safely refreshes the dashboard instantly when you close the Kiosk and return here.
+            this.Activated += Window_Activated;
 
             // Setup the 500ms delay timer for database searching
             _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(500);
             _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
 
             _ = InitializeAsync();
+        }
+
+        private void Window_Activated(object sender, WindowActivatedEventArgs args)
+        {
+            if (args.WindowActivationState != WindowActivationState.Deactivated)
+            {
+                _ = RefreshDashboardAsync();
+            }
         }
 
         private async Task InitializeAsync()
@@ -650,47 +661,6 @@ namespace NFC_System
                 GetNewDataButton.IsEnabled = true;
                 UploadDataButton.IsEnabled = true;
                 SyncProgressBar.Visibility = Visibility.Collapsed;
-            }
-        }
-
-
-
-        private async void ResetPinButton_Click(object sender, RoutedEventArgs e)
-        {
-            string studentId = ResetStudentIdTextBox.Text.Trim();
-            string pin = NewPinPasswordBox.Password.Trim();
-
-            if (string.IsNullOrWhiteSpace(studentId) || pin.Length != 4 || !pin.All(char.IsDigit))
-            {
-                StatusTextBlock.Text = "Enter a student ID and a 4-digit PIN.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                PlayErrorAlert();
-                return;
-            }
-
-            try
-            {
-                await _database.ResetPinAsync(studentId, pin);
-
-                NewPinPasswordBox.Password = "";
-                ResetStudentIdTextBox.Text = "";
-                StatusTextBlock.Text = $"New PIN set and lockout cleared for {studentId}.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
-                PlaySuccessPing();
-
-                try
-                {
-                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_OVERRIDE", $"Manually unlocked account and reset PIN for {studentId}.");
-                }
-                catch { }
-
-                await RefreshDashboardAsync();
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"Could not reset PIN: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                PlayErrorAlert();
             }
         }
 
