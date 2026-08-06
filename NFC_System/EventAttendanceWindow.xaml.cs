@@ -23,6 +23,9 @@ namespace NFC_System
         public EventAttendanceWindow()
         {
             this.InitializeComponent();
+            // Subscribe to the live monitor
+            DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             _engine = new VerificationEngine(_database);
 
             MaximizeWindow();
@@ -89,6 +92,17 @@ namespace NFC_System
             if (events.Count > 0) ActiveEventComboBox.SelectedIndex = 0;
 
             AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events.Count} active event(s).");
+        }
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            // DispatcherQueue safely pushes the update to the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
         }
 
         private async void RefreshEventsButton_Click(object sender, RoutedEventArgs e)

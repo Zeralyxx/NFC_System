@@ -12,214 +12,233 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
+            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
+            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <Button x:Name="BackButton" Grid.Column="0" Content="Back to Dashboard" Click="BackButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
-
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Student Directory &amp; Security State" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Search records, update IDs, and manage enrollment status." Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
             </StackPanel>
-        </Grid>
+        </Border>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="6.5*"/>
-                <ColumnDefinition Width="3.5*"/>
-            </Grid.ColumnDefinitions>
+        <!-- The original content wrapper with its 48px padding -->
+        <Grid Grid.Row="1" Padding="48">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- Left Column: Search & Data Grid -->
-            <Border Grid.Column="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+            <!-- Header -->
+            <Grid Margin="0,0,0,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-                    <!-- Header & Enlarge Trigger -->
-                    <Grid Grid.Row="0" Margin="0,0,0,24">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Student Roster" Style="{StaticResource CardTitleStyle}" Margin="0" VerticalAlignment="Center"/>
-                        <Button x:Name="OpenPopupDirectoryButton" Grid.Column="1" Content="⛶ Full Screen Explorer" Click="OpenPopupDirectoryButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="36" Padding="16,0"/>
-                    </Grid>
+                <Button x:Name="BackButton" Grid.Column="0" Content="Back to Dashboard" Click="BackButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
-                    <!-- Search and Filter Toolbar -->
-                    <Grid Grid.Row="1" Margin="0,0,0,24" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                    <TextBlock Text="Student Directory &amp; Security State" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <TextBlock Text="Search records, update IDs, and manage enrollment status." Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                </StackPanel>
+            </Grid>
 
-                        <TextBox x:Name="SearchBox" Grid.Column="0" Header="Search Directory" PlaceholderText="Search by ID, Name, or UID..." TextChanged="SearchBox_TextChanged" VerticalAlignment="Stretch"/>
-                        <ComboBox x:Name="CourseFilterComboBox" Grid.Column="1" Header="Course" Width="180" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch"/>
-                        <ComboBox x:Name="StatusFilterComboBox" Grid.Column="2" Header="Filter Status" SelectedIndex="0" Width="160" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch">
-                            <ComboBoxItem Content="All Students"/>
-                            <ComboBoxItem Content="Active Only"/>
-                            <ComboBoxItem Content="Locked Out"/>
-                            <ComboBoxItem Content="Inactive"/>
-                        </ComboBox>
-                    </Grid>
+            <!-- Main Content -->
+            <Grid Grid.Row="1" ColumnSpacing="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="6.5*"/>
+                    <ColumnDefinition Width="3.5*"/>
+                </Grid.ColumnDefinitions>
 
-                    <!-- Pseudo-DataGrid Header -->
-                    <Border Grid.Row="2" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
-                        <Grid>
+                <!-- Left Column: Search & Data Grid -->
+                <Border Grid.Column="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header & Enlarge Trigger -->
+                        <Grid Grid.Row="0" Margin="0,0,0,24">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.2*"/>
-                                <ColumnDefinition Width="2.0*"/>
-                                <ColumnDefinition Width="2.2*"/>
-                                <ColumnDefinition Width="0.7*"/>
-                                <ColumnDefinition Width="0.8*"/>
-                                <ColumnDefinition Width="1.0*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Student Roster" Style="{StaticResource CardTitleStyle}" Margin="0" VerticalAlignment="Center"/>
+                            <Button x:Name="OpenPopupDirectoryButton" Grid.Column="1" Content="⛶ Full Screen Explorer" Click="OpenPopupDirectoryButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="36" Padding="16,0"/>
+                        </Grid>
+
+                        <!-- Search and Filter Toolbar -->
+                        <Grid Grid.Row="1" Margin="0,0,0,24" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <Button Grid.Column="0" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="StudentId" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBlock Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <FontIcon x:Name="SortIcon_StudentId" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
-                                </StackPanel>
-                            </Button>
-
-                            <Button Grid.Column="1" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="FullName" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBlock Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <FontIcon x:Name="SortIcon_FullName" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
-                                </StackPanel>
-                            </Button>
-
-                            <Button Grid.Column="2" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Course" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBlock Text="Course" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <FontIcon x:Name="SortIcon_Course" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
-                                </StackPanel>
-                            </Button>
-
-                            <Button Grid.Column="3" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Year" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBlock Text="Year" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <FontIcon x:Name="SortIcon_Year" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
-                                </StackPanel>
-                            </Button>
-
-                            <Button Grid.Column="4" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Section" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBlock Text="Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <FontIcon x:Name="SortIcon_Section" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
-                                </StackPanel>
-                            </Button>
-
-                            <Button Grid.Column="5" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Status" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBlock Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <FontIcon x:Name="SortIcon_Status" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
-                                </StackPanel>
-                            </Button>
-                        </Grid>
-                    </Border>
-
-                    <!-- Native DataGrid (ListView) -->
-                    <ListView x:Name="StudentListView" Grid.Row="3" SelectionChanged="StudentListView_SelectionChanged" Background="Transparent" CornerRadius="8">
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                <Setter Property="Padding" Value="16,0,16,0"/>
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.2*"/>
-                                        <ColumnDefinition Width="2.0*"/>
-                                        <ColumnDefinition Width="2.2*"/>
-                                        <ColumnDefinition Width="0.7*"/>
-                                        <ColumnDefinition Width="0.8*"/>
-                                        <ColumnDefinition Width="1.0*"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding YearLevel}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding SectionName}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="5" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-
-                    <!-- Paging Controls -->
-                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="24" Margin="0,16,0,0">
-                        <Button x:Name="PrevBtn" Content="&#xE76B;" FontFamily="Segoe Fluent Icons" Click="PageChange_Click" IsEnabled="False" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                        <TextBlock x:Name="PageInfoText" Text="Page 1 of 1" VerticalAlignment="Center" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold"/>
-                        <Button x:Name="NextBtn" Content="&#xE76C;" FontFamily="Segoe Fluent Icons" Click="PageChange_Click" IsEnabled="False" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- Right Column: Edit Panel -->
-            <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="24">
-
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Configuration Panel" Style="{StaticResource CardTitleStyle}"/>
-                            <TextBlock Text="Manage individual security access or perform global batch status updates." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <!-- Batch Operations Trigger -->
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Advanced Global Operations" Style="{StaticResource DataValueStyle}" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                            <Button x:Name="OpenBatchDialogButton" Content="Batch Update Status (Graduation / Expulsion)" Click="OpenBatchDialogButton_Click" HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                        </StackPanel>
-
-                        <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
-
-                        <!-- Edit Controls -->
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Individual Profile Management" Style="{StaticResource DataValueStyle}"/>
-
-                            <TextBox x:Name="EditStudentIdBox" Header="Student ID (Editable)" PlaceholderText="Select a student to edit..." IsEnabled="False"/>
-
-                            <ComboBox x:Name="EditStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch" IsEnabled="False">
-                                <ComboBoxItem Content="Active"/>
+                            <TextBox x:Name="SearchBox" Grid.Column="0" Header="Search Directory" PlaceholderText="Search by ID, Name, or UID..." TextChanged="SearchBox_TextChanged" VerticalAlignment="Stretch"/>
+                            <ComboBox x:Name="CourseFilterComboBox" Grid.Column="1" Header="Course" Width="180" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch"/>
+                            <ComboBox x:Name="StatusFilterComboBox" Grid.Column="2" Header="Filter Status" SelectedIndex="0" Width="160" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch">
+                                <ComboBoxItem Content="All Students"/>
+                                <ComboBoxItem Content="Active Only"/>
+                                <ComboBoxItem Content="Locked Out"/>
                                 <ComboBoxItem Content="Inactive"/>
-                                <ComboBoxItem Content="Graduated"/>
-                                <ComboBoxItem Content="Expelled"/>
                             </ComboBox>
-                        </StackPanel>
-
-                        <Grid ColumnSpacing="12" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button x:Name="DeleteStudentButton" Grid.Column="0" Content="Delete Profile" Click="DeleteStudentButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#40FF0000" Foreground="#FF8888" BorderBrush="#80FF0000" BorderThickness="1"/>
-                            <Button x:Name="SaveChangesButton" Grid.Column="1" Content="Save Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                         </Grid>
 
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
+                        <!-- Pseudo-DataGrid Header -->
+                        <Border Grid.Row="2" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.2*"/>
+                                    <ColumnDefinition Width="2.0*"/>
+                                    <ColumnDefinition Width="2.2*"/>
+                                    <ColumnDefinition Width="0.7*"/>
+                                    <ColumnDefinition Width="0.8*"/>
+                                    <ColumnDefinition Width="1.0*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button Grid.Column="0" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="StudentId" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="Student ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <FontIcon x:Name="SortIcon_StudentId" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Grid.Column="1" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="FullName" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="Full Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <FontIcon x:Name="SortIcon_FullName" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Grid.Column="2" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Course" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="Course" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <FontIcon x:Name="SortIcon_Course" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Grid.Column="3" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Year" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="Year" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <FontIcon x:Name="SortIcon_Year" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Grid.Column="4" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Section" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <FontIcon x:Name="SortIcon_Section" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Grid.Column="5" Background="Transparent" BorderThickness="0" Padding="0" Click="SortHeader_Click" Tag="Status" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <FontIcon x:Name="SortIcon_Status" FontFamily="Segoe Fluent Icons" Glyph="&#xE70E;" FontSize="10" Visibility="Collapsed" Foreground="#80FFFFFF"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <!-- Native DataGrid (ListView) -->
+                        <ListView x:Name="StudentListView" Grid.Row="3" SelectionChanged="StudentListView_SelectionChanged" Background="Transparent" CornerRadius="8">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="Padding" Value="16,0,16,0"/>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.2*"/>
+                                            <ColumnDefinition Width="2.0*"/>
+                                            <ColumnDefinition Width="2.2*"/>
+                                            <ColumnDefinition Width="0.7*"/>
+                                            <ColumnDefinition Width="0.8*"/>
+                                            <ColumnDefinition Width="1.0*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="{Binding StudentId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding FullName}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Course}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding YearLevel}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding SectionName}" Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="5" Text="{Binding Status}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <!-- Paging Controls -->
+                        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="24" Margin="0,16,0,0">
+                            <Button x:Name="PrevBtn" Content="&#xE76B;" FontFamily="Segoe Fluent Icons" Click="PageChange_Click" IsEnabled="False" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                            <TextBlock x:Name="PageInfoText" Text="Page 1 of 1" VerticalAlignment="Center" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold"/>
+                            <Button x:Name="NextBtn" Content="&#xE76C;" FontFamily="Segoe Fluent Icons" Click="PageChange_Click" IsEnabled="False" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Right Column: Edit Panel -->
+                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="24">
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Configuration Panel" Style="{StaticResource CardTitleStyle}"/>
+                                <TextBlock Text="Manage individual security access or perform global batch status updates." Style="{StaticResource BodyTextStyle}" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <!-- Batch Operations Trigger -->
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Advanced Global Operations" Style="{StaticResource DataValueStyle}" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                                <Button x:Name="OpenBatchDialogButton" Content="Batch Update Status (Graduation / Expulsion)" Click="OpenBatchDialogButton_Click" HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                            </StackPanel>
+
+                            <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
+
+                            <!-- Edit Controls -->
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Individual Profile Management" Style="{StaticResource DataValueStyle}"/>
+
+                                <TextBox x:Name="EditStudentIdBox" Header="Student ID (Editable)" PlaceholderText="Select a student to edit..." IsEnabled="False"/>
+
+                                <ComboBox x:Name="EditStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch" IsEnabled="False">
+                                    <ComboBoxItem Content="Active"/>
+                                    <ComboBoxItem Content="Inactive"/>
+                                    <ComboBoxItem Content="Graduated"/>
+                                    <ComboBoxItem Content="Expelled"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <Grid ColumnSpacing="12" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="DeleteStudentButton" Grid.Column="0" Content="Delete Profile" Click="DeleteStudentButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#40FF0000" Foreground="#FF8888" BorderBrush="#80FF0000" BorderThickness="1"/>
+                                <Button x:Name="SaveChangesButton" Grid.Column="1" Content="Save Changes" Click="SaveChangesButton_Click" IsEnabled="False" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                            </Grid>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- ========================================================= -->

@@ -23,6 +23,9 @@ namespace NFC_System
         public VerificationWindow()
         {
             this.InitializeComponent();
+            // Subscribe to the live monitor
+            DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             _engine = new VerificationEngine(_database);
 
             MaximizeWindow();
@@ -89,6 +92,17 @@ namespace NFC_System
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
+        }
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            // DispatcherQueue safely pushes the update to the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
         }
 
         private void MaximizeWindow()

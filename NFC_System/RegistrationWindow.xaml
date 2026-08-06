@@ -12,163 +12,182 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
+            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
+            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
-
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Student Enrollment" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Register details, set 2FA PIN, and bind NFC/QR credentials" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
             </StackPanel>
-        </Grid>
+        </Border>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="5.5*"/>
-                <ColumnDefinition Width="4.5*"/>
-            </Grid.ColumnDefinitions>
+        <!-- The original content wrapper with its 48px padding -->
+        <Grid Grid.Row="1" Padding="48">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- Left Column: Form -->
-            <Border Grid.Column="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
-                    <StackPanel Spacing="20">
-                        <TextBlock Text="Identity Information" Style="{StaticResource CardTitleStyle}"/>
+            <!-- Header -->
+            <Grid Margin="0,0,0,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-                        <!-- THE FIX: Int-only formatting applied via TextChanging -->
-                        <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" TextChanging="NumberOnly_TextChanging"/>
-                        <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
-                        <TextBox x:Name="EmailTextBox" Header="Institutional Email" PlaceholderText="e.g. michael.sintay@tcu.edu.ph" />
-                        <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
+
+                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                    <TextBlock Text="Student Enrollment" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <TextBlock Text="Register details, set 2FA PIN, and bind NFC/QR credentials" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Main Content -->
+            <Grid Grid.Row="1" ColumnSpacing="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="5.5*"/>
+                    <ColumnDefinition Width="4.5*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Column: Form -->
+                <Border Grid.Column="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                        <StackPanel Spacing="20">
+                            <TextBlock Text="Identity Information" Style="{StaticResource CardTitleStyle}"/>
+
                             <!-- THE FIX: Int-only formatting applied via TextChanging -->
-                            <TextBox Grid.Column="0" x:Name="YearLevelTextBox" Header="Year Level" PlaceholderText="e.g. 3" TextChanging="NumberOnly_TextChanging"/>
-                            <TextBox Grid.Column="1" x:Name="SectionTextBox" Header="Section" PlaceholderText="e.g. 3A"/>
-                        </Grid>
+                            <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" TextChanging="NumberOnly_TextChanging"/>
+                            <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
+                            <TextBox x:Name="EmailTextBox" Header="Institutional Email" PlaceholderText="e.g. michael.sintay@tcu.edu.ph" />
+                            <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <!-- THE FIX: Int-only formatting applied via TextChanging -->
+                                <TextBox Grid.Column="0" x:Name="YearLevelTextBox" Header="Year Level" PlaceholderText="e.g. 3" TextChanging="NumberOnly_TextChanging"/>
+                                <TextBox Grid.Column="1" x:Name="SectionTextBox" Header="Section" PlaceholderText="e.g. 3A"/>
+                            </Grid>
 
-                        <!-- PIN Authentication Setup (2FA) -->
-                        <Grid ColumnSpacing="16" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="StatusComboBox" Grid.Column="0" Header="Status" SelectedIndex="0" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Active"/>
-                                <ComboBoxItem Content="Inactive"/>
-                                <ComboBoxItem Content="Expelled"/>
-                            </ComboBox>
-                            <PasswordBox x:Name="PinPasswordBox" Grid.Column="1" Header="Set 4-Digit PIN (2FA)" MaxLength="4" PlaceholderText="****"/>
-                        </Grid>
+                            <!-- PIN Authentication Setup (2FA) -->
+                            <Grid ColumnSpacing="16" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="StatusComboBox" Grid.Column="0" Header="Status" SelectedIndex="0" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="Active"/>
+                                    <ComboBoxItem Content="Inactive"/>
+                                    <ComboBoxItem Content="Expelled"/>
+                                </ComboBox>
+                                <PasswordBox x:Name="PinPasswordBox" Grid.Column="1" Header="Set 4-Digit PIN (2FA)" MaxLength="4" PlaceholderText="****"/>
+                            </Grid>
 
-                        <!-- NFC & QR Enrollment Panel -->
-                        <Border CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,16,0,0">
-                            <StackPanel Spacing="16">
-                                <TextBlock Text="Credential Enrollment" Style="{StaticResource CardTitleStyle}" FontSize="18" Margin="0"/>
-                                <TextBox x:Name="NfcUidTextBox" Header="NFC UID" PlaceholderText="Tap NFC card or type UID for testing"/>
-                                <TextBox x:Name="QrCredentialTextBox" Header="QR Credential Payload" PlaceholderText="Auto-generated from Student ID" IsReadOnly="True"/>
+                            <!-- NFC & QR Enrollment Panel -->
+                            <Border CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,16,0,0">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Credential Enrollment" Style="{StaticResource CardTitleStyle}" FontSize="18" Margin="0"/>
+                                    <TextBox x:Name="NfcUidTextBox" Header="NFC UID" PlaceholderText="Tap NFC card or type UID for testing"/>
+                                    <TextBox x:Name="QrCredentialTextBox" Header="QR Credential Payload" PlaceholderText="Auto-generated from Student ID" IsReadOnly="True"/>
 
-                                <!-- THE FIX: Phase 2 - Temporary Credential Flag -->
-                                <CheckBox x:Name="IsTemporaryCheckBox" Content="Issue as Temporary Credential (NFC Sticker / Paper QR)" Foreground="#60A5FA" FontWeight="SemiBold" Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Action Buttons -->
-                        <Grid Margin="0,24,0,0" ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="1.5*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" x:Name="ScanUidButton" Content="Scan UID" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
-                            <Button Grid.Column="1" x:Name="ClearButton" Content="Clear" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
-
-                            <!-- Primary Call to Action -->
-                            <Button Grid.Column="2" x:Name="SaveButton" Content="Save Student" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-
-            <!-- Right Column: Preview & Logs -->
-            <Grid Grid.Column="1" RowSpacing="24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="6*"/>
-                    <RowDefinition Height="4*"/>
-                </Grid.RowDefinitions>
-
-                <!-- Credential Preview -->
-                <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid RowSpacing="20">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0">
-                            <TextBlock Text="Credential Preview" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center"/>
-                            <Button x:Name="UploadPhotoButton" Content="Upload Photo" Click="UploadPhotoButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                        </Grid>
-
-                        <Grid Grid.Row="1" ColumnSpacing="20">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.4*"/>
-                                <ColumnDefinition Width="1*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- Live Student Info Output -->
-                            <Border Grid.Column="0" CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <StackPanel Spacing="16">
-                                        <!-- THE FIX: PersonPicture profile preview -->
-                                        <PersonPicture x:Name="StudentPhotoPreview" ProfilePicture="{x:Null}" Height="120" Width="120" HorizontalAlignment="Center" Margin="0,0,0,8"/>
-                                        <TextBlock x:Name="PreviewTextBlock" Text="Student information will appear here once entered." Style="{StaticResource BodyTextStyle}" FontSize="16" LineHeight="26" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </ScrollViewer>
+                                    <!-- THE FIX: Phase 2 - Temporary Credential Flag -->
+                                    <CheckBox x:Name="IsTemporaryCheckBox" Content="Issue as Temporary Credential (NFC Sticker / Paper QR)" Foreground="#60A5FA" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                </StackPanel>
                             </Border>
 
-                            <!-- Dynamic QR Code Display -->
-                            <Border Grid.Column="1" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="24">
-                                <Grid>
-                                    <!-- Pending State -->
-                                    <StackPanel x:Name="QrPlaceholderPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
-                                        <FontIcon Glyph="&#xED14;" FontSize="72" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBlock Text="Waiting for Scan..." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
-                                    </StackPanel>
+                            <!-- Action Buttons -->
+                            <Grid Margin="0,24,0,0" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="1.5*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" x:Name="ScanUidButton" Content="Scan UID" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
+                                <Button Grid.Column="1" x:Name="ClearButton" Content="Clear" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
 
-                                    <!-- Generated QR Image (Hidden until ready) -->
-                                    <Image x:Name="QrCodeImage" Stretch="Uniform" Visibility="Collapsed"/>
-                                </Grid>
-                            </Border>
+                                <!-- Primary Call to Action -->
+                                <Button Grid.Column="2" x:Name="SaveButton" Content="Save Student" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- Right Column: Preview & Logs -->
+                <Grid Grid.Column="1" RowSpacing="24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="6*"/>
+                        <RowDefinition Height="4*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Credential Preview -->
+                    <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <Grid RowSpacing="20">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0">
+                                <TextBlock Text="Credential Preview" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center"/>
+                                <Button x:Name="UploadPhotoButton" Content="Upload Photo" Click="UploadPhotoButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                            </Grid>
+
+                            <Grid Grid.Row="1" ColumnSpacing="20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.4*"/>
+                                    <ColumnDefinition Width="1*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Live Student Info Output -->
+                                <Border Grid.Column="0" CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel Spacing="16">
+                                            <!-- THE FIX: PersonPicture profile preview -->
+                                            <PersonPicture x:Name="StudentPhotoPreview" ProfilePicture="{x:Null}" Height="120" Width="120" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock x:Name="PreviewTextBlock" Text="Student information will appear here once entered." Style="{StaticResource BodyTextStyle}" FontSize="16" LineHeight="26" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <!-- Dynamic QR Code Display -->
+                                <Border Grid.Column="1" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="24">
+                                    <Grid>
+                                        <!-- Pending State -->
+                                        <StackPanel x:Name="QrPlaceholderPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+                                            <FontIcon Glyph="&#xED14;" FontSize="72" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="Waiting for Scan..." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+
+                                        <!-- Generated QR Image (Hidden until ready) -->
+                                        <Image x:Name="QrCodeImage" Stretch="Uniform" Visibility="Collapsed"/>
+                                    </Grid>
+                                </Border>
+                            </Grid>
                         </Grid>
-                    </Grid>
-                </Border>
+                    </Border>
 
-                <!-- System Audit Logs -->
-                <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="System Audit Logs" Style="{StaticResource CardTitleStyle}"/>
-                        <ListView Grid.Row="1" x:Name="UidLogListView" Background="Transparent" Margin="0,8,0,0"/>
-                    </Grid>
-                </Border>
+                    <!-- System Audit Logs -->
+                    <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="System Audit Logs" Style="{StaticResource CardTitleStyle}"/>
+                            <ListView Grid.Row="1" x:Name="UidLogListView" Background="Transparent" Margin="0,8,0,0"/>
+                        </Grid>
+                    </Border>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>

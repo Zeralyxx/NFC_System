@@ -12,150 +12,170 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
+            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
+            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Grid Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
-                <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                <Button Content="Back to Attendance" Padding="16,10" Click="BackToAttendanceButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
             </StackPanel>
+        </Border>
 
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Event Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Create new events, manage restricted attendee lists, and review audit logs" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
-            </StackPanel>
-        </Grid>
+        <!-- The original content wrapper with its 48px padding -->
+        <Grid Grid.Row="1" Padding="48">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4*"/>
-                <ColumnDefinition Width="6*"/>
-            </Grid.ColumnDefinitions>
+            <Grid Margin="0,0,0,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
-                <StackPanel Spacing="24">
-
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="24">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Create New Event" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Configure a new event session for attendance tracking." Style="{StaticResource BodyTextStyle}"/>
-                            </StackPanel>
-
-                            <Grid ColumnSpacing="12" RowSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1*"/>
-                                    <ColumnDefinition Width="2*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <TextBox x:Name="EventIdTextBox" Grid.Row="0" Grid.Column="0" Header="Event ID" PlaceholderText="EVT-001"/>
-                                <TextBox x:Name="EventNameTextBox" Grid.Row="0" Grid.Column="1" Header="Event Name" PlaceholderText="Assembly"/>
-                                <ComboBox x:Name="EventModeComboBox" Grid.Row="1" Grid.ColumnSpan="2" Header="Required Security Mode" SelectedIndex="2" HorizontalAlignment="Stretch">
-                                    <ComboBoxItem Content="Fast (NFC Only)"/>
-                                    <ComboBoxItem Content="Standard (NFC + PIN)"/>
-                                    <ComboBoxItem Content="High-Security (NFC + PIN + QR)"/>
-                                </ComboBox>
-                                <CheckBox x:Name="RestrictedEventCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="Restricted event (Only approved attendees allowed)" IsChecked="True" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                <Button x:Name="CreateEventButton" Grid.Row="3" Grid.ColumnSpan="2" Content="Create &amp; Activate Event" Click="CreateEventButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
+                    <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                    <Button Content="Back to Attendance" Padding="16,10" Click="BackToAttendanceButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </StackPanel>
-            </ScrollViewer>
 
-            <Grid Grid.Column="1" RowSpacing="24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                    <TextBlock Text="Event Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <TextBlock Text="Create new events, manage restricted attendee lists, and review audit logs" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                </StackPanel>
+            </Grid>
 
-                <Border Grid.Row="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <StackPanel Spacing="16">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <TextBlock Text="Active Events" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Single-click to select and close an event. Double-click a restricted event to manage its attendee list." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+            <Grid Grid.Row="1" ColumnSpacing="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4*"/>
+                    <ColumnDefinition Width="6*"/>
+                </Grid.ColumnDefinitions>
+
+                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                    <StackPanel Spacing="24">
+
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="24">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Create New Event" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Configure a new event session for attendance tracking." Style="{StaticResource BodyTextStyle}"/>
+                                </StackPanel>
+
+                                <Grid ColumnSpacing="12" RowSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBox x:Name="EventIdTextBox" Grid.Row="0" Grid.Column="0" Header="Event ID" PlaceholderText="EVT-001"/>
+                                    <TextBox x:Name="EventNameTextBox" Grid.Row="0" Grid.Column="1" Header="Event Name" PlaceholderText="Assembly"/>
+                                    <ComboBox x:Name="EventModeComboBox" Grid.Row="1" Grid.ColumnSpan="2" Header="Required Security Mode" SelectedIndex="2" HorizontalAlignment="Stretch">
+                                        <ComboBoxItem Content="Fast (NFC Only)"/>
+                                        <ComboBoxItem Content="Standard (NFC + PIN)"/>
+                                        <ComboBoxItem Content="High-Security (NFC + PIN + QR)"/>
+                                    </ComboBox>
+                                    <CheckBox x:Name="RestrictedEventCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="Restricted event (Only approved attendees allowed)" IsChecked="True" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Button x:Name="CreateEventButton" Grid.Row="3" Grid.ColumnSpan="2" Content="Create &amp; Activate Event" Click="CreateEventButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                                </Grid>
                             </StackPanel>
-                            <Button x:Name="CloseEventButton" Grid.Column="1" Content="Close Selected Event" Click="CloseEventButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" IsEnabled="False" VerticalAlignment="Top"/>
-                        </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
 
-                        <Border Background="#0AFFFFFF" CornerRadius="8" Padding="16,12">
+                <Grid Grid.Column="1" RowSpacing="24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <StackPanel Spacing="16">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1.5*"/>
-                                    <ColumnDefinition Width="2.5*"/>
-                                    <ColumnDefinition Width="1.5*"/>
-                                    <ColumnDefinition Width="1*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Event ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="1" Text="Event Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="2" Text="Security" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="3" Text="Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Text="Active Events" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Single-click to select and close an event. Double-click a restricted event to manage its attendee list." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                </StackPanel>
+                                <Button x:Name="CloseEventButton" Grid.Column="1" Content="Close Selected Event" Click="CloseEventButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" IsEnabled="False" VerticalAlignment="Top"/>
                             </Grid>
-                        </Border>
 
-                        <ListView x:Name="ActiveEventsListView" SelectionChanged="ActiveEventsListView_SelectionChanged" DoubleTapped="ActiveEventsListView_DoubleTapped" Background="Transparent" CornerRadius="8" MaxHeight="200">
-                            <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="local:EventRecord">
-                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" Background="Transparent">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.5*"/>
-                                            <ColumnDefinition Width="2.5*"/>
-                                            <ColumnDefinition Width="1.5*"/>
-                                            <ColumnDefinition Width="1*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{x:Bind EventId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind DisplayName}" Style="{StaticResource BodyTextStyle}" Foreground="White" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Grid.Column="2" Text="{x:Bind VerificationMode}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="3" Text="{x:Bind IsRestrictedText}" Foreground="{StaticResource PrimaryAccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </StackPanel>
-                </Border>
+                            <Border Background="#0AFFFFFF" CornerRadius="8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="2.5*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Event ID" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="1" Text="Event Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="2" Text="Security" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="3" Text="Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                </Grid>
+                            </Border>
 
-                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
+                            <ListView x:Name="ActiveEventsListView" SelectionChanged="ActiveEventsListView_SelectionChanged" DoubleTapped="ActiveEventsListView_DoubleTapped" Background="Transparent" CornerRadius="8" MaxHeight="200">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:EventRecord">
+                                        <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" Background="Transparent">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="2.5*"/>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="1*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind EventId}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind DisplayName}" Style="{StaticResource BodyTextStyle}" Foreground="White" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Text="{x:Bind VerificationMode}" Style="{StaticResource DataValueStyle}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3" Text="{x:Bind IsRestrictedText}" Foreground="{StaticResource PrimaryAccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </StackPanel>
+                    </Border>
 
-                        <Grid Grid.Row="0" Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Administration Logs" Style="{StaticResource CardTitleStyle}" Margin="0" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="Refresh Logs" Click="RefreshLogsButton_Click" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF" VerticalAlignment="Center"/>
+                    <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Administration Logs" Style="{StaticResource CardTitleStyle}" Margin="0" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="Refresh Logs" Click="RefreshLogsButton_Click" Background="Transparent" BorderThickness="1" BorderBrush="#20FFFFFF" VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <ListView Grid.Row="1" x:Name="EventLogsListView" Background="Transparent" Padding="0,0,16,0"/>
                         </Grid>
-
-                        <ListView Grid.Row="1" x:Name="EventLogsListView" Background="Transparent" Padding="0,0,16,0"/>
-                    </Grid>
-                </Border>
+                    </Border>
+                </Grid>
             </Grid>
         </Grid>
 
+        <!-- The ContentDialog overlays. These can stay safely outside the Grid since they mount to the Window Root anyway. -->
         <ContentDialog x:Name="AttendeeManagementDialog"
                        CloseButtonText="Done"
                        DefaultButton="Close"

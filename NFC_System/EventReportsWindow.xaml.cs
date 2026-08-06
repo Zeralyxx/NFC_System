@@ -62,6 +62,9 @@ namespace NFC_System
         public EventReportsWindow()
         {
             this.InitializeComponent();
+            // Subscribe to the live monitor
+            DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             MaximizeWindow();
             _ = InitializeAsync();
         }
@@ -144,6 +147,18 @@ namespace NFC_System
             EventModeBtn.BorderThickness = new Thickness(1);
             EventModeBtn.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
             EventModeBtn.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
+        }
+
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            // DispatcherQueue safely pushes the update to the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
         }
 
         private void EventModeBtn_Click(object sender, RoutedEventArgs e)

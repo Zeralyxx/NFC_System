@@ -47,6 +47,9 @@ namespace NFC_System
         public MainWindow()
         {
             this.InitializeComponent();
+            // Subscribe to the live monitor
+            DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             MaximizeWindow();
 
             // THE FIX (ITEM 10): Hook into native window closing event to intercept exit
@@ -263,6 +266,7 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
+                // THE FIX: Graceful Offline Fallback instead of infinite crashing
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
                 LoginStatusText.Text = "Database connection failed.";
@@ -275,14 +279,20 @@ namespace NFC_System
 
                 if (result == ContentDialogResult.Primary)
                 {
-                    // User entered a new IP and hit save
+                    // User entered a new IP and hit Save & Retry
                     DatabaseService.SaveConfig(ServerIpTextBox.Text);
                     _ = InitializeSystemAsync(); // Restart the connection attempt
                 }
                 else
                 {
-                    // User hit exit
-                    Application.Current.Exit();
+                    // User hit "Continue Offline" 
+                    LoginStatusText.Text = "System Offline. Please tap an authorized offline key.";
+                    LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+
+                    try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); }
+                    catch { _currentPort = "COM3"; } // Failsafe if DB is fully down
+
+                    TryConnectSerial(_currentPort);
                 }
             }
         }
@@ -430,16 +440,13 @@ namespace NFC_System
             }
             catch
             {
-                LoginStatusText.Text = "Database connection error.";
-                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                LoginLoadingRing.IsActive = false;
-                LoginLoadingRing.Visibility = Visibility.Collapsed;
-                _isAuthenticating = false;
-                return;
+                // THE FIX: Do not hard-abort if database connection fails. 
+                // Let it fall through so the hardcoded offline keys can be checked!
             }
 
             if (role == null)
             {
+                // Hardcoded fallback keys for Offline Mode bypass
                 if (uid == "04:A1:B2:C3")
                 {
                     role = "Master Administrator";
@@ -459,7 +466,7 @@ namespace NFC_System
                 AppSession.CurrentStaffName = fullName ?? "Administrator";
                 AppSession.CurrentStaffRoleLabel = role == "Master Administrator" ? "Master Admin" : "Admin";
 
-                await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})");
+                try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
 
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
@@ -471,7 +478,7 @@ namespace NFC_System
                 AppSession.CurrentStaffName = fullName ?? "Guard";
                 AppSession.CurrentStaffRoleLabel = "Personnel";
 
-                await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})");
+                try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
 
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
@@ -540,7 +547,7 @@ namespace NFC_System
         private void SignOut_Click(object sender, RoutedEventArgs e)
         {
             string activeRole = AppSession.IsAdmin ? "Administrator" : "Security Personnel";
-            _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system.");
+            try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system."); } catch { }
 
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
@@ -610,7 +617,20 @@ namespace NFC_System
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
+            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
             CloseSerialPort();
+        }
+
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            // DispatcherQueue safely pushes the update to the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
         }
 
         private void CloseSerialPort()
@@ -661,7 +681,7 @@ namespace NFC_System
             await Task.Delay(500);
 
             // 4. Fetch the latest port in case it was updated, and reconnect
-            _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+            try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
             bool isConnected = TryConnectSerial(_currentPort);
 
             // 5. Restore UI
@@ -697,6 +717,7 @@ namespace NFC_System
                 await warningDialog.ShowAsync();
             }
         }
+
         private void MaximizeWindow()
         {
             IntPtr hWnd = WindowNative.GetWindowHandle(this);

@@ -12,450 +12,464 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
+            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
+            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
-
-            <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                <TextBlock Text="Security Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Manage active directories, monitor alerts, and execute administrative security overrides" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
             </StackPanel>
+        </Border>
 
-            <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Click="RefreshButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Center"/>
-        </Grid>
+        <!-- The original content wrapper with its 48px padding -->
+        <Grid Grid.Row="1" Padding="48">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4.5*"/>
-                <ColumnDefinition Width="5.5*"/>
-            </Grid.ColumnDefinitions>
+            <!-- Header -->
+            <Grid Margin="0,0,0,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <!-- Left Column: Administration Modules -->
-            <Grid Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+                <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
-                <!-- Sticky Status Banner Pinned to Top -->
-                <Border Grid.Row="0" Margin="0,0,16,24" Padding="16,12" CornerRadius="8" Background="#15FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1">
-                    <TextBlock x:Name="StatusTextBlock" Text="System Ready: Waiting for input..." Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                </Border>
-
-                <ScrollViewer x:Name="AdminScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
-                    <StackPanel Spacing="24">
-
-                        <!-- Cloud Synchronization Module -->
-                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                            <StackPanel Spacing="16">
-                                <TextBlock Text="Database Synchronization" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Sync local gate terminal records with the online master database." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                                    <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                                </Grid>
-
-                                <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                            </StackPanel>
-                        </Border>
-
-                       
-
-                        <!-- Academic Course Management -->
-                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                            <StackPanel Spacing="16">
-                                <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Add new degree programs or safely remove existing ones." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-                                <Button Content="Manage Courses" Click="OpenManageCoursesDialog_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Staff Access & RBAC Registration -->
-                        <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                            <StackPanel Spacing="16">
-
-                                <!-- THE FIX: Added Staff Directory Button -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="4">
-                                        <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                        <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="1" Content="View Staff Directory" Click="OpenStaffDirectoryButton_Click" Height="36" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" VerticalAlignment="Top"/>
-                                </Grid>
-
-                                <Grid ColumnSpacing="12" RowSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
-                                    <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
-                                        <ComboBoxItem Content="Security Personnel"/>
-                                        <ComboBoxItem Content="Administrator"/>
-                                        <ComboBoxItem Content="Master Administrator"/>
-                                    </ComboBox>
-
-                                    <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
-                                    <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="1" Content="Register Staff Member" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                    </StackPanel>
-                </ScrollViewer>
-            </Grid>
-
-            <!-- Right Column: Live Feed & Explorer Trigger -->
-            <Grid Grid.Column="1" RowSpacing="24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
-                    <Button x:Name="ExportMetricsButton" Content="Export System Metrics" Click="ExportMetricsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
-                    <Button x:Name="ExportLogsButton" Content="Export Audit Log" Click="ExportLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
-                    <Button x:Name="OpenPopupLogsButton" Content="⛶ Open Master Audit Explorer" Click="OpenPopupLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="40" Padding="24,0"/>
+                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                    <TextBlock Text="Security Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <TextBlock Text="Manage active directories, monitor alerts, and execute administrative security overrides" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
                 </StackPanel>
 
-                <!-- Live System Activity Feed -->
-                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
+                <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Click="RefreshButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Center"/>
+            </Grid>
 
-                        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <!-- Main Content -->
+            <Grid Grid.Row="1" ColumnSpacing="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4.5*"/>
+                    <ColumnDefinition Width="5.5*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Column: Administration Modules -->
+                <Grid Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Sticky Status Banner Pinned to Top -->
+                    <Border Grid.Row="0" Margin="0,0,16,24" Padding="16,12" CornerRadius="8" Background="#15FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1">
+                        <TextBlock x:Name="StatusTextBlock" Text="System Ready: Waiting for input..." Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    </Border>
+
+                    <ScrollViewer x:Name="AdminScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                        <StackPanel Spacing="24">
+
+                            <!-- Cloud Synchronization Module -->
+                            <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Database Synchronization" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Sync local gate terminal records with the online master database." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                        <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                    </Grid>
+
+                                    <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Academic Course Management -->
+                            <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Add new degree programs or safely remove existing ones." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <Button Content="Manage Courses" Click="OpenManageCoursesDialog_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Staff Access & RBAC Registration -->
+                            <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                                <StackPanel Spacing="16">
+
+                                    <!-- THE FIX: Added Staff Directory Button -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Spacing="4">
+                                            <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                            <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="View Staff Directory" Click="OpenStaffDirectoryButton_Click" Height="36" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" VerticalAlignment="Top"/>
+                                    </Grid>
+
+                                    <Grid ColumnSpacing="12" RowSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
+                                        <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
+                                            <ComboBoxItem Content="Security Personnel"/>
+                                            <ComboBoxItem Content="Administrator"/>
+                                            <ComboBoxItem Content="Master Administrator"/>
+                                        </ComboBox>
+
+                                        <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
+                                        <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="1" Content="Register Staff Member" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- Right Column: Live Feed & Explorer Trigger -->
+                <Grid Grid.Column="1" RowSpacing="24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+                        <Button x:Name="ExportMetricsButton" Content="Export System Metrics" Click="ExportMetricsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
+                        <Button x:Name="ExportLogsButton" Content="Export Audit Log" Click="ExportLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
+                        <Button x:Name="OpenPopupLogsButton" Content="⛶ Open Master Audit Explorer" Click="OpenPopupLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="40" Padding="24,0"/>
+                    </StackPanel>
+
+                    <!-- Live System Activity Feed -->
+                    <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="All Activities" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Live Feed" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#60A5FA"/>
+                                </Border>
+                            </Grid>
+
+                            <!-- List Headers -->
+                            <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.8*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="0.7*"/>
+                                        <ColumnDefinition Width="0.7*"/>
+                                        <ColumnDefinition Width="2.2*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="1" Text="Action Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                </Grid>
+                            </Border>
+
+                            <ListView Grid.Row="2" x:Name="RecentActivityListView" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                        <Setter Property="MinHeight" Value="48"/>
+                                        <Setter Property="Padding" Value="16,4,16,4"/>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:SystemAuditLog">
+                                        <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.8*"/>
+                                                <ColumnDefinition Width="1.3*"/>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="1.2*"/>
+                                                <ColumnDefinition Width="0.7*"/>
+                                                <ColumnDefinition Width="0.7*"/>
+                                                <ColumnDefinition Width="2.2*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
+                                            <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
+                                            <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
+
+                                            <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- Manage Courses Dialog -->
+            <ContentDialog x:Name="ManageCoursesDialog"
+                           Title="Manage Academic Courses"
+                           CloseButtonText="Close"
+                           CornerRadius="8">
+                <StackPanel Spacing="24" Width="400">
+                    <TextBlock x:Name="CourseDialogStatusText" Text="Select an action below." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+
+                    <!-- Add Course -->
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Add New Course" FontWeight="SemiBold"/>
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="All Activities" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" VerticalAlignment="Center">
-                                <TextBlock Text="Live Feed" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#60A5FA"/>
-                            </Border>
+                            <TextBox x:Name="DialogNewCourseTextBox" PlaceholderText="e.g. BS Computer Science"/>
+                            <Button x:Name="DialogAddCourseButton" Grid.Column="1" Content="Add" Click="DialogAddCourseButton_Click" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" Width="80"/>
                         </Grid>
+                    </StackPanel>
 
-                        <!-- List Headers -->
-                        <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1.8*"/>
-                                    <ColumnDefinition Width="1.5*"/>
-                                    <ColumnDefinition Width="1.5*"/>
-                                    <ColumnDefinition Width="1.2*"/>
-                                    <ColumnDefinition Width="0.7*"/>
-                                    <ColumnDefinition Width="0.7*"/>
-                                    <ColumnDefinition Width="2.2*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="1" Text="Action Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                            </Grid>
-                        </Border>
+                    <!-- Delete Course -->
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Delete Existing Course" FontWeight="SemiBold"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="DialogDeleteCourseComboBox" HorizontalAlignment="Stretch" PlaceholderText="Select a course..."/>
+                            <Button x:Name="DialogDeleteCourseButton" Grid.Column="1" Content="Delete" Click="DialogDeleteCourseButton_Click" Background="#EF4444" Foreground="White" BorderThickness="0" Width="80"/>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </ContentDialog>
 
-                        <ListView Grid.Row="2" x:Name="RecentActivityListView" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
-                            <ListView.ItemContainerStyle>
-                                <Style TargetType="ListViewItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    <Setter Property="MinHeight" Value="48"/>
-                                    <Setter Property="Padding" Value="16,4,16,4"/>
-                                </Style>
-                            </ListView.ItemContainerStyle>
+            <!-- Expandable Popup Dialog for Deep Inspection-->
+            <ContentDialog x:Name="MasterLogsDialog"
+                           CloseButtonText="Close"
+                           DefaultButton="Close"
+                           CornerRadius="8">
 
-                            <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="local:SystemAuditLog">
-                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.8*"/>
-                                            <ColumnDefinition Width="1.3*"/>
-                                            <ColumnDefinition Width="1.5*"/>
-                                            <ColumnDefinition Width="1.2*"/>
-                                            <ColumnDefinition Width="0.7*"/>
-                                            <ColumnDefinition Width="0.7*"/>
-                                            <ColumnDefinition Width="2.2*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
+                <ContentDialog.Resources>
+                    <x:Double x:Key="ContentDialogMaxWidth">1600</x:Double>
+                </ContentDialog.Resources>
 
-                                        <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </Grid>
-                </Border>
-            </Grid>
-        </Grid>
+                <Grid x:Name="DialogLogContainer" Width="900" Margin="0,16,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-        <!-- Manage Courses Dialog -->
-        <ContentDialog x:Name="ManageCoursesDialog"
-                       Title="Manage Academic Courses"
-                       CloseButtonText="Close"
-                       CornerRadius="8">
-            <StackPanel Spacing="24" Width="400">
-                <TextBlock x:Name="CourseDialogStatusText" Text="Select an action below." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-
-                <!-- Add Course -->
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Add New Course" FontWeight="SemiBold"/>
-                    <Grid ColumnSpacing="8">
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="DialogNewCourseTextBox" PlaceholderText="e.g. BS Computer Science"/>
-                        <Button x:Name="DialogAddCourseButton" Grid.Column="1" Content="Add" Click="DialogAddCourseButton_Click" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" Width="80"/>
+                        <TextBlock Text="Master System Audit Log" FontWeight="SemiBold" FontSize="18" VerticalAlignment="Center"/>
+                        <ToggleButton x:Name="PopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="PopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                     </Grid>
-                </StackPanel>
 
-                <!-- Delete Course -->
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Delete Existing Course" FontWeight="SemiBold"/>
-                    <Grid ColumnSpacing="8">
+                    <!-- Filters -->
+                    <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="1.5*"/>
+                            <ColumnDefinition Width="1.5*"/>
+                            <ColumnDefinition Width="1.5*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <ComboBox x:Name="DialogDeleteCourseComboBox" HorizontalAlignment="Stretch" PlaceholderText="Select a course..."/>
-                        <Button x:Name="DialogDeleteCourseButton" Grid.Column="1" Content="Delete" Click="DialogDeleteCourseButton_Click" Background="#EF4444" Foreground="White" BorderThickness="0" Width="80"/>
+
+                        <TextBox x:Name="PopupSearchBox" Grid.Column="0" PlaceholderText="Search ID, Subject, or Details..." TextChanged="PopupFilter_Changed"/>
+
+                        <CalendarDatePicker x:Name="PopupDatePicker" Grid.Column="1" PlaceholderText="Filter by Date" HorizontalAlignment="Stretch" DateChanged="PopupDatePicker_DateChanged"/>
+
+                        <ComboBox x:Name="PopupTypeFilter" Grid.Column="2" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+                            <ComboBoxItem Content="All Types"/>
+                            <ComboBoxItem Content="GATE LOG"/>
+                            <ComboBoxItem Content="SECURITY ALERT"/>
+                            <ComboBoxItem Content="ADMIN ACTION"/>
+                        </ComboBox>
+
+                        <ComboBox x:Name="PopupStatusFilter" Grid.Column="3" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
+                            <ComboBoxItem Content="All Statuses"/>
+                            <ComboBoxItem Content="Granted / Resolved"/>
+                            <ComboBoxItem Content="Denied / Flagged"/>
+                        </ComboBox>
+
+                        <Button Grid.Column="4" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
                     </Grid>
-                </StackPanel>
-            </StackPanel>
-        </ContentDialog>
 
-        <!-- Expandable Popup Dialog for Deep Inspection-->
-        <ContentDialog x:Name="MasterLogsDialog"
-                       CloseButtonText="Close"
-                       DefaultButton="Close"
-                       CornerRadius="8">
+                    <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
 
-            <ContentDialog.Resources>
-                <x:Double x:Key="ContentDialogMaxWidth">1600</x:Double>
-            </ContentDialog.Resources>
-
-            <Grid x:Name="DialogLogContainer" Width="900" Margin="0,16,0,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <Grid Grid.Row="0" Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Master System Audit Log" FontWeight="SemiBold" FontSize="18" VerticalAlignment="Center"/>
-                    <ToggleButton x:Name="PopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="PopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                </Grid>
-
-                <!-- Filters -->
-                <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="1.5*"/>
-                        <ColumnDefinition Width="1.5*"/>
-                        <ColumnDefinition Width="1.5*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <TextBox x:Name="PopupSearchBox" Grid.Column="0" PlaceholderText="Search ID, Subject, or Details..." TextChanged="PopupFilter_Changed"/>
-
-                    <CalendarDatePicker x:Name="PopupDatePicker" Grid.Column="1" PlaceholderText="Filter by Date" HorizontalAlignment="Stretch" DateChanged="PopupDatePicker_DateChanged"/>
-
-                    <ComboBox x:Name="PopupTypeFilter" Grid.Column="2" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
-                        <ComboBoxItem Content="All Types"/>
-                        <ComboBoxItem Content="GATE LOG"/>
-                        <ComboBoxItem Content="SECURITY ALERT"/>
-                        <ComboBoxItem Content="ADMIN ACTION"/>
-                    </ComboBox>
-
-                    <ComboBox x:Name="PopupStatusFilter" Grid.Column="3" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
-                        <ComboBoxItem Content="All Statuses"/>
-                        <ComboBoxItem Content="Granted / Resolved"/>
-                        <ComboBoxItem Content="Denied / Flagged"/>
-                    </ComboBox>
-
-                    <Button Grid.Column="4" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
-                </Grid>
-
-                <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Header -->
-                        <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1.8*"/>
-                                    <ColumnDefinition Width="1.3*"/>
-                                    <ColumnDefinition Width="1.5*"/>
-                                    <ColumnDefinition Width="1.2*"/>
-                                    <ColumnDefinition Width="0.7*"/>
-                                    <ColumnDefinition Width="0.7*"/>
-                                    <ColumnDefinition Width="2.2*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="1" Text="Log Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-
-                                <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                            </Grid>
-                        </Border>
-
-                        <ListView Grid.Row="1" x:Name="PopupLogsListView" Height="500" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
-                            <ListView.ItemContainerStyle>
-                                <Style TargetType="ListViewItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    <Setter Property="MinHeight" Value="48"/>
-                                    <Setter Property="Padding" Value="16,4,16,4"/>
-                                </Style>
-                            </ListView.ItemContainerStyle>
-
-                            <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="local:SystemAuditLog">
-                                    <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.8*"/>
-                                            <ColumnDefinition Width="1.3*"/>
-                                            <ColumnDefinition Width="1.5*"/>
-                                            <ColumnDefinition Width="1.2*"/>
-                                            <ColumnDefinition Width="0.7*"/>
-                                            <ColumnDefinition Width="0.7*"/>
-                                            <ColumnDefinition Width="2.2*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-
-                                        <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </Grid>
-                </Border>
-            </Grid>
-        </ContentDialog>
-
-        <!-- Administrator Authorization Intercept Popup -->
-        <ContentDialog x:Name="AdminAuthDialog"
-               Title="Administrator Authorization"
-               CloseButtonText="Cancel"
-               CornerRadius="8">
-            <StackPanel Spacing="16" Width="350">
-                <TextBlock x:Name="AdminAuthDescriptionText" Text="To prevent unauthorized actions, an Administrator must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <ProgressRing IsActive="True" Width="24" Height="24"/>
-                        <TextBlock Text="Please tap your Admin NFC card..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-                <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
-            </StackPanel>
-        </ContentDialog>
-
-        <!-- ========================================================= -->
-        <!-- POPUP: AUDIT EXPORT CONFIGURATION                         -->
-        <!-- ========================================================= -->
-        <ContentDialog x:Name="ExportConfigDialog"
-                       Title="Configure Audit Export"
-                       PrimaryButtonText="Export to CSV"
-                       CloseButtonText="Cancel"
-                       CornerRadius="8">
-            <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
-                <TextBlock Text="Select the columns to include in the exported audit log:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                <Border Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">
-                    <StackPanel Spacing="12">
-                        <CheckBox x:Name="ExportColTimestamp" Content="Date &amp; Time" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColLogType" Content="Log Type (Gate/Alert/Admin)" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColSubject" Content="Subject (Name or ID)" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColAction" Content="Action Taken" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColStatus" Content="Status (Granted/Denied)" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColDetails" Content="Extended Details / Error Codes" IsChecked="True"/>
-                    </StackPanel>
-                </Border>
-
-                <TextBlock Text="Data Grouping &amp; Sorting:" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0"/>
-                <ComboBox x:Name="ExportSortComboBox" SelectedIndex="0" HorizontalAlignment="Stretch">
-                    <ComboBoxItem Content="Default (Time of Entry)"/>
-                    <ComboBoxItem Content="Group by Log Type"/>
-                    <ComboBoxItem Content="Sort alphabetically by Subject"/>
-                </ComboBox>
-            </StackPanel>
-        </ContentDialog>
-
-        <!-- Staff Directory Dialog -->
-        <ContentDialog x:Name="StaffDirectoryDialog"
-                       Title="Staff Directory"
-                       CloseButtonText="Close"
-                       CornerRadius="8">
-            <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
-                <TextBlock Text="List of all registered personnel and their assigned system roles." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">
-                    <ListView x:Name="StaffListView" Height="350" SelectionMode="None">
-                        <ListView.ItemTemplate>
-                            <DataTemplate x:DataType="local:StaffRecord">
-                                <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                            <!-- Header -->
+                            <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                                <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="1.8*"/>
+                                        <ColumnDefinition Width="1.3*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.2*"/>
+                                        <ColumnDefinition Width="0.7*"/>
+                                        <ColumnDefinition Width="0.7*"/>
+                                        <ColumnDefinition Width="2.2*"/>
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind FullName}" FontWeight="SemiBold" FontSize="15"/>
-                                        <TextBlock Text="{x:Bind NfcUid}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                    </StackPanel>
-                                    <Border Grid.Column="1" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind Role}" Foreground="#60A5FA" FontSize="12" FontWeight="SemiBold"/>
-                                    </Border>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                </Border>
-            </StackPanel>
-        </ContentDialog>
+                                    <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="1" Text="Log Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
 
+                                    <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                </Grid>
+                            </Border>
+
+                            <ListView Grid.Row="1" x:Name="PopupLogsListView" Height="500" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                        <Setter Property="MinHeight" Value="48"/>
+                                        <Setter Property="Padding" Value="16,4,16,4"/>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:SystemAuditLog">
+                                        <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.8*"/>
+                                                <ColumnDefinition Width="1.3*"/>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="1.2*"/>
+                                                <ColumnDefinition Width="0.7*"/>
+                                                <ColumnDefinition Width="0.7*"/>
+                                                <ColumnDefinition Width="2.2*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind DisplayTime}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" FontSize="13"/>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
+                                            <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
+                                            <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
+
+                                            <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </ContentDialog>
+
+            <!-- Administrator Authorization Intercept Popup -->
+            <ContentDialog x:Name="AdminAuthDialog"
+                   Title="Administrator Authorization"
+                   CloseButtonText="Cancel"
+                   CornerRadius="8">
+                <StackPanel Spacing="16" Width="350">
+                    <TextBlock x:Name="AdminAuthDescriptionText" Text="To prevent unauthorized actions, an Administrator must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <ProgressRing IsActive="True" Width="24" Height="24"/>
+                            <TextBlock Text="Please tap your Admin NFC card..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+                </StackPanel>
+            </ContentDialog>
+
+            <!-- POPUP: AUDIT EXPORT CONFIGURATION -->
+            <ContentDialog x:Name="ExportConfigDialog"
+                           Title="Configure Audit Export"
+                           PrimaryButtonText="Export to CSV"
+                           CloseButtonText="Cancel"
+                           CornerRadius="8">
+                <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
+                    <TextBlock Text="Select the columns to include in the exported audit log:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <Border Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel Spacing="12">
+                            <CheckBox x:Name="ExportColTimestamp" Content="Date &amp; Time" IsChecked="True"/>
+                            <CheckBox x:Name="ExportColLogType" Content="Log Type (Gate/Alert/Admin)" IsChecked="True"/>
+                            <CheckBox x:Name="ExportColSubject" Content="Subject (Name or ID)" IsChecked="True"/>
+                            <CheckBox x:Name="ExportColAction" Content="Action Taken" IsChecked="True"/>
+                            <CheckBox x:Name="ExportColStatus" Content="Status (Granted/Denied)" IsChecked="True"/>
+                            <CheckBox x:Name="ExportColDetails" Content="Extended Details / Error Codes" IsChecked="True"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Data Grouping &amp; Sorting:" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0"/>
+                    <ComboBox x:Name="ExportSortComboBox" SelectedIndex="0" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="Default (Time of Entry)"/>
+                        <ComboBoxItem Content="Group by Log Type"/>
+                        <ComboBoxItem Content="Sort alphabetically by Subject"/>
+                    </ComboBox>
+                </StackPanel>
+            </ContentDialog>
+
+            <!-- Staff Directory Dialog -->
+            <ContentDialog x:Name="StaffDirectoryDialog"
+                           Title="Staff Directory"
+                           CloseButtonText="Close"
+                           CornerRadius="8">
+                <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
+                    <TextBlock Text="List of all registered personnel and their assigned system roles." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">
+                        <ListView x:Name="StaffListView" Height="350" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="local:StaffRecord">
+                                    <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind FullName}" FontWeight="SemiBold" FontSize="15"/>
+                                            <TextBlock Text="{x:Bind NfcUid}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind Role}" Foreground="#60A5FA" FontSize="12" FontWeight="SemiBold"/>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+                </StackPanel>
+            </ContentDialog>
+        </Grid>
     </Grid>
 </Window>

@@ -12,503 +12,522 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}" Tapped="Background_Tapped">
+    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
+            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
+            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ========================================================= -->
-        <!-- HEADER: [Navigation] -> [Title] -> [Mode Toggles]         -->
-        <!-- ========================================================= -->
-        <Grid Grid.Row="0" Margin="0,0,0,32">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- LEFT: Navigation Buttons -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,24,0">
-                <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                <Button Content="Go to Event Management" Padding="16,10" Click="ManageEventsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
             </StackPanel>
+        </Border>
 
-            <!-- CENTER: Title & Subtitle -->
-            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                <TextBlock Text="Analytics &amp; Reporting Center" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                <TextBlock Text="Analyze daily campus traffic, event turnout, and demographic engagement" Style="{StaticResource BodyTextStyle}" FontSize="16" TextTrimming="CharacterEllipsis"/>
-            </StackPanel>
+        <!-- The original content wrapper with its 48px padding -->
+        <Grid Grid.Row="1" Padding="48" Tapped="Background_Tapped">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- RIGHT: Mode Toggle Switcher -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                <Button x:Name="UniversityModeBtn" Content="University Traffic" Click="UniversityModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-                <Button x:Name="EventModeBtn" Content="Event Analytics" Click="EventModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Foreground="White" FontWeight="Normal"/>
-            </StackPanel>
-        </Grid>
+            <!-- ========================================================= -->
+            <!-- HEADER: [Navigation] -> [Title] -> [Mode Toggles]         -->
+            <!-- ========================================================= -->
+            <Grid Grid.Row="0" Margin="0,0,0,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-        <!-- ========================================================= -->
-        <!-- VIEW 1: UNIVERSITY CAMPUS TRAFFIC                         -->
-        <!-- ========================================================= -->
-        <Grid x:Name="UniversityViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Visible">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4.5*"/>
-                <ColumnDefinition Width="5.5*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Left: Campus Statistics -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
-                <StackPanel Spacing="24">
-
-                    <!-- Campus Traffic -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="20">
-                            <TextBlock Text="Campus Traffic (Today)" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
-                                    <StackPanel>
-                                        <TextBlock Text="Total Scans" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="UnivTotalScansText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
-                                    <StackPanel>
-                                        <TextBlock Text="Currently Inside" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="UnivInsideText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Security Overview (Today & Extremes) -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Security Overview" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Access Denied Blocks (Today):" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                <TextBlock x:Name="UnivDeniedText" Text="--" FontSize="32" FontWeight="Bold" Foreground="#F87171"/>
-                                <TextBlock Text="Includes Unregistered, Tailgating, &amp; PIN Failures" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                            </StackPanel>
-
-                            <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
-
-                            <TextBlock Text="Threat Extremes (Last 30 Days)" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,4"/>
-
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="16">
-                                    <StackPanel>
-                                        <TextBlock Text="Highest Alert Day" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="HighAlertDateText" Text="--" Foreground="White" Margin="0,4,0,4"/>
-                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                            <TextBlock x:Name="HighAlertCountText" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F87171"/>
-                                            <TextBlock Text="blocks" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="16">
-                                    <StackPanel>
-                                        <TextBlock Text="Lowest Alert Day" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="LowAlertDateText" Text="--" Foreground="White" Margin="0,4,0,4"/>
-                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                            <TextBlock x:Name="LowAlertCountText" Text="--" FontSize="24" FontWeight="Bold" Foreground="#34D399"/>
-                                            <TextBlock Text="blocks" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Historical Threat Breakdown -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Historical Threat Breakdown" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <TextBlock Text="Daily log of all blocked access attempts since system deployment." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-
-                            <Border Background="#0AFFFFFF" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,8,0,0">
-                                <ListView x:Name="HistoricalThreatsListView" MaxHeight="250" Background="Transparent" Padding="0">
-                                    <ListView.ItemTemplate>
-                                        <DataTemplate x:DataType="local:StatItem">
-                                            <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{x:Bind Label}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Foreground="#F87171" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListView.ItemTemplate>
-                                </ListView>
-                            </Border>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Valid Entries by Date -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Valid Entries by Date" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <ItemsControl x:Name="DailyEntriesItemsControl">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="local:StatItem">
-                                        <Grid Margin="0,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{x:Bind Label}" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                            <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
+                <!-- LEFT: Navigation Buttons -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,24,0">
+                    <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                    <Button Content="Go to Event Management" Padding="16,10" Click="ManageEventsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </StackPanel>
-            </ScrollViewer>
 
-            <!-- THE FIX: Replaced Right Column with the grouped Date Master-Detail view -->
-            <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
+                <!-- CENTER: Title & Subtitle -->
+                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="Analytics &amp; Reporting Center" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <TextBlock Text="Analyze daily campus traffic, event turnout, and demographic engagement" Style="{StaticResource BodyTextStyle}" FontSize="16" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
 
-                    <Grid Grid.Row="0" Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="Daily Campus Traffic" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
-                            <TextBlock Text="Double-click a date to view full student logs and apply filters." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                            <Button Content="⛶ Open Master Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Grid>
+                <!-- RIGHT: Mode Toggle Switcher -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button x:Name="UniversityModeBtn" Content="University Traffic" Click="UniversityModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                    <Button x:Name="EventModeBtn" Content="Event Analytics" Click="EventModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Foreground="White" FontWeight="Normal"/>
+                </StackPanel>
+            </Grid>
 
-                    <!-- Data Grid -->
-                    <Border Grid.Row="1" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
+            <!-- ========================================================= -->
+            <!-- VIEW 1: UNIVERSITY CAMPUS TRAFFIC                         -->
+            <!-- ========================================================= -->
+            <Grid x:Name="UniversityViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Visible">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4.5*"/>
+                    <ColumnDefinition Width="5.5*"/>
+                </Grid.ColumnDefinitions>
 
-                            <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
-                                <Grid>
+                <!-- Left: Campus Statistics -->
+                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                    <StackPanel Spacing="24">
+
+                        <!-- Campus Traffic -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Campus Traffic (Today)" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Date" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="1" Text="Total Scans" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="2" Text="Granted" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="3" Text="Denied / Blocked" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
+                                        <StackPanel>
+                                            <TextBlock Text="Total Scans" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="UnivTotalScansText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
+                                        <StackPanel>
+                                            <TextBlock Text="Currently Inside" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="UnivInsideText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
+                                        </StackPanel>
+                                    </Border>
                                 </Grid>
-                            </Border>
-
-                            <ListView Grid.Row="1" x:Name="DailyTrafficListView" Background="Transparent" Padding="0,8" SelectionMode="Single" DoubleTapped="DailyTrafficListView_DoubleTapped" IsItemClickEnabled="True">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="local:DailyTrafficSummary">
-                                        <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="1.5*"/>
-                                                <ColumnDefinition Width="1.5*"/>
-                                                <ColumnDefinition Width="1.5*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{x:Bind DisplayDate}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" Text="{x:Bind TotalScans}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="2" Text="{x:Bind Granted}" Style="{StaticResource BodyTextStyle}" Foreground="#34D399" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="3" Text="{x:Bind Denied}" Style="{StaticResource BodyTextStyle}" Foreground="#F87171" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </Grid>
-                    </Border>
-                </Grid>
-            </Border>
-        </Grid>
-
-
-        <!-- ========================================================= -->
-        <!-- VIEW 2: EVENT ANALYTICS                                   -->
-        <!-- ========================================================= -->
-        <Grid x:Name="EventViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Collapsed">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4*"/>
-                <ColumnDefinition Width="6*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Left Column: Controls & Analytics -->
-            <ScrollViewer x:Name="EventLeftScrollViewer" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0" ViewChanging="EventLeftScrollViewer_ViewChanging" Tapped="Background_Tapped">
-                <StackPanel Spacing="24">
-
-                    <!-- Event Selector -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Event Report Configuration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Select Event Database" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                <AutoSuggestBox x:Name="EventSearchBox" 
-                                                PlaceholderText="Search by event name or ID..." 
-                                                DisplayMemberPath="DisplayText" 
-                                                GotFocus="EventSearchBox_GotFocus"
-                                                LostFocus="EventSearchBox_LostFocus"
-                                                TextChanged="EventSearchBox_TextChanged" 
-                                                SuggestionChosen="EventSearchBox_SuggestionChosen" 
-                                                HorizontalAlignment="Stretch" 
-                                                Height="36"/>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
+                        </Border>
 
-                    <!-- Core Turnout Analytics -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="20">
-                            <TextBlock Text="Core Attendance" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
-                                    <StackPanel>
-                                        <TextBlock Text="Total Checked-In" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="AttendedCountText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
-                                    </StackPanel>
+                        <!-- Security Overview (Today & Extremes) -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Security Overview" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Access Denied Blocks (Today):" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                    <TextBlock x:Name="UnivDeniedText" Text="--" FontSize="32" FontWeight="Bold" Foreground="#F87171"/>
+                                    <TextBlock Text="Includes Unregistered, Tailgating, &amp; PIN Failures" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                </StackPanel>
+
+                                <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
+
+                                <TextBlock Text="Threat Extremes (Last 30 Days)" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,4"/>
+
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="16">
+                                        <StackPanel>
+                                            <TextBlock Text="Highest Alert Day" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="HighAlertDateText" Text="--" Foreground="White" Margin="0,4,0,4"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <TextBlock x:Name="HighAlertCountText" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F87171"/>
+                                                <TextBlock Text="blocks" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="16">
+                                        <StackPanel>
+                                            <TextBlock Text="Lowest Alert Day" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="LowAlertDateText" Text="--" Foreground="White" Margin="0,4,0,4"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <TextBlock x:Name="LowAlertCountText" Text="--" FontSize="24" FontWeight="Bold" Foreground="#34D399"/>
+                                                <TextBlock Text="blocks" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Historical Threat Breakdown -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Historical Threat Breakdown" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock Text="Daily log of all blocked access attempts since system deployment." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                <Border Background="#0AFFFFFF" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,8,0,0">
+                                    <ListView x:Name="HistoricalThreatsListView" MaxHeight="250" Background="Transparent" Padding="0">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate x:DataType="local:StatItem">
+                                                <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{x:Bind Label}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Foreground="#F87171" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
                                 </Border>
-                                <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
-                                    <StackPanel>
-                                        <TextBlock Text="Turnout Rate" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="TurnoutRateText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="Expected Audience:" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                <TextBlock x:Name="ExpectedCountText" Text="--" FontWeight="SemiBold" Foreground="White"/>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
+                        </Border>
 
-                    <!-- Engagement & Retention -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Retention &amp; Security" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Full-Duration Stay Rate:" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                <TextBlock x:Name="RetentionRateText" Text="--" FontSize="32" FontWeight="Bold" Foreground="#60A5FA"/>
-                                <TextBlock x:Name="RetentionSubText" Text="-- out of -- attendees completed the event" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                            </StackPanel>
-
-                            <StackPanel Spacing="4" Margin="0,8,0,0">
-                                <TextBlock Text="Authentication Methods Used:" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,8"/>
-                                <ItemsControl x:Name="AuthModesItemsControl">
+                        <!-- Valid Entries by Date -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Valid Entries by Date" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <ItemsControl x:Name="DailyEntriesItemsControl">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="local:StatItem">
-                                            <Grid Margin="0,4">
+                                            <Grid Margin="0,6">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{x:Bind Label}"/>
+                                                <TextBlock Grid.Column="0" Text="{x:Bind Label}" Foreground="{StaticResource TextSecondaryBrush}"/>
                                                 <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
+                        </Border>
 
-                    <!-- Demographic Breakdown (Course) -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Course Participation" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <ItemsControl x:Name="CourseBreakdownItemsControl">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="local:StatItem">
-                                        <Grid Margin="0,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="60"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
-                                            <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Margin="0,0,12,0"/>
-                                            <TextBlock Grid.Column="2" Text="{x:Bind SubValue}" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
+                    </StackPanel>
+                </ScrollViewer>
 
-                    <!-- Demographic Breakdown (Section) -->
-                    <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Top Sections" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <ItemsControl x:Name="SectionBreakdownItemsControl">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="local:StatItem">
-                                        <Grid Margin="0,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="60"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
-                                            <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Margin="0,0,12,0"/>
-                                            <TextBlock Grid.Column="2" Text="{x:Bind SubValue}" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </ScrollViewer>
-
-            <!-- Right Column: Ledger Grid -->
-            <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                <!-- Right Column: Date Master-Detail view -->
+                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <Grid Grid.Row="0" Margin="0,0,0,16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock Text="Event Attendance Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="Filterable stream of all event interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                <TextBlock Text="Daily Campus Traffic" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
+                                <TextBlock Text="Double-click a date to view full student logs and apply filters." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <Button x:Name="ExportButton" Content="Export to Excel" Click="ExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold" IsEnabled="False"/>
-                                <Button Content="⛶ Open Explorer" Click="OpenEventExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                                <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                                <Button Content="⛶ Open Master Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                             </StackPanel>
                         </Grid>
 
-                        <StackPanel Grid.Row="1" Spacing="12">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBox x:Name="SearchEventNameTextBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="SearchEventNameTextBox_TextChanged"/>
-                                <ComboBox x:Name="FilterSortNameComboBox" SelectedIndex="0" Width="140" SelectionChanged="Filter_SelectionChanged">
-                                    <ComboBoxItem Content="Default (Time)"/>
-                                    <ComboBoxItem Content="Name (A-Z)"/>
-                                    <ComboBoxItem Content="Name (Z-A)"/>
-                                </ComboBox>
-                                <ComboBox x:Name="FilterCourseComboBox" PlaceholderText="Course" Width="160" SelectionChanged="Filter_SelectionChanged"/>
-                                <ComboBox x:Name="FilterSectionComboBox" PlaceholderText="Section" Width="130" SelectionChanged="Filter_SelectionChanged"/>
-                            </StackPanel>
+                        <!-- Data Grid -->
+                        <Border Grid.Row="1" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
 
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <ComboBox x:Name="FilterStatusComboBox" SelectedIndex="0" Width="190" SelectionChanged="Filter_SelectionChanged">
-                                    <ComboBoxItem Content="All Attendees"/>
-                                    <ComboBoxItem Content="Completed Event"/>
-                                    <ComboBoxItem Content="Incomplete / Left Early"/>
-                                </ComboBox>
-                                <ComboBox x:Name="FilterTimeComboBox" SelectedIndex="0" Width="140" SelectionChanged="Filter_SelectionChanged">
-                                    <ComboBoxItem Content="All Times"/>
-                                    <ComboBoxItem Content="Morning (AM)"/>
-                                    <ComboBoxItem Content="Afternoon (PM)"/>
-                                </ComboBox>
-                                <Button Content="Clear Filters" Click="ClearFilters_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
-                            </StackPanel>
-                        </StackPanel>
+                                <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2*"/>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="1.5*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Date" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="1" Text="Total Scans" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="2" Text="Granted" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="3" Text="Denied / Blocked" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    </Grid>
+                                </Border>
+
+                                <ListView Grid.Row="1" x:Name="DailyTrafficListView" Background="Transparent" Padding="0,8" SelectionMode="Single" DoubleTapped="DailyTrafficListView_DoubleTapped" IsItemClickEnabled="True">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="local:DailyTrafficSummary">
+                                            <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="2*"/>
+                                                    <ColumnDefinition Width="1.5*"/>
+                                                    <ColumnDefinition Width="1.5*"/>
+                                                    <ColumnDefinition Width="1.5*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{x:Bind DisplayDate}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{x:Bind TotalScans}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{x:Bind Granted}" Style="{StaticResource BodyTextStyle}" Foreground="#34D399" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="3" Text="{x:Bind Denied}" Style="{StaticResource BodyTextStyle}" Foreground="#F87171" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Grid>
+                        </Border>
                     </Grid>
+                </Border>
+            </Grid>
 
-                    <Border Grid.Row="1" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,8,0,0">
-                        <Grid>
+            <!-- ========================================================= -->
+            <!-- VIEW 2: EVENT ANALYTICS                                   -->
+            <!-- ========================================================= -->
+            <Grid x:Name="EventViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4*"/>
+                    <ColumnDefinition Width="6*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Column: Controls & Analytics -->
+                <ScrollViewer x:Name="EventLeftScrollViewer" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0" ViewChanging="EventLeftScrollViewer_ViewChanging" Tapped="Background_Tapped">
+                    <StackPanel Spacing="24">
+
+                        <!-- Event Selector -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Event Report Configuration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Select Event Database" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                    <AutoSuggestBox x:Name="EventSearchBox" 
+                                                    PlaceholderText="Search by event name or ID..." 
+                                                    DisplayMemberPath="DisplayText" 
+                                                    GotFocus="EventSearchBox_GotFocus"
+                                                    LostFocus="EventSearchBox_LostFocus"
+                                                    TextChanged="EventSearchBox_TextChanged" 
+                                                    SuggestionChosen="EventSearchBox_SuggestionChosen" 
+                                                    HorizontalAlignment="Stretch" 
+                                                    Height="36"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Core Turnout Analytics -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="20">
+                                <TextBlock Text="Core Attendance" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
+                                        <StackPanel>
+                                            <TextBlock Text="Total Checked-In" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="AttendedCountText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
+                                        <StackPanel>
+                                            <TextBlock Text="Turnout Rate" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="TurnoutRateText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="Expected Audience:" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <TextBlock x:Name="ExpectedCountText" Text="--" FontWeight="SemiBold" Foreground="White"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Engagement & Retention -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Retention &amp; Security" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Full-Duration Stay Rate:" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                    <TextBlock x:Name="RetentionRateText" Text="--" FontSize="32" FontWeight="Bold" Foreground="#60A5FA"/>
+                                    <TextBlock x:Name="RetentionSubText" Text="-- out of -- attendees completed the event" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                </StackPanel>
+
+                                <StackPanel Spacing="4" Margin="0,8,0,0">
+                                    <TextBlock Text="Authentication Methods Used:" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,8"/>
+                                    <ItemsControl x:Name="AuthModesItemsControl">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:StatItem">
+                                                <Grid Margin="0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{x:Bind Label}"/>
+                                                    <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Demographic Breakdown (Course) -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Course Participation" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <ItemsControl x:Name="CourseBreakdownItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="local:StatItem">
+                                            <Grid Margin="0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="60"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                                                <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Margin="0,0,12,0"/>
+                                                <TextBlock Grid.Column="2" Text="{x:Bind SubValue}" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Demographic Breakdown (Section) -->
+                        <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="Top Sections" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <ItemsControl x:Name="SectionBreakdownItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="local:StatItem">
+                                            <Grid Margin="0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="60"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                                                <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontWeight="Bold" Margin="0,0,12,0"/>
+                                                <TextBlock Grid.Column="2" Text="{x:Bind SubValue}" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Right Column: Ledger Grid -->
+                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,16">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="1.5*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="1" Text="Student Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="2" Text="Course &amp; Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="3" Text="Action" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="4" Text="Completion Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                </Grid>
-                            </Border>
+                            <Grid Grid.Row="0" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="Event Attendance Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Filterable stream of all event interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Button x:Name="ExportButton" Content="Export to Excel" Click="ExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold" IsEnabled="False"/>
+                                    <Button Content="⛶ Open Explorer" Click="OpenEventExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Grid>
 
-                            <ListView Grid.Row="1" x:Name="AttendanceListView" Background="Transparent" Padding="0,8" SelectionMode="None">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="local:EventAttendanceViewModel">
-                                        <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="1.5*"/>
-                                                <ColumnDefinition Width="2*"/>
-                                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Row="1" Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBox x:Name="SearchEventNameTextBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="SearchEventNameTextBox_TextChanged"/>
+                                    <ComboBox x:Name="FilterSortNameComboBox" SelectedIndex="0" Width="140" SelectionChanged="Filter_SelectionChanged">
+                                        <ComboBoxItem Content="Default (Time)"/>
+                                        <ComboBoxItem Content="Name (A-Z)"/>
+                                        <ComboBoxItem Content="Name (Z-A)"/>
+                                    </ComboBox>
+                                    <ComboBox x:Name="FilterCourseComboBox" PlaceholderText="Course" Width="160" SelectionChanged="Filter_SelectionChanged"/>
+                                    <ComboBox x:Name="FilterSectionComboBox" PlaceholderText="Section" Width="130" SelectionChanged="Filter_SelectionChanged"/>
+                                </StackPanel>
 
-                                            <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
-                                                <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                            </StackPanel>
-
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
-                                                <TextBlock Text="{x:Bind Course}" Style="{StaticResource BodyTextStyle}" Foreground="White" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{x:Bind Section}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Left"/>
-                                            </StackPanel>
-
-                                            <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-
-                                            <Border Grid.Column="4" Background="#10FFFFFF" CornerRadius="6" Padding="12,6" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind CompletionStatus}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
-                                            </Border>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox x:Name="FilterStatusComboBox" SelectedIndex="0" Width="190" SelectionChanged="Filter_SelectionChanged">
+                                        <ComboBoxItem Content="All Attendees"/>
+                                        <ComboBoxItem Content="Completed Event"/>
+                                        <ComboBoxItem Content="Incomplete / Left Early"/>
+                                    </ComboBox>
+                                    <ComboBox x:Name="FilterTimeComboBox" SelectedIndex="0" Width="140" SelectionChanged="Filter_SelectionChanged">
+                                        <ComboBoxItem Content="All Times"/>
+                                        <ComboBoxItem Content="Morning (AM)"/>
+                                        <ComboBoxItem Content="Afternoon (PM)"/>
+                                    </ComboBox>
+                                    <Button Content="Clear Filters" Click="ClearFilters_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                                </StackPanel>
+                            </StackPanel>
                         </Grid>
-                    </Border>
-                </Grid>
-            </Border>
+
+                        <Border Grid.Row="1" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,8,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2*"/>
+                                            <ColumnDefinition Width="2*"/>
+                                            <ColumnDefinition Width="2*"/>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="2*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="1" Text="Student Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="2" Text="Course &amp; Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="3" Text="Action" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="4" Text="Completion Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    </Grid>
+                                </Border>
+
+                                <ListView Grid.Row="1" x:Name="AttendanceListView" Background="Transparent" Padding="0,8" SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="local:EventAttendanceViewModel">
+                                            <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="2*"/>
+                                                    <ColumnDefinition Width="2*"/>
+                                                    <ColumnDefinition Width="2*"/>
+                                                    <ColumnDefinition Width="1.5*"/>
+                                                    <ColumnDefinition Width="2*"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
+                                                    <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                                </StackPanel>
+
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                                    <TextBlock Text="{x:Bind Course}" Style="{StaticResource BodyTextStyle}" Foreground="White" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{x:Bind Section}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Left"/>
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+
+                                                <Border Grid.Column="4" Background="#10FFFFFF" CornerRadius="6" Padding="12,6" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind CompletionStatus}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- ========================================================= -->

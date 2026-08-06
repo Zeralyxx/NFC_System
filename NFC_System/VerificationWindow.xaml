@@ -12,136 +12,155 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="48" Background="{StaticResource AppBackgroundBrush}">
+    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
+            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
+            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- NEW: Clean Two-Row Header Layout -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,32" Spacing="20">
-            <!-- Top Row: Title -->
-            <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
 
-            <!-- Bottom Row: Toolbar -->
-            <Grid>
+        <!-- The original content wrapper with its 48px padding -->
+        <Grid Grid.Row="1" Padding="48">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- NEW: Clean Two-Row Header Layout -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,32" Spacing="20">
+                <!-- Top Row: Title -->
+                <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+
+                <!-- Bottom Row: Toolbar -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <!-- Left Buttons -->
+                        <ColumnDefinition Width="*"/>
+                        <!-- Empty Space Spacer -->
+                        <ColumnDefinition Width="Auto"/>
+                        <!-- Right Dropdowns -->
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                        <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                    </StackPanel>
+
+                    <!-- Security Mode & Anti-Tailgating Controls -->
+                    <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16,8" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
+                            <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Entry"/>
+                                <ComboBoxItem Content="Exit"/>
+                            </ComboBox>
+                            <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="220" SelectionChanged="SecurityModeComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Fast (NFC Only)"/>
+                                <ComboBoxItem Content="Standard (NFC + PIN)"/>
+                                <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
+
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </StackPanel>
+
+            <!-- Main Content (Two Columns: Logs & Live Photo Feed) -->
+            <Grid Grid.Row="1" ColumnSpacing="24">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <!-- Left Buttons -->
-                    <ColumnDefinition Width="*"/>
-                    <!-- Empty Space Spacer -->
-                    <ColumnDefinition Width="Auto"/>
-                    <!-- Right Dropdowns -->
+                    <ColumnDefinition Width="6.5*"/>
+                    <ColumnDefinition Width="3.5*"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                    <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-                </StackPanel>
+                <Grid Grid.Column="0" RowSpacing="24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                <!-- Security Mode & Anti-Tailgating Controls -->
-                <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16,8" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                        <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
-                        <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
-                            <ComboBoxItem Content="Entry"/>
-                            <ComboBoxItem Content="Exit"/>
-                        </ComboBox>
-                        <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="220" SelectionChanged="SecurityModeComboBox_SelectionChanged">
-                            <ComboBoxItem Content="Fast (NFC Only)"/>
-                            <ComboBoxItem Content="Standard (NFC + PIN)"/>
-                            <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
+                    <!-- 1. Guard Emergency Unlock -->
+                    <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="#1A450A0A" BorderBrush="#30F87171" BorderThickness="1">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xEA39;" Foreground="#F87171" FontSize="16"/>
+                                <TextBlock Text="Guard Emergency Override (Account Unlock)" Style="{StaticResource DataValueStyle}" Foreground="#F87171"/>
+                            </StackPanel>
 
-                        </ComboBox>
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </StackPanel>
-
-        <!-- Main Content (Two Columns: Logs & Live Photo Feed) -->
-        <Grid Grid.Row="1" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="6.5*"/>
-                <ColumnDefinition Width="3.5*"/>
-            </Grid.ColumnDefinitions>
-
-            <Grid Grid.Column="0" RowSpacing="24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <!-- 1. Guard Emergency Unlock -->
-                <Border Grid.Row="0" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="#1A450A0A" BorderBrush="#30F87171" BorderThickness="1">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xEA39;" Foreground="#F87171" FontSize="16"/>
-                            <TextBlock Text="Guard Emergency Override (Account Unlock)" Style="{StaticResource DataValueStyle}" Foreground="#F87171"/>
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="OverrideStudentIdBox" Grid.Column="0" PlaceholderText="Student ID (e.g. 26-00001)"/>
+                                <Button x:Name="UnlockAccountButton" Grid.Column="1" Content="Unlock Account" Click="UnlockAccountButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" Height="32" Padding="24,0"/>
+                            </Grid>
                         </StackPanel>
+                    </Border>
 
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="OverrideStudentIdBox" Grid.Column="0" PlaceholderText="Student ID (e.g. 26-00001)"/>
-                            <Button x:Name="UnlockAccountButton" Grid.Column="1" Content="Unlock Account" Click="UnlockAccountButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" Height="32" Padding="24,0"/>
+                    <!-- 2. Audit Logs -->
+                    <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Security &amp; Tailgating Alerts" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1AF87171" BorderBrush="#30F87171" BorderThickness="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Monitoring Active" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#F87171"/>
+                                </Border>
+                            </Grid>
+
+                            <ListView Grid.Row="1" x:Name="VerificationLogListView" Background="Transparent" Padding="0,0,16,0"/>
                         </Grid>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </Grid>
 
-                <!-- 2. Audit Logs -->
-                <Border Grid.Row="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <!-- 3. Live Authentication Feed -->
+                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Security &amp; Tailgating Alerts" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                            <Border Grid.Column="1" Padding="12,4" CornerRadius="12" Background="#1AF87171" BorderBrush="#30F87171" BorderThickness="1" VerticalAlignment="Center">
-                                <TextBlock Text="Monitoring Active" Style="{StaticResource BodyTextStyle}" FontSize="12" FontWeight="SemiBold" Foreground="#F87171"/>
-                            </Border>
-                        </Grid>
+                        <TextBlock Grid.Row="0" Text="Live Authentication Feed" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,32" HorizontalAlignment="Center"/>
 
-                        <ListView Grid.Row="1" x:Name="VerificationLogListView" Background="Transparent" Padding="0,0,16,0"/>
+                        <!-- Idle State -->
+                        <StackPanel x:Name="LiveFeedIdlePanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Visibility="Visible">
+                            <FontIcon Glyph="&#xE716;" FontSize="64" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="Waiting for next scan..." Foreground="{StaticResource TextSecondaryBrush}" FontSize="16"/>
+                        </StackPanel>
+
+                        <!-- Active Target State -->
+                        <StackPanel x:Name="LiveFeedActivePanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Visibility="Collapsed">
+                            <PersonPicture x:Name="LiveStudentPhoto" Height="200" Width="200" Margin="0,0,0,16"/>
+                            <TextBlock x:Name="LiveStudentName" Text="Student Name" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="LiveStudentDetails" Text="BS Computer Science • Year 3" FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+
+                            <Border x:Name="LiveResultBorder" CornerRadius="8" Padding="16,8" Margin="0,16,0,0" Background="#1A34D399" BorderBrush="#3034D399" BorderThickness="1" HorizontalAlignment="Center">
+                                <TextBlock x:Name="LiveResultText" Text="ACCESS GRANTED" FontWeight="Black" FontSize="20" Foreground="#34D399" HorizontalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>
-
-            <!-- 3. Live Authentication Feed -->
-            <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0" Text="Live Authentication Feed" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,32" HorizontalAlignment="Center"/>
-
-                    <!-- Idle State -->
-                    <StackPanel x:Name="LiveFeedIdlePanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Visibility="Visible">
-                        <FontIcon Glyph="&#xE716;" FontSize="64" Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBlock Text="Waiting for next scan..." Foreground="{StaticResource TextSecondaryBrush}" FontSize="16"/>
-                    </StackPanel>
-
-                    <!-- Active Target State -->
-                    <StackPanel x:Name="LiveFeedActivePanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16" Visibility="Collapsed">
-                        <PersonPicture x:Name="LiveStudentPhoto" Height="200" Width="200" Margin="0,0,0,16"/>
-                        <TextBlock x:Name="LiveStudentName" Text="Student Name" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="LiveStudentDetails" Text="BS Computer Science • Year 3" FontSize="16" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
-
-                        <Border x:Name="LiveResultBorder" CornerRadius="8" Padding="16,8" Margin="0,16,0,0" Background="#1A34D399" BorderBrush="#3034D399" BorderThickness="1" HorizontalAlignment="Center">
-                            <TextBlock x:Name="LiveResultText" Text="ACCESS GRANTED" FontWeight="Black" FontSize="20" Foreground="#34D399" HorizontalAlignment="Center"/>
-                        </Border>
-                    </StackPanel>
-                </Grid>
-            </Border>
         </Grid>
     </Grid>
 </Window>

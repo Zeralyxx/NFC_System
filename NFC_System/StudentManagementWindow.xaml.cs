@@ -51,6 +51,9 @@ namespace NFC_System
         public StudentManagementWindow()
         {
             this.InitializeComponent();
+            // Subscribe to the live monitor
+            DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             MaximizeWindow();
             this.Closed += Window_Closed;
             StudentListView.DoubleTapped += StudentListView_DoubleTapped;
@@ -599,7 +602,21 @@ namespace NFC_System
 
         private void Window_Closed(object sender, WindowEventArgs args)
         {
+            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
             CloseSerialPort();
+
+        }
+
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            // DispatcherQueue safely pushes the update to the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
         }
 
         // ====================================================================

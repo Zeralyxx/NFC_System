@@ -20,6 +20,9 @@ namespace NFC_System
         public EventManagementWindow()
         {
             this.InitializeComponent();
+            // Subscribe to the live monitor
+            DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             MaximizeWindow();
             _ = InitializeAsync();
         }
@@ -77,6 +80,18 @@ namespace NFC_System
             {
                 LogMessage($"[DB ERROR] Could not load attendees: {ex.Message}");
             }
+        }
+
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            // DispatcherQueue safely pushes the update to the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
         }
 
         private void ApplyViewFilters()
