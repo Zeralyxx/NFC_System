@@ -434,15 +434,15 @@ namespace NFC_System
 
             try
             {
-                var details = await _database.GetStaffDetailsAsync(uid);
-                role = details.Role;
-                fullName = details.FullName;
+                // THE FIX: Skip the 3-second timeout wait if we already know we're offline
+                if (DatabaseMonitor.IsOnline)
+                {
+                    var details = await _database.GetStaffDetailsAsync(uid);
+                    role = details.Role;
+                    fullName = details.FullName;
+                }
             }
-            catch
-            {
-                // THE FIX: Do not hard-abort if database connection fails. 
-                // Let it fall through so the hardcoded offline keys can be checked!
-            }
+            catch { }
 
             if (role == null)
             {

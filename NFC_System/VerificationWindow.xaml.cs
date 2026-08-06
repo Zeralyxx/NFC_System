@@ -17,7 +17,7 @@ namespace NFC_System
         private readonly VerificationEngine _engine;
         private bool _isInitializing = true;
 
-        // THE FIX: Timer to auto-clear the live feed
+        // Timer to auto-clear the live feed
         private readonly DispatcherTimer _liveFeedTimer = new();
 
         public VerificationWindow()
@@ -44,14 +44,22 @@ namespace NFC_System
 
         private async Task InitializeAsync()
         {
+            if (DatabaseMonitor.IsOnline)
+            {
+                try { await _database.EnsureSchemaAsync(); } catch { }
+            }
+
             try
             {
-                await _database.EnsureSchemaAsync();
-
                 var cameras = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
                 CameraComboBox.ItemsSource = cameras;
 
-                string savedCamId = await _database.GetSettingAsync("selected_camera", "");
+                string savedCamId = "";
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { savedCamId = await _database.GetSettingAsync("selected_camera", ""); } catch { }
+                }
+
                 if (!string.IsNullOrEmpty(savedCamId))
                     CameraComboBox.SelectedItem = cameras.FirstOrDefault(c => c.Id == savedCamId) ?? cameras.FirstOrDefault();
                 else
@@ -59,7 +67,12 @@ namespace NFC_System
 
                 DirectionComboBox.SelectedIndex = KioskStateController.CurrentType == TransactionType.Entry ? 0 : 1;
 
-                string savedMode = await _database.GetSettingAsync("verification_mode", "Standard");
+                string savedMode = "Standard";
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { savedMode = await _database.GetSettingAsync("verification_mode", "Standard"); } catch { }
+                }
+
                 SecurityModeComboBox.SelectedIndex = savedMode switch
                 {
                     "Fast" => 0,
@@ -68,13 +81,15 @@ namespace NFC_System
                 };
 
                 VerificationLogListView.Items.Insert(0, "[INFO] Risk-based verification engine ready.");
-
                 await Task.Delay(500);
-                _isInitializing = false;
             }
             catch (Exception ex)
             {
-                VerificationLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+                VerificationLogListView.Items.Insert(0, $"[SYSTEM ERROR] {ex.Message}");
+            }
+            finally
+            {
+                _isInitializing = false;
             }
         }
 
@@ -93,9 +108,9 @@ namespace NFC_System
             dashboard.Activate();
             this.Close();
         }
+
         private void UpdateOfflineBanner(bool isOnline)
         {
-            // DispatcherQueue safely pushes the update to the UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (GlobalOfflineBanner != null)
@@ -204,7 +219,6 @@ namespace NFC_System
             }
         }
 
-        // THE FIX: Populate the Live Authentication Feed
         private async void ApplyOutcome(VerificationOutcome outcome)
         {
             if (!string.IsNullOrWhiteSpace(outcome.LogLine))
@@ -269,18 +283,20 @@ namespace NFC_System
                 _ => "Standard"
             };
 
-            try
+            if (!_isInitializing)
             {
-                await _database.SetSettingAsync("verification_mode", modeString);
+                string staff = AppSession.CurrentStaffName;
 
-                if (!_isInitializing)
+                // THE FIX: Update the UI immediately so the user sees it, THEN try the DB update
+                VerificationLogListView.Items.Insert(0, $"[AUDIT] Security Mode changed to {modeString} by {staff}");
+
+                try
                 {
-                    string staff = AppSession.CurrentStaffName;
+                    await _database.SetSettingAsync("verification_mode", modeString);
                     await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed global gate security mode to {modeString}.");
-                    VerificationLogListView.Items.Insert(0, $"[AUDIT] Security Mode changed to {modeString} by {staff}");
                 }
+                catch { /* Fails gracefully in offline mode */ }
             }
-            catch { }
         }
 
         private async void DirectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -293,12 +309,14 @@ namespace NFC_System
                 string direction = DirectionComboBox.SelectedIndex == 1 ? "Exit" : "Entry";
                 string staff = AppSession.CurrentStaffName;
 
+                // THE FIX: Update the UI immediately
+                VerificationLogListView.Items.Insert(0, $"[AUDIT] Gate Direction changed to {direction} by {staff}");
+
                 try
                 {
                     await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed Gate Direction to {direction}.");
-                    VerificationLogListView.Items.Insert(0, $"[AUDIT] Gate Direction changed to {direction} by {staff}");
                 }
-                catch { }
+                catch { /* Fails gracefully in offline mode */ }
             }
         }
 

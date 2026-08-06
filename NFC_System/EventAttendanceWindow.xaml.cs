@@ -17,7 +17,7 @@ namespace NFC_System
         private readonly VerificationEngine _engine;
         private bool _isInitializing = true;
 
-        // THE FIX: Timer to auto-clear the live feed
+        // Timer to auto-clear the live feed
         private readonly DispatcherTimer _liveFeedTimer = new();
 
         public EventAttendanceWindow()
@@ -44,14 +44,22 @@ namespace NFC_System
 
         private async System.Threading.Tasks.Task InitializeAsync()
         {
+            if (DatabaseMonitor.IsOnline)
+            {
+                try { await _database.EnsureSchemaAsync(); } catch { }
+            }
+
             try
             {
-                await _database.EnsureSchemaAsync();
-
                 var cameras = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
                 CameraComboBox.ItemsSource = cameras;
 
-                string savedCamId = await _database.GetSettingAsync("selected_camera", "");
+                string savedCamId = "";
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { savedCamId = await _database.GetSettingAsync("selected_camera", ""); } catch { }
+                }
+
                 if (!string.IsNullOrEmpty(savedCamId))
                     CameraComboBox.SelectedItem = cameras.FirstOrDefault(c => c.Id == savedCamId) ?? cameras.FirstOrDefault();
                 else
@@ -59,19 +67,29 @@ namespace NFC_System
 
                 DirectionComboBox.SelectedIndex = KioskStateController.CurrentType == TransactionType.Entry ? 0 : 1;
 
-                await LoadActiveEventsAsync();
+                if (DatabaseMonitor.IsOnline)
+                {
+                    await LoadActiveEventsAsync();
+                }
+                else
+                {
+                    AttendanceLogListView.Items.Insert(0, $"[OFFLINE CACHE] Cannot retrieve live events from database. Defaulting to local mode.");
+                }
+
                 AttendanceLogListView.Items.Insert(0, "[INFO] Event attendance monitor ready.");
 
                 if (!AppSession.IsAdmin)
                 {
                     ManageEventsButton.Visibility = Visibility.Collapsed;
                 }
-
-                _isInitializing = false;
             }
             catch (Exception ex)
             {
-                AttendanceLogListView.Items.Insert(0, $"[DB ERROR] {ex.Message}");
+                AttendanceLogListView.Items.Insert(0, $"[SYSTEM ERROR] {ex.Message}");
+            }
+            finally
+            {
+                _isInitializing = false;
             }
         }
 
@@ -86,13 +104,22 @@ namespace NFC_System
 
         private async System.Threading.Tasks.Task LoadActiveEventsAsync()
         {
-            IReadOnlyList<EventRecord> events = await _database.GetActiveEventsAsync();
-            ActiveEventComboBox.ItemsSource = events;
+            try
+            {
+                IReadOnlyList<EventRecord> events = await _database.GetActiveEventsAsync();
+                ActiveEventComboBox.ItemsSource = events;
 
-            if (events.Count > 0) ActiveEventComboBox.SelectedIndex = 0;
+                if (events.Count > 0) ActiveEventComboBox.SelectedIndex = 0;
 
-            AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events.Count} active event(s).");
+                AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events.Count} active event(s).");
+            }
+            catch
+            {
+                // THE FIX: Let the UI know it couldn't retrieve events instead of crashing initialization
+                AttendanceLogListView.Items.Insert(0, $"[OFFLINE CACHE] Cannot retrieve live events from database. Defaulting to local mode.");
+            }
         }
+
         private void UpdateOfflineBanner(bool isOnline)
         {
             // DispatcherQueue safely pushes the update to the UI thread
@@ -117,12 +144,15 @@ namespace NFC_System
             if (!_isInitializing && ActiveEventComboBox.SelectedItem is EventRecord selectedEvent)
             {
                 string staff = AppSession.CurrentStaffName;
+
+                // THE FIX: Update the UI immediately
+                AttendanceLogListView.Items.Insert(0, $"[AUDIT] Terminal set to {selectedEvent.EventName} by {staff}");
+
                 try
                 {
                     await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Set Event Terminal to monitor '{selectedEvent.EventName}'.");
                 }
-                catch { }
-                AttendanceLogListView.Items.Insert(0, $"[AUDIT] Terminal set to {selectedEvent.EventName} by {staff}");
+                catch { /* Fails gracefully in offline mode */ }
             }
         }
 
@@ -135,12 +165,14 @@ namespace NFC_System
                 string direction = DirectionComboBox.SelectedIndex == 1 ? "Exit" : "Entry";
                 string staff = AppSession.CurrentStaffName;
 
+                // THE FIX: Update the UI immediately
+                AttendanceLogListView.Items.Insert(0, $"[AUDIT] Direction changed to {direction} by {staff}");
+
                 try
                 {
                     await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed Event Terminal Direction to {direction}.");
                 }
-                catch { }
-                AttendanceLogListView.Items.Insert(0, $"[AUDIT] Direction changed to {direction} by {staff}");
+                catch { /* Fails gracefully in offline mode */ }
             }
         }
 
@@ -255,7 +287,6 @@ namespace NFC_System
             }
         }
 
-        // THE FIX: Populate the Live Event Feed
         private async void ApplyOutcome(VerificationOutcome outcome)
         {
             if (!string.IsNullOrWhiteSpace(outcome.LogLine))
