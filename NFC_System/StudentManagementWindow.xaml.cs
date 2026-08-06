@@ -39,13 +39,13 @@ namespace NFC_System
         // Snapshot of original values to detect unsaved changes
         private string _origStudentId = "";
         private string _origFullName = "";
-        private string _origEmail = ""; // <-- Add this
+        private string _origEmail = "";
         private string _origCourse = "";
         private string _origYearLevel = "";
         private string _origSection = "";
         private string _origStatus = "";
         private string _origNfcUid = "";
-        private bool _origIsTemporary = false; // <-- THE FIX
+        private bool _origIsTemporary = false;
         private AdminActionType _pendingAction = AdminActionType.None;
 
         public StudentManagementWindow()
@@ -58,7 +58,7 @@ namespace NFC_System
 
             EditDialogStudentIdBox.TextChanged += EditDialog_FieldChanged;
             EditDialogFullNameBox.TextChanged += EditDialog_FieldChanged;
-            EditDialogEmailBox.TextChanged += EditDialog_FieldChanged; // <-- Add this
+            EditDialogEmailBox.TextChanged += EditDialog_FieldChanged;
             EditDialogCourseComboBox.SelectionChanged += EditDialog_FieldChanged;
             EditDialogYearLevelBox.TextChanged += EditDialog_FieldChanged;
             EditDialogSectionBox.TextChanged += EditDialog_FieldChanged;
@@ -255,8 +255,6 @@ namespace NFC_System
         // ====================================================================
         private void TryConnectSerial(string portName)
         {
-            // THE FIX (ITEM 11): Check if the port is already open before trying to connect. 
-            // This prevents "Access Denied" crashes when the data grid refreshes.
             if (_serialPort != null && _serialPort.IsOpen) return;
 
             try
@@ -345,13 +343,12 @@ namespace NFC_System
             _editingStudent = student;
             EditDialogStatusText.Visibility = Visibility.Collapsed;
 
-            // THE FIX: Decode and display the student's current photo
             EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(student.PhotoData);
             _currentPhotoData = student.PhotoData; // Ensure we keep it if they don't change it
 
             EditDialogStudentIdBox.Text = student.StudentId;
             EditDialogFullNameBox.Text = student.FullName;
-            EditDialogEmailBox.Text = student.Email ?? ""; // <-- Add this
+            EditDialogEmailBox.Text = student.Email ?? "";
 
             EditDialogCourseComboBox.ItemsSource = CourseFilterComboBox.Items
                 .Cast<object>()
@@ -374,18 +371,18 @@ namespace NFC_System
                 _ => 0
             };
 
-            EditDialogIsTemporaryCheckBox.IsChecked = student.IsTemporary; // <-- THE FIX
+            EditDialogIsTemporaryCheckBox.IsChecked = student.IsTemporary;
 
             // Snapshot original state for dirty-checking
             _origStudentId = student.StudentId;
             _origFullName = student.FullName;
-            _origEmail = student.Email ?? ""; // <-- Add this
+            _origEmail = student.Email ?? "";
             _origCourse = student.Course;
             _origYearLevel = student.YearLevel;
             _origSection = student.SectionName;
             _origStatus = student.Status;
             _origNfcUid = student.NfcUid;
-            _origIsTemporary = student.IsTemporary; // <-- THE FIX
+            _origIsTemporary = student.IsTemporary;
 
             _isAwaitingNfcReplacementScan = false;
             ChangeNfcButton.IsEnabled = true;
@@ -398,7 +395,6 @@ namespace NFC_System
             await EditStudentDialog.ShowAsync();
         }
 
-        // THE FIX: Variable to hold the photo while the popup is open
         private byte[]? _currentPhotoData = null;
 
         private async void EditDialogUploadPhoto_Click(object sender, RoutedEventArgs e)
@@ -502,13 +498,13 @@ namespace NFC_System
 
             string curStudentId = EditDialogStudentIdBox.Text.Trim();
             string curFullName = EditDialogFullNameBox.Text.Trim();
-            string curEmail = EditDialogEmailBox.Text.Trim(); // <-- Add this
+            string curEmail = EditDialogEmailBox.Text.Trim();
             string curCourse = EditDialogCourseComboBox.SelectedItem?.ToString() ?? "";
             string curYearLevel = EditDialogYearLevelBox.Text.Trim();
             string curSection = EditDialogSectionBox.Text.Trim();
             string curStatus = (EditDialogStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
             string curNfcUid = EditDialogNfcUidBox.Text.Trim();
-            bool curIsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true; // <-- THE FIX
+            bool curIsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true;
             bool hasPinChange = !string.IsNullOrWhiteSpace(EditDialogNewPinBox.Password);
 
             bool nfcActuallyChanged = curNfcUid != _origNfcUid;
@@ -527,15 +523,15 @@ namespace NFC_System
             bool isDirty =
                 curStudentId != _origStudentId ||
                 curFullName != _origFullName ||
-                curEmail != _origEmail || // <-- Add this
+                curEmail != _origEmail ||
                 curCourse != _origCourse ||
                 curYearLevel != _origYearLevel ||
                 curSection != _origSection ||
                 curStatus != _origStatus ||
                 curNfcUid != _origNfcUid ||
-                curIsTemporary != _origIsTemporary || // <-- THE FIX
+                curIsTemporary != _origIsTemporary ||
                 hasPinChange ||
-                _currentPhotoData != _editingStudent.PhotoData; // <-- THE FIX
+                _currentPhotoData != _editingStudent.PhotoData;
 
             EditDialogSaveButton.IsEnabled = isDirty;
         }
@@ -671,27 +667,44 @@ namespace NFC_System
                         {
                             StudentId = EditDialogStudentIdBox.Text.Trim(),
                             FullName = EditDialogFullNameBox.Text.Trim(),
-                            Email = EditDialogEmailBox.Text.Trim(), // <-- Add this
+                            Email = EditDialogEmailBox.Text.Trim(),
                             Course = EditDialogCourseComboBox.SelectedItem?.ToString() ?? "",
                             YearLevel = EditDialogYearLevelBox.Text.Trim(),
                             SectionName = EditDialogSectionBox.Text.Trim(),
                             Status = ((ComboBoxItem)EditDialogStatusComboBox.SelectedItem).Content.ToString() ?? "Active",
                             NfcUid = EditDialogNfcUidBox.Text.Trim(),
                             QrCredential = EditDialogStudentIdBox.Text.Trim(), // keep QR aligned to Student ID
-                            PhotoData = _currentPhotoData, // <-- THE FIX: Inject the photo byte array here
-                            IsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true // <-- THE FIX
+                            PhotoData = _currentPhotoData,
+                            IsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true
                         };
 
+                        // ----------------------------------------------------
+                        // THE FIX: DYNAMIC DIRTY-CHECKING AUDIT LOG BUILDER
+                        // ----------------------------------------------------
+                        List<string> changes = new List<string>();
+
+                        if (_origStudentId != updated.StudentId) changes.Add($"Student ID ({_origStudentId} → {updated.StudentId})");
+                        if (_origFullName != updated.FullName) changes.Add("Name");
+                        if (_origEmail != updated.Email) changes.Add("Email");
+                        if (_origCourse != updated.Course) changes.Add("Course");
+                        if (_origYearLevel != updated.YearLevel) changes.Add("Year Level");
+                        if (_origSection != updated.SectionName) changes.Add("Section");
+                        if (_origStatus != updated.Status) changes.Add($"Status (→ {updated.Status})");
+                        if (_origIsTemporary != updated.IsTemporary) changes.Add($"Temp Badge (→ {updated.IsTemporary})");
+                        if (!string.IsNullOrWhiteSpace(pin)) changes.Add("Reset PIN");
+                        if (_currentPhotoData != _editingStudent.PhotoData) changes.Add("Updated Photo");
+                        if (oldUid != updated.NfcUid) changes.Add($"Replaced NFC Card (Reason: {nfcReplacementReason})");
+
+                        string changesString = changes.Count > 0 ? string.Join(", ", changes) : "No specific fields altered (forced save)";
+                        string logMessage = $"Edited profile for {updated.FullName} ({updated.StudentId}). Changes: {changesString}.";
+
+                        // Save the student
                         await _database.UpdateStudentAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin);
 
-                        bool nfcChanged = oldUid != updated.NfcUid;
-                        string logMessage = nfcChanged
-                            ? $"Edited full profile for {updated.FullName} ({originalId} → {updated.StudentId}). NFC card replaced — reason: {nfcReplacementReason}."
-                            : $"Edited full profile for {updated.FullName} ({originalId} → {updated.StudentId}).";
-
+                        // Save the dynamically built log
                         await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", logMessage);
 
-                        if (nfcChanged)
+                        if (oldUid != updated.NfcUid)
                         {
                             // Push the shadow cache refresh now instead of waiting up to 5 minutes
                             // for the background timer, so the old card stops working immediately

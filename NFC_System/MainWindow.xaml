@@ -248,7 +248,7 @@
                                 </Border>
 
                                 <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                                    <TextBlock Text="Event Reports" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Reports" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
                                     <TextBlock Text="Review event history, manage restricted attendee rosters, and export audit logs." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
 

@@ -47,7 +47,6 @@
             </StackPanel>
         </Grid>
 
-
         <!-- ========================================================= -->
         <!-- VIEW 1: UNIVERSITY CAMPUS TRAFFIC                         -->
         <!-- ========================================================= -->
@@ -177,11 +176,10 @@
                             </ItemsControl>
                         </StackPanel>
                     </Border>
-
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- Right: Live General Ledger -->
+            <!-- THE FIX: Replaced Right Column with the grouped Date Master-Detail view -->
             <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -190,55 +188,21 @@
                     </Grid.RowDefinitions>
 
                     <Grid Grid.Row="0" Margin="0,0,0,16">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock Text="General Access Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="Filterable stream of all main gate interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                                <Button Content="⛶ Open Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Unified University Filter Bar -->
-                        <StackPanel Grid.Row="1" Spacing="12">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBox x:Name="SearchUnivNameTextBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="SearchUnivNameTextBox_TextChanged"/>
-                                <ComboBox x:Name="UnivFilterSortBox" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
-                                    <ComboBoxItem Content="Default (Time)"/>
-                                    <ComboBoxItem Content="Name (A-Z)"/>
-                                    <ComboBoxItem Content="Name (Z-A)"/>
-                                </ComboBox>
-                                <ComboBox x:Name="UnivFilterCourse" PlaceholderText="Course" Width="160" SelectionChanged="UnivFilter_SelectionChanged"/>
-                                <ComboBox x:Name="UnivFilterSection" PlaceholderText="Section" Width="130" SelectionChanged="UnivFilter_SelectionChanged"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <ComboBox x:Name="UnivFilterStatus" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
-                                    <ComboBoxItem Content="All Statuses"/>
-                                    <ComboBoxItem Content="GRANTED"/>
-                                    <ComboBoxItem Content="DENIED"/>
-                                </ComboBox>
-                                <ComboBox x:Name="UnivFilterTime" SelectedIndex="0" Width="140" SelectionChanged="UnivFilter_SelectionChanged">
-                                    <ComboBoxItem Content="All Times"/>
-                                    <ComboBoxItem Content="Morning (AM)"/>
-                                    <ComboBoxItem Content="Afternoon (PM)"/>
-                                </ComboBox>
-                                <Button Content="Clear Filters" Click="ClearUnivFilters_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
-                            </StackPanel>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Daily Campus Traffic" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
+                            <TextBlock Text="Double-click a date to view full student logs and apply filters." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                            <Button Content="⛶ Open Master Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Grid>
 
-                    <!-- University Data Grid -->
+                    <!-- Data Grid -->
                     <Border Grid.Row="1" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -250,43 +214,31 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="1*"/>
-                                        <ColumnDefinition Width="1*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.5*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Timestamp" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="1" Text="Student Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="2" Text="Course &amp; Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="3" Text="Action" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                    <TextBlock Grid.Column="4" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="0" Text="Date" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="1" Text="Total Scans" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="2" Text="Granted" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                    <TextBlock Grid.Column="3" Text="Denied / Blocked" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 </Grid>
                             </Border>
 
-                            <ListView Grid.Row="1" x:Name="UniversityAuditListView" Background="Transparent" Padding="0,8" SelectionMode="None">
+                            <ListView Grid.Row="1" x:Name="DailyTrafficListView" Background="Transparent" Padding="0,8" SelectionMode="Single" DoubleTapped="DailyTrafficListView_DoubleTapped" IsItemClickEnabled="True">
                                 <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="local:VerificationLogRecord">
+                                    <DataTemplate x:DataType="local:DailyTrafficSummary">
                                         <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="1*"/>
-                                                <ColumnDefinition Width="1*"/>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="1.5*"/>
+                                                <ColumnDefinition Width="1.5*"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
-                                                <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
-                                            </StackPanel>
-
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
-                                                <TextBlock Text="{x:Bind Course}" Style="{StaticResource BodyTextStyle}" Foreground="White" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{x:Bind Section}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Left"/>
-                                            </StackPanel>
-
-                                            <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="4" Text="{x:Bind Status}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind DisplayDate}" Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind TotalScans}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" Text="{x:Bind Granted}" Style="{StaticResource BodyTextStyle}" Foreground="#34D399" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3" Text="{x:Bind Denied}" Style="{StaticResource BodyTextStyle}" Foreground="#F87171" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ListView.ItemTemplate>

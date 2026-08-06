@@ -18,6 +18,16 @@ namespace NFC_System
         public string SubValue { get; set; } = "";
     }
 
+    // THE FIX: New ViewModel for the Daily Campus Traffic grouping
+    public class DailyTrafficSummary
+    {
+        public DateTime DateValue { get; set; }
+        public string DisplayDate { get; set; } = "";
+        public int TotalScans { get; set; }
+        public int Granted { get; set; }
+        public int Denied { get; set; }
+    }
+
     public class EventAttendanceViewModel
     {
         public string Timestamp { get; set; } = "";
@@ -97,15 +107,22 @@ namespace NFC_System
                 var univLogs = await _database.GetGeneralLedgerAsync();
                 _univMasterLogs = univLogs.ToList();
 
-                var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
-                courses.Insert(0, "All Courses");
-                UnivFilterCourse.ItemsSource = courses;
+                // THE FIX: Group the master logs by date and generate the new Daily summary list
+                var dailySummaries = _univMasterLogs
+                    .Where(l => l.RawTimestamp != DateTime.MinValue)
+                    .GroupBy(l => l.RawTimestamp.Date)
+                    .Select(g => new DailyTrafficSummary
+                    {
+                        DateValue = g.Key,
+                        DisplayDate = g.Key.ToString("MMMM dd, yyyy"),
+                        TotalScans = g.Count(),
+                        Granted = g.Count(x => x.Status == "GRANTED"),
+                        Denied = g.Count(x => x.Status == "DENIED")
+                    })
+                    .OrderByDescending(x => x.DateValue)
+                    .ToList();
 
-                var sections = _univMasterLogs.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
-                sections.Insert(0, "All Sections");
-                UnivFilterSection.ItemsSource = sections;
-
-                ClearUnivFilters_Click(null, null);
+                DailyTrafficListView.ItemsSource = dailySummaries;
             }
             catch { }
         }
@@ -146,102 +163,40 @@ namespace NFC_System
             UniversityModeBtn.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
         }
 
-        // --- UNIVERSITY LEDGER FILTERING ---
-
-        private void SearchUnivNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        // --- THE FIX: Master-Detail Double Click Drilldown ---
+        private async void DailyTrafficListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
-            ApplyUnivLedgerFilters();
-        }
-
-        private void UnivFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (UnivFilterCourse == null || UnivFilterSection == null) return;
-
-            // DYNAMIC SECTION UPDATING: If the course changed, update the available sections
-            if (sender == UnivFilterCourse && _univMasterLogs != null)
+            if (e.OriginalSource is FrameworkElement fe && fe.DataContext is DailyTrafficSummary summary)
             {
-                string course = UnivFilterCourse.SelectedItem?.ToString() ?? "All Courses";
-                var sectionQuery = _univMasterLogs.AsEnumerable();
+                // Prepare the Explorer popup
+                UnivExplorerDialog.XamlRoot = this.Content.XamlRoot;
+                UnivDialogContainer.Width = 1400; // Open expanded so the data grid is fully visible
+                UnivPopupExpandToggle.IsChecked = true;
+                UnivPopupExpandToggle.Content = "⮌ Collapse View";
 
-                if (course != "All Courses")
-                    sectionQuery = sectionQuery.Where(l => l.Course == course);
+                // Repopulate dynamic drop-down filters
+                var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+                courses.Insert(0, "All Courses");
+                UnivPopupCourseFilter.ItemsSource = courses;
 
-                var sections = sectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                var sections = _univMasterLogs.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
                 sections.Insert(0, "All Sections");
+                UnivPopupSectionFilter.ItemsSource = sections;
 
-                string currentSection = UnivFilterSection.SelectedItem?.ToString() ?? "All Sections";
+                // Reset all old filters, but explicitly set the Date to the item they just clicked
+                UnivPopupSearchBox.Text = "";
+                UnivPopupCourseFilter.SelectedIndex = 0;
+                UnivPopupSectionFilter.SelectedIndex = 0;
+                UnivPopupStatusFilter.SelectedIndex = 0;
+                UnivPopupSortBox.SelectedIndex = 0;
 
-                UnivFilterSection.SelectionChanged -= UnivFilter_SelectionChanged; // Prevent infinite loop
-                UnivFilterSection.ItemsSource = sections;
-                UnivFilterSection.SelectedItem = sections.Contains(currentSection) ? currentSection : "All Sections";
-                UnivFilterSection.SelectionChanged += UnivFilter_SelectionChanged;
+                UnivPopupDatePicker.Date = summary.DateValue;
+                ApplyUnivPopupFilters();
+
+                await UnivExplorerDialog.ShowAsync();
             }
-
-            ApplyUnivLedgerFilters();
         }
 
-        private void ClearUnivFilters_Click(object sender, RoutedEventArgs e)
-        {
-            if (UnivFilterCourse == null || UnivFilterSection == null || UnivFilterStatus == null || UnivFilterTime == null || UnivFilterSortBox == null || SearchUnivNameTextBox == null) return;
-
-            SearchUnivNameTextBox.Text = string.Empty;
-            UnivFilterSortBox.SelectedIndex = 0;
-
-            if (UnivFilterCourse.Items.Count > 0) UnivFilterCourse.SelectedIndex = 0;
-            if (UnivFilterSection.Items.Count > 0) UnivFilterSection.SelectedIndex = 0;
-            UnivFilterStatus.SelectedIndex = 0;
-            UnivFilterTime.SelectedIndex = 0;
-
-            ApplyUnivLedgerFilters();
-        }
-
-        private void ApplyUnivLedgerFilters()
-        {
-            if (_univMasterLogs == null || UnivFilterCourse == null || UnivFilterSection == null || UnivFilterStatus == null || UnivFilterTime == null || UnivFilterSortBox == null || UniversityAuditListView == null)
-                return;
-
-            var filtered = _univMasterLogs.AsEnumerable();
-
-            string searchQuery = SearchUnivNameTextBox.Text?.Trim().ToLower() ?? "";
-            if (!string.IsNullOrEmpty(searchQuery))
-            {
-                filtered = filtered.Where(l =>
-                    (l.FullName != null && l.FullName.ToLower().Contains(searchQuery)) ||
-                    (l.StudentId != null && l.StudentId.ToLower().Contains(searchQuery)) ||
-                    (l.Course != null && l.Course.ToLower().Contains(searchQuery)) ||
-                    (l.Section != null && l.Section.ToLower().Contains(searchQuery)) ||
-                    (l.Timestamp != null && l.Timestamp.ToLower().Contains(searchQuery)));
-            }
-
-            string course = UnivFilterCourse.SelectedItem?.ToString() ?? "All Courses";
-            string section = UnivFilterSection.SelectedItem?.ToString() ?? "All Sections";
-            string status = (UnivFilterStatus.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
-            string time = (UnivFilterTime.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Times";
-
-            if (course != "All Courses")
-                filtered = filtered.Where(l => l.Course == course);
-
-            if (section != "All Sections")
-                filtered = filtered.Where(l => l.Section == section);
-
-            if (status != "All Statuses")
-                filtered = filtered.Where(l => l.Status == status);
-
-            if (time == "Morning (AM)")
-                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("AM"));
-            else if (time == "Afternoon (PM)")
-                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("PM"));
-
-            string sortOrder = (UnivFilterSortBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default (Time)";
-
-            if (sortOrder == "Name (A-Z)")
-                filtered = filtered.OrderBy(l => l.FullName);
-            else if (sortOrder == "Name (Z-A)")
-                filtered = filtered.OrderByDescending(l => l.FullName);
-
-            var finalData = filtered.ToList();
-            UniversityAuditListView.ItemsSource = finalData;
-        }
 
         // --- SMART SEARCH DROPDOWN LOGIC ---
 
@@ -649,10 +604,11 @@ namespace NFC_System
                     (l.Timestamp != null && l.Timestamp.ToLower().Contains(query)));
             }
 
+            // THE FIX: Exact Date Matching logic for the Popup
             if (UnivPopupDatePicker != null && UnivPopupDatePicker.Date.HasValue)
             {
-                string targetDateStr = UnivPopupDatePicker.Date.Value.ToString("MMM dd"); // Log format is "MMM dd - hh:mm tt"
-                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.StartsWith(targetDateStr));
+                DateTime targetDate = UnivPopupDatePicker.Date.Value.Date;
+                filtered = filtered.Where(l => l.RawTimestamp.Date == targetDate);
             }
 
             string course = UnivPopupCourseFilter?.SelectedItem?.ToString() ?? "All Courses";
@@ -666,7 +622,7 @@ namespace NFC_System
             string sortOrder = (UnivPopupSortBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Newest First";
             if (sortOrder == "Oldest First")
             {
-                filtered = filtered.Reverse(); // Original db pull is strictly DESC, so reverse gives exact ASC order
+                filtered = filtered.Reverse();
             }
             else if (sortOrder == "Name (A-Z)")
             {
@@ -972,14 +928,15 @@ namespace NFC_System
 
         private async void UnivExportButton_Click(object sender, RoutedEventArgs e)
         {
-            var logsToExport = UniversityAuditListView.ItemsSource as IEnumerable<VerificationLogRecord>;
+            var rawLogs = await _database.GetGeneralLedgerAsync();
+            var logsToExport = rawLogs.ToList();
 
             if (logsToExport == null || !logsToExport.Any())
             {
                 ContentDialog emptyDialog = new ContentDialog
                 {
                     Title = "Nothing to Export",
-                    Content = "There are no campus traffic records to export based on your current filters.",
+                    Content = "There are no campus traffic records to export.",
                     CloseButtonText = "OK",
                     XamlRoot = this.Content.XamlRoot
                 };

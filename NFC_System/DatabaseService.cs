@@ -13,6 +13,7 @@ namespace NFC_System;
 public sealed class VerificationLogRecord
 {
     public string Timestamp { get; set; } = "";
+    public DateTime RawTimestamp { get; set; } // Added to allow strict Date grouping
     public string StudentId { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Course { get; set; } = "";
@@ -206,7 +207,8 @@ public sealed class DatabaseService
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 student_id VARCHAR(50) NULL,
                 alert_type VARCHAR(100),
-                message TEXT
+                message TEXT,
+                synced_to_cloud BOOLEAN DEFAULT FALSE
             );
 
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -258,6 +260,7 @@ public sealed class DatabaseService
         try { using var alterCmd = new MySqlCommand("ALTER TABLE fast_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE standard_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE high_security_mode_logs ADD COLUMN nfc_system_ms DOUBLE DEFAULT 0, ADD COLUMN pin_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN pin_system_ms DOUBLE DEFAULT 0, ADD COLUMN qr_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN qr_system_ms DOUBLE DEFAULT 0, ADD COLUMN total_workflow_ms DOUBLE DEFAULT 0, ADD COLUMN total_system_ms DOUBLE DEFAULT 0;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
+        try { using var alterCmd = new MySqlCommand("ALTER TABLE alerts ADD COLUMN synced_to_cloud BOOLEAN DEFAULT FALSE;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
     }
 
     private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
@@ -476,6 +479,7 @@ public sealed class DatabaseService
                     string errorCode = ExtractString(fields, "error_code");
                     string errorMessage = ExtractString(fields, "error_message");
                     string remarks = ExtractString(fields, "remarks");
+
                     double nfcSys = ExtractDouble(fields, "nfc_system_ms");
                     double pinWf = ExtractDouble(fields, "pin_workflow_ms");
                     double pinSys = ExtractDouble(fields, "pin_system_ms");
@@ -484,6 +488,7 @@ public sealed class DatabaseService
                     double totalWf = ExtractDouble(fields, "total_workflow_ms");
                     double totalSys = ExtractDouble(fields, "total_system_ms");
                     double dbQuerySpeed = ExtractDouble(fields, "db_query_speed_ms");
+
                     DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
 
                     if (timestamp == null) continue;
@@ -525,6 +530,51 @@ public sealed class DatabaseService
             }
             catch { }
         }
+
+        string urlAlerts = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts?pageSize=2000";
+        try
+        {
+            var response = await _httpClient.GetAsync(urlAlerts);
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                using JsonDocument doc = JsonDocument.Parse(json);
+
+                if (doc.RootElement.TryGetProperty("documents", out var documents))
+                {
+                    using var connection = new MySqlConnection(ConnectionString);
+                    await connection.OpenAsync();
+
+                    foreach (var document in documents.EnumerateArray())
+                    {
+                        if (!document.TryGetProperty("fields", out var fields)) continue;
+
+                        string studentId = ExtractString(fields, "student_id");
+                        string alertType = ExtractString(fields, "alert_type");
+                        string message = ExtractString(fields, "message");
+                        DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
+
+                        if (timestamp == null) continue;
+
+                        using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM alerts WHERE timestamp = @ts AND alert_type = @at AND message = @msg", connection);
+                        checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                        checkCmd.Parameters.AddWithValue("@at", alertType);
+                        checkCmd.Parameters.AddWithValue("@msg", message);
+
+                        if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0) continue;
+
+                        string sql = "INSERT INTO alerts (timestamp, student_id, alert_type, message, synced_to_cloud) VALUES (@ts, @sid, @at, @msg, 1)";
+                        using var cmd = new MySqlCommand(sql, connection);
+                        cmd.Parameters.AddWithValue("@ts", timestamp.Value);
+                        cmd.Parameters.AddWithValue("@sid", NullIfEmpty(studentId));
+                        cmd.Parameters.AddWithValue("@at", NullIfEmpty(alertType));
+                        cmd.Parameters.AddWithValue("@msg", NullIfEmpty(message));
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
+            }
+        }
+        catch { }
 
         return updatedCount;
     }
@@ -1068,6 +1118,46 @@ public sealed class DatabaseService
                     await markCmd.ExecuteNonQueryAsync();
                 }
             }
+
+            using var cmdAlerts = new MySqlCommand(@"
+                SELECT id, timestamp, student_id, alert_type, message 
+                FROM alerts 
+                WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL", connection);
+            using var readerAlerts = await cmdAlerts.ExecuteReaderAsync();
+            var pendingAlerts = new List<(int Id, string JSON, string CloudDocId)>();
+
+            while (await readerAlerts.ReadAsync())
+            {
+                int dbId = Convert.ToInt32(readerAlerts["id"]);
+                string firestoreTimestamp = Convert.ToDateTime(readerAlerts["timestamp"]).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+                var payload = new
+                {
+                    fields = new
+                    {
+                        student_id = new { stringValue = Value(readerAlerts["student_id"]) },
+                        alert_type = new { stringValue = Value(readerAlerts["alert_type"]) },
+                        message = new { stringValue = Value(readerAlerts["message"]) },
+                        timestamp = new { timestampValue = firestoreTimestamp }
+                    }
+                };
+                pendingAlerts.Add((dbId, JsonSerializer.Serialize(payload), $"alert_{dbId}"));
+            }
+            readerAlerts.Close();
+
+            foreach (var log in pendingAlerts)
+            {
+                var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts/{log.CloudDocId}";
+                var response = await _httpClient.PatchAsync(url, content);
+                if (response.IsSuccessStatusCode)
+                {
+                    pushedCount++;
+                    using var markCmd = new MySqlCommand("UPDATE alerts SET synced_to_cloud = 1 WHERE id = @id", connection);
+                    markCmd.Parameters.AddWithValue("@id", log.Id);
+                    await markCmd.ExecuteNonQueryAsync();
+                }
+            }
         }
         catch (Exception ex) { throw new Exception($"Log Upload Error: {ex.Message}"); }
 
@@ -1272,7 +1362,6 @@ public sealed class DatabaseService
             var gateLogs = OfflineCacheService.GetPendingGateLogs();
             foreach (var log in gateLogs)
             {
-                // THE FIX: Dynamically route offline logs to the correct table based on their recorded mode
                 string targetTable = log.VerificationMode switch
                 {
                     "Fast" => "fast_mode_logs",
@@ -1648,6 +1737,7 @@ public sealed class DatabaseService
             list.Add(new VerificationLogRecord
             {
                 Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
+                RawTimestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]) : DateTime.MinValue,
                 StudentId = Value(reader["student_id"]),
                 FullName = string.IsNullOrWhiteSpace(Value(reader["full_name"])) ? "Unknown / Unregistered" : Value(reader["full_name"]),
                 Course = Value(reader["course"]),
@@ -2146,9 +2236,9 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand($@"
             INSERT INTO {tableName}
-            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
+            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
             VALUES
-            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
+            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @auth_speed, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
 
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
         command.Parameters.AddWithValue("@student_name", NullIfEmpty(studentName));
@@ -2160,6 +2250,7 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
 
+        command.Parameters.AddWithValue("@auth_speed", authSpeedMs);
         command.Parameters.AddWithValue("@nfc_speed", nfcSystemMs);
         command.Parameters.AddWithValue("@pin_wf", pinWorkflowMs);
         command.Parameters.AddWithValue("@pin_sys", pinSystemMs);
