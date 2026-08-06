@@ -176,19 +176,25 @@ namespace NFC_System
             try
             {
                 // 1. Ensure local schema exists
-                await _database.EnsureSchemaAsync();
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { await _database.EnsureSchemaAsync(); } catch { }
+                }
 
                 // 2. Count local staff
                 int staffCount = 0;
-                using (var connection = new MySqlConnection(DatabaseService.ConnectionString))
+                if (DatabaseMonitor.IsOnline)
                 {
-                    await connection.OpenAsync();
-                    using var cmd = new MySqlCommand("SELECT COUNT(*) FROM staff", connection);
-                    staffCount = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+                    using (var connection = new MySqlConnection(DatabaseService.ConnectionString))
+                    {
+                        await connection.OpenAsync();
+                        using var cmd = new MySqlCommand("SELECT COUNT(*) FROM staff", connection);
+                        staffCount = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+                    }
                 }
 
                 // 3. Check Firestore for Global Master Card if local MySQL has no staff
-                if (staffCount == 0)
+                if (staffCount == 0 && DatabaseMonitor.IsOnline)
                 {
                     try
                     {
@@ -216,19 +222,24 @@ namespace NFC_System
                             }
                         }
                     }
-                    catch
-                    {
-                        // Failsafe: Continue locally if offline
-                    }
+                    catch { }
                 }
 
-                _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { _currentPort = "COM3"; }
+                }
+                else
+                {
+                    _currentPort = "COM3";
+                }
+
                 bool isConnected = TryConnectSerial(_currentPort);
 
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
 
-                if (staffCount == 0)
+                if (staffCount == 0 && DatabaseMonitor.IsOnline)
                 {
                     _isFirstTimeSetup = true;
                     LoginOverlay.Visibility = Visibility.Collapsed;
@@ -266,7 +277,7 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
-                // THE FIX: Graceful Offline Fallback instead of infinite crashing
+                // Graceful Offline Fallback instead of infinite crashing
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
                 LoginStatusText.Text = "Database connection failed.";
@@ -289,9 +300,7 @@ namespace NFC_System
                     LoginStatusText.Text = "System Offline. Please tap an authorized offline key.";
                     LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
-                    try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); }
-                    catch { _currentPort = "COM3"; } // Failsafe if DB is fully down
-
+                    _currentPort = "COM3"; // Failsafe if DB is fully down
                     TryConnectSerial(_currentPort);
                 }
             }
@@ -318,32 +327,35 @@ namespace NFC_System
             try
             {
                 // 1. Save locally to MySQL
-                await _database.RegisterStaffAsync(_pendingMasterUid, fullName, "Master Administrator");
-                await _database.AddAlertAsync(null, "ADMIN_ACTION", $"System initialized. Master Administrator '{fullName}' registered.");
+                if (DatabaseMonitor.IsOnline)
+                {
+                    await _database.RegisterStaffAsync(_pendingMasterUid, fullName, "Master Administrator");
+                    await _database.AddAlertAsync(null, "ADMIN_ACTION", $"System initialized. Master Administrator '{fullName}' registered.");
+                }
 
                 // 2. Upload to Cloud Firestore REST API
-                try
+                if (DatabaseMonitor.IsOnline)
                 {
-                    var firestorePayload = new
+                    try
                     {
-                        fields = new
+                        var firestorePayload = new
                         {
-                            uid = new { stringValue = _pendingMasterUid },
-                            name = new { stringValue = fullName },
-                            role = new { stringValue = "Master Administrator" },
-                            created_at = new { stringValue = DateTime.UtcNow.ToString("O") }
-                        }
-                    };
+                            fields = new
+                            {
+                                uid = new { stringValue = _pendingMasterUid },
+                                name = new { stringValue = fullName },
+                                role = new { stringValue = "Master Administrator" },
+                                created_at = new { stringValue = DateTime.UtcNow.ToString("O") }
+                            }
+                        };
 
-                    string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                        string jsonPayload = JsonSerializer.Serialize(firestorePayload);
+                        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-                    // PATCH creates or overwrites the document at /MasterCard/master_admin
-                    await _httpClient.PatchAsync(FIRESTORE_URL, content);
-                }
-                catch
-                {
-                    // Failsafe: Local registration remains intact if offline
+                        // PATCH creates or overwrites the document at /MasterCard/master_admin
+                        await _httpClient.PatchAsync(FIRESTORE_URL, content);
+                    }
+                    catch { }
                 }
 
                 _isFirstTimeSetup = false;
@@ -466,7 +478,11 @@ namespace NFC_System
                 AppSession.CurrentStaffName = fullName ?? "Administrator";
                 AppSession.CurrentStaffRoleLabel = role == "Master Administrator" ? "Master Admin" : "Admin";
 
-                try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
+                // THE FIX: Do not attempt to log the login audit if offline
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
+                }
 
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
@@ -478,7 +494,11 @@ namespace NFC_System
                 AppSession.CurrentStaffName = fullName ?? "Guard";
                 AppSession.CurrentStaffRoleLabel = "Personnel";
 
-                try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
+                // THE FIX: Do not attempt to log the login audit if offline
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
+                }
 
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
@@ -547,7 +567,12 @@ namespace NFC_System
         private void SignOut_Click(object sender, RoutedEventArgs e)
         {
             string activeRole = AppSession.IsAdmin ? "Administrator" : "Security Personnel";
-            try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system."); } catch { }
+
+            // THE FIX: Do not attempt to log the logout audit if offline
+            if (DatabaseMonitor.IsOnline)
+            {
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system."); } catch { }
+            }
 
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
@@ -681,7 +706,12 @@ namespace NFC_System
             await Task.Delay(500);
 
             // 4. Fetch the latest port in case it was updated, and reconnect
-            try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
+            // THE FIX: Skip database check if offline to prevent 3-second hang
+            if (DatabaseMonitor.IsOnline)
+            {
+                try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
+            }
+
             bool isConnected = TryConnectSerial(_currentPort);
 
             // 5. Restore UI

@@ -67,14 +67,8 @@ namespace NFC_System
 
                 DirectionComboBox.SelectedIndex = KioskStateController.CurrentType == TransactionType.Entry ? 0 : 1;
 
-                if (DatabaseMonitor.IsOnline)
-                {
-                    await LoadActiveEventsAsync();
-                }
-                else
-                {
-                    AttendanceLogListView.Items.Insert(0, $"[OFFLINE CACHE] Cannot retrieve live events from database. Defaulting to local mode.");
-                }
+                // THE FIX: Always call LoadActiveEventsAsync so it populates from DB (Online) or Cache (Offline)
+                await LoadActiveEventsAsync();
 
                 AttendanceLogListView.Items.Insert(0, "[INFO] Event attendance monitor ready.");
 
@@ -104,25 +98,55 @@ namespace NFC_System
 
         private async System.Threading.Tasks.Task LoadActiveEventsAsync()
         {
-            try
-            {
-                IReadOnlyList<EventRecord> events = await _database.GetActiveEventsAsync();
-                ActiveEventComboBox.ItemsSource = events;
+            IReadOnlyList<EventRecord> events = new List<EventRecord>();
 
-                if (events.Count > 0) ActiveEventComboBox.SelectedIndex = 0;
-
-                AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events.Count} active event(s).");
-            }
-            catch
+            // 1. Try pulling live events from MySQL if online
+            if (DatabaseMonitor.IsOnline)
             {
-                // THE FIX: Let the UI know it couldn't retrieve events instead of crashing initialization
-                AttendanceLogListView.Items.Insert(0, $"[OFFLINE CACHE] Cannot retrieve live events from database. Defaulting to local mode.");
+                try
+                {
+                    events = await _database.GetActiveEventsAsync();
+                }
+                catch { }
             }
+
+            // 2. THE FIX: Fallback to local shadow cache if offline or if DB query returned nothing
+            if (events == null || events.Count == 0)
+            {
+                try
+                {
+                    var cachedEvents = OfflineCacheService.GetCachedEvents();
+                    if (cachedEvents != null && cachedEvents.Count > 0)
+                    {
+                        events = cachedEvents
+                            .Where(e => e.IsActive)
+                            .Select(e => new EventRecord
+                            {
+                                EventId = e.EventId,
+                                EventName = e.EventName,
+                                VerificationMode = Enum.TryParse<VerificationMode>(e.VerificationMode, out var vMode) ? vMode : VerificationMode.Standard,
+                                IsRestricted = e.IsRestricted,
+                                Status = "Active"
+                            })
+                            .ToList();
+                    }
+                }
+                catch { }
+            }
+
+            ActiveEventComboBox.ItemsSource = events;
+
+            if (events != null && events.Count > 0)
+            {
+                ActiveEventComboBox.SelectedIndex = 0;
+            }
+
+            string sourceTag = DatabaseMonitor.IsOnline && events != null && events.Count > 0 ? "Online Database" : "Offline Cache";
+            AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events?.Count ?? 0} active event(s) via {sourceTag}.");
         }
 
         private void UpdateOfflineBanner(bool isOnline)
         {
-            // DispatcherQueue safely pushes the update to the UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (GlobalOfflineBanner != null)
@@ -145,14 +169,16 @@ namespace NFC_System
             {
                 string staff = AppSession.CurrentStaffName;
 
-                // THE FIX: Update the UI immediately
                 AttendanceLogListView.Items.Insert(0, $"[AUDIT] Terminal set to {selectedEvent.EventName} by {staff}");
 
-                try
+                if (DatabaseMonitor.IsOnline)
                 {
-                    await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Set Event Terminal to monitor '{selectedEvent.EventName}'.");
+                    try
+                    {
+                        await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Set Event Terminal to monitor '{selectedEvent.EventName}'.");
+                    }
+                    catch { }
                 }
-                catch { /* Fails gracefully in offline mode */ }
             }
         }
 
@@ -165,14 +191,16 @@ namespace NFC_System
                 string direction = DirectionComboBox.SelectedIndex == 1 ? "Exit" : "Entry";
                 string staff = AppSession.CurrentStaffName;
 
-                // THE FIX: Update the UI immediately
                 AttendanceLogListView.Items.Insert(0, $"[AUDIT] Direction changed to {direction} by {staff}");
 
-                try
+                if (DatabaseMonitor.IsOnline)
                 {
-                    await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed Event Terminal Direction to {direction}.");
+                    try
+                    {
+                        await _database.AddAlertAsync(staff, "ADMIN_ACTION", $"Changed Event Terminal Direction to {direction}.");
+                    }
+                    catch { }
                 }
-                catch { /* Fails gracefully in offline mode */ }
             }
         }
 
@@ -272,11 +300,14 @@ namespace NFC_System
 
                 await _database.UpdatePinFailureAsync(studentId, 0, false);
 
-                try
+                if (DatabaseMonitor.IsOnline)
                 {
-                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_OVERRIDE", $"Manually cleared 2FA lockout for {student.FullName} ({studentId}).");
+                    try
+                    {
+                        await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_OVERRIDE", $"Manually cleared 2FA lockout for {student.FullName} ({studentId}).");
+                    }
+                    catch { }
                 }
-                catch { }
 
                 AttendanceLogListView.Items.Insert(0, $"[SECURITY OVERRIDE] Guard cleared lockout for {student.FullName} ({studentId}).");
                 OverrideStudentIdBox.Text = "";
@@ -300,7 +331,6 @@ namespace NFC_System
                 PlaySecurityAlert();
             }
 
-            // Don't show partial steps, only final outcomes
             if (outcome.Step == VerificationStep.Completed && outcome.Student != null)
             {
                 OverrideStudentIdBox.Text = outcome.Student.StudentId;

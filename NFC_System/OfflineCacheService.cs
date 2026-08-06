@@ -113,7 +113,39 @@ public static class OfflineCacheService
     }
 
     // =========================================================================
-    // 2. OFFLINE VERIFICATION ENGINE
+    // 2. READ SHADOW CACHE (FOR UI OFFLINE FALLBACK)
+    // =========================================================================
+
+    public static List<CachedStudent> GetCachedStudents()
+    {
+        lock (FileLock)
+        {
+            if (!File.Exists(StudentsCacheFile)) return new List<CachedStudent>();
+            try
+            {
+                string json = File.ReadAllText(StudentsCacheFile);
+                return JsonSerializer.Deserialize<List<CachedStudent>>(json) ?? new List<CachedStudent>();
+            }
+            catch { return new List<CachedStudent>(); }
+        }
+    }
+
+    public static List<CachedEvent> GetCachedEvents()
+    {
+        lock (FileLock)
+        {
+            if (!File.Exists(EventsCacheFile)) return new List<CachedEvent>();
+            try
+            {
+                string json = File.ReadAllText(EventsCacheFile);
+                return JsonSerializer.Deserialize<List<CachedEvent>>(json) ?? new List<CachedEvent>();
+            }
+            catch { return new List<CachedEvent>(); }
+        }
+    }
+
+    // =========================================================================
+    // 3. OFFLINE VERIFICATION ENGINE
     // =========================================================================
 
     public static (bool IsGranted, CachedStudent? Student, string ErrorCode, string Remarks) VerifyStudentOffline(string uid, string? enteredPin = null)
@@ -173,7 +205,7 @@ public static class OfflineCacheService
     }
 
     // =========================================================================
-    // 3. EMERGENCY LOG WRITING (WHEN XAMPP IS DOWN)
+    // 4. EMERGENCY LOG WRITING (WHEN XAMPP IS DOWN)
     // =========================================================================
 
     public static void SaveOfflineGateLog(string studentId, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks)
@@ -221,12 +253,11 @@ public static class OfflineCacheService
     }
 
     // =========================================================================
-    // 4. LOG RECOVERY & CLEANUP
+    // 5. LOG RECOVERY & CLEANUP
     // =========================================================================
 
     public static List<PendingGateLog> GetPendingGateLogs()
     {
-    expansion:
         if (!File.Exists(GateLogsFile)) return new();
         try
         {
