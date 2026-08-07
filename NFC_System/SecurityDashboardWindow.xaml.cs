@@ -23,25 +23,25 @@ namespace NFC_System
         private string _pendingStaffName = "";
         private string _pendingStaffUid = "";
         private string _pendingStaffRole = "";
-        private string _pendingAdminAction = ""; // "REGISTER_STAFF", "UPLOAD_DATA", "DOWNLOAD_DATA"
+        private string _pendingStaffPin = "";
+
+        // PHASE 3 FIX: Severity Engine State Variables
+        private string _pendingAdminAction = "";
+        private string _pendingAdminSeverity = "";
+
         // DEBOUNCE TIMER FOR SEARCH
         private readonly DispatcherTimer _searchDebounceTimer = new();
 
         public SecurityDashboardWindow()
         {
             this.InitializeComponent();
-            // Subscribe to the live monitor
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
-            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
 
             this.Closed += Window_Closed;
-
-            // THE FIX: Hook into the Activated event here instead of overriding.
-            // This safely refreshes the dashboard instantly when you close the Kiosk and return here.
             this.Activated += Window_Activated;
 
-            // Setup the 500ms delay timer for database searching
             _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(500);
             _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
 
@@ -99,7 +99,6 @@ namespace NFC_System
             });
         }
 
-        // THE FIX (ITEM 7): Native Error SFX Beep for failures
         private void PlayErrorAlert()
         {
             Task.Run(() =>
@@ -150,21 +149,52 @@ namespace NFC_System
                         {
                             var details = await _database.GetStaffDetailsAsync(uid);
 
-                            if (details.Role == "Administrator" || details.Role == "Master Administrator")
+                            bool isAuthorized = false;
+                            string failReason = "";
+
+                            // PHASE 3 FIX: Severity Check Routing
+                            if (_pendingAdminSeverity == "CRITICAL")
                             {
-                                // THE FIX: Strict RBAC check. Standard Admins cannot create Master Admins.
-                                if (_pendingAdminAction == "REGISTER_STAFF" && _pendingStaffRole == "Master Administrator" && details.Role != "Master Administrator")
+                                if (details.Role == "Master Administrator")
                                 {
-                                    _isAwaitingAdminAuth = false;
-                                    _pendingAdminAction = "";
-                                    AdminAuthDialog.Hide();
-
-                                    StatusTextBlock.Text = "Authorization Denied: Only an existing Master Administrator can create another Master Administrator.";
-                                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                                    PlayErrorAlert();
-                                    return;
+                                    isAuthorized = true;
                                 }
+                                else
+                                {
+                                    failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
+                                }
+                            }
+                            else if (_pendingAdminSeverity == "HIGH")
+                            {
+                                if (details.Role == "Administrator" || details.Role == "Master Administrator")
+                                {
+                                    string enteredPin = AdminPinBox.Password.Trim();
 
+                                    if (string.IsNullOrEmpty(enteredPin))
+                                    {
+                                        failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                                    }
+                                    else if (string.IsNullOrEmpty(details.PinHash))
+                                    {
+                                        failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                                    }
+                                    else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
+                                    {
+                                        failReason = "Authorization Denied: Invalid PIN.";
+                                    }
+                                    else
+                                    {
+                                        isAuthorized = true;
+                                    }
+                                }
+                                else
+                                {
+                                    failReason = "Authorization Denied: Tapped card is not an Administrator.";
+                                }
+                            }
+
+                            if (isAuthorized)
+                            {
                                 _isAwaitingAdminAuth = false;
                                 AdminAuthDialog.Hide();
                                 PlaySuccessPing();
@@ -176,7 +206,7 @@ namespace NFC_System
                                 switch (actionToRun)
                                 {
                                     case "REGISTER_STAFF":
-                                        await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName);
+                                        await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName, _pendingStaffPin);
                                         break;
                                     case "UPLOAD_DATA":
                                         await ExecuteUploadDataAsync(authorizedByName);
@@ -188,11 +218,8 @@ namespace NFC_System
                             }
                             else
                             {
-                                _isAwaitingAdminAuth = false;
-                                _pendingAdminAction = "";
-                                AdminAuthDialog.Hide();
-                                StatusTextBlock.Text = "Authorization Denied: Tapped card is not an Administrator.";
-                                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                                AuthStatusText.Text = failReason;
+                                AuthStatusText.Visibility = Visibility.Visible;
                                 PlayErrorAlert();
                             }
                         }
@@ -232,7 +259,6 @@ namespace NFC_System
 
         private void UpdateOfflineBanner(bool isOnline)
         {
-            // DispatcherQueue safely pushes the update to the UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (GlobalOfflineBanner != null)
@@ -240,7 +266,6 @@ namespace NFC_System
                     GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
                 }
 
-                // Disable cloud sync buttons to prevent crash attempts when offline
                 if (UploadDataButton != null) UploadDataButton.IsEnabled = isOnline;
                 if (GetNewDataButton != null) GetNewDataButton.IsEnabled = isOnline;
             });
@@ -273,9 +298,7 @@ namespace NFC_System
             PopupExpandToggle.IsChecked = false;
             PopupExpandToggle.Content = "⛶ Expand View";
 
-            // Load initial top 2000 with no filters
             await ApplyServerSidePopupFiltersAsync();
-
             await MasterLogsDialog.ShowAsync();
         }
 
@@ -293,11 +316,9 @@ namespace NFC_System
             }
         }
 
-        // Whenever the user types or changes a dropdown, restart the 500ms timer
         private void PopupFilter_Changed(object sender, RoutedEventArgs e)
         {
-            if (PopupLogsListView == null) return; // Prevent firing during window init
-
+            if (PopupLogsListView == null) return;
             _searchDebounceTimer.Stop();
             _searchDebounceTimer.Start();
         }
@@ -305,12 +326,10 @@ namespace NFC_System
         private void PopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args)
         {
             if (PopupLogsListView == null) return;
-
             _searchDebounceTimer.Stop();
             _searchDebounceTimer.Start();
         }
 
-        // When the timer finishes (meaning the user stopped typing), execute the DB query
         private async void SearchDebounceTimer_Tick(object? sender, object e)
         {
             _searchDebounceTimer.Stop();
@@ -322,20 +341,18 @@ namespace NFC_System
             PopupSearchBox.Text = "";
             PopupTypeFilter.SelectedIndex = 0;
             PopupStatusFilter.SelectedIndex = 0;
-            PopupDatePicker.Date = null; // Clear the date
+            PopupDatePicker.Date = null;
 
             _searchDebounceTimer.Stop();
             await ApplyServerSidePopupFiltersAsync();
         }
 
-        // Passes the UI inputs directly to the database for deep historical searching
         private async Task ApplyServerSidePopupFiltersAsync()
         {
             string searchTerm = PopupSearchBox.Text?.Trim() ?? "";
             string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
             string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
 
-            // Extract the optional date filter
             DateTime? searchDate = null;
             if (PopupDatePicker.Date.HasValue)
             {
@@ -344,11 +361,10 @@ namespace NFC_System
 
             try
             {
-                // Queries the actual database, pulling up to 2,000 matches from ANY date
                 var searchResults = await _database.GetMasterAuditLogsAsync(2000, searchTerm, type, status, searchDate);
                 PopupLogsListView.ItemsSource = searchResults;
             }
-            catch { /* Ignore brief DB locks during rapid typing */ }
+            catch { }
         }
 
         private async void RegisterStaffButton_Click(object sender, RoutedEventArgs e)
@@ -356,6 +372,7 @@ namespace NFC_System
             string fullName = StaffNameTextBox.Text.Trim();
             string uid = StaffNfcUidTextBox.Text.Trim();
             string role = (StaffRoleComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Security Personnel";
+            string rawPin = StaffPinBox.Password.Trim();
 
             if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(uid))
             {
@@ -365,7 +382,23 @@ namespace NFC_System
                 return;
             }
 
-            // THE FIX (ITEM 9): Check for existing staff assignment to prevent accidental overwrites
+            // PHASE 3 FIX: Validate PIN formats and enforce requirements for Admins
+            if (!string.IsNullOrWhiteSpace(rawPin) && (rawPin.Length != 4 || !rawPin.All(char.IsDigit)))
+            {
+                StatusTextBlock.Text = "If provided, the Staff PIN must be exactly 4 numeric digits.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+                return;
+            }
+
+            if ((role == "Administrator" || role == "Master Administrator") && string.IsNullOrWhiteSpace(rawPin))
+            {
+                StatusTextBlock.Text = "Administrators must have a 4-digit PIN assigned for High-Severity actions.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+                return;
+            }
+
             var existingStaff = await _database.GetStaffDetailsAsync(uid);
             if (existingStaff.Role != null)
             {
@@ -379,7 +412,7 @@ namespace NFC_System
                     XamlRoot = this.Content.XamlRoot
                 };
 
-                PlayErrorAlert(); // Alert the user to the conflict
+                PlayErrorAlert();
                 var dialogResult = await overwriteDialog.ShowAsync();
 
                 if (dialogResult != ContentDialogResult.Primary)
@@ -390,20 +423,28 @@ namespace NFC_System
                 }
             }
 
-            // Proceed with registration / Master Admin check
+            // Master Admins bypass the Sudo prompt entirely
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
-                await ExecuteStaffRegistration(uid, fullName, role, AppSession.CurrentStaffName);
+                await ExecuteStaffRegistration(uid, fullName, role, AppSession.CurrentStaffName, rawPin);
             }
             else
             {
                 _pendingStaffName = fullName;
                 _pendingStaffUid = uid;
                 _pendingStaffRole = role;
-                _pendingAdminAction = "REGISTER_STAFF";
-                _isAwaitingAdminAuth = true;
+                _pendingStaffPin = rawPin;
 
-                AdminAuthDescriptionText.Text = "To prevent unauthorized account creation, an Administrator must verify this action.";
+                // PHASE 3 FIX: CRITICAL Severity Trigger
+                _pendingAdminAction = "REGISTER_STAFF";
+                _pendingAdminSeverity = "CRITICAL";
+
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To prevent unauthorized account creation, a Master Administrator must verify this action.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 var result = await AdminAuthDialog.ShowAsync();
 
@@ -417,15 +458,16 @@ namespace NFC_System
             }
         }
 
-        private async Task ExecuteStaffRegistration(string uid, string fullName, string role, string authorizedBy)
+        private async Task ExecuteStaffRegistration(string uid, string fullName, string role, string authorizedBy, string? rawPin)
         {
             try
             {
-                await _database.RegisterStaffAsync(uid, fullName, role);
+                await _database.RegisterStaffAsync(uid, fullName, role, rawPin);
                 await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Authorized registration of new {role}: {fullName}");
 
                 StaffNameTextBox.Text = "";
                 StaffNfcUidTextBox.Text = "";
+                StaffPinBox.Password = "";
                 StaffRoleComboBox.SelectedIndex = 0;
 
                 StatusTextBlock.Text = $"Successfully registered {role}: {fullName}";
@@ -492,10 +534,16 @@ namespace NFC_System
             }
             else
             {
+                // PHASE 3 FIX: HIGH Severity Trigger (Requires PIN)
                 _pendingAdminAction = "UPLOAD_DATA";
-                _isAwaitingAdminAuth = true;
+                _pendingAdminSeverity = "HIGH";
 
-                AdminAuthDescriptionText.Text = "To confirm this upload, an Administrator must verify by tapping their NFC card.";
+                AdminPinBox.Visibility = Visibility.Visible;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To confirm this upload, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 var authResult = await AdminAuthDialog.ShowAsync();
 
@@ -598,10 +646,16 @@ namespace NFC_System
             }
             else
             {
+                // PHASE 3 FIX: HIGH Severity Trigger (Requires PIN)
                 _pendingAdminAction = "DOWNLOAD_DATA";
-                _isAwaitingAdminAuth = true;
+                _pendingAdminSeverity = "HIGH";
 
-                AdminAuthDescriptionText.Text = "To confirm this download, an Administrator must verify by tapping their NFC card.";
+                AdminPinBox.Visibility = Visibility.Visible;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To confirm this download, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 var authResult = await AdminAuthDialog.ShowAsync();
 
@@ -684,9 +738,6 @@ namespace NFC_System
             }
         }
 
-        // ====================================================================
-        // COURSE MANAGEMENT DIALOG LOGIC
-        // ====================================================================
         private async void OpenManageCoursesDialog_Click(object sender, RoutedEventArgs e)
         {
             ManageCoursesDialog.XamlRoot = this.Content.XamlRoot;
@@ -757,7 +808,6 @@ namespace NFC_System
 
             try
             {
-                // 1. Safety Check: Are students using this course?
                 int enrolledStudents = await _database.GetStudentCountByCourseAsync(courseName);
 
                 if (enrolledStudents > 0)
@@ -776,7 +826,6 @@ namespace NFC_System
                     return;
                 }
 
-                // 2. Confirmation Dialog
                 ContentDialog confirmDialog = new ContentDialog
                 {
                     Title = "Confirm Deletion",
@@ -791,7 +840,6 @@ namespace NFC_System
 
                 if (result == ContentDialogResult.Primary)
                 {
-                    // 3. Execute Deletion
                     await _database.DeleteCourseAsync(courseName);
 
                     CourseDialogStatusText.Text = $"Course '{courseName}' was successfully deleted.";
@@ -827,8 +875,6 @@ namespace NFC_System
             StatusTextBlock.Text = "Gathering audit records for export...";
             StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
-            // THE FIX: Directly fetch a comprehensive batch of logs from the database 
-            // rather than trying to read the UI lists.
             var rawLogs = await _database.GetMasterAuditLogsAsync(10000);
 
             if (rawLogs == null || !rawLogs.Any())
@@ -845,18 +891,15 @@ namespace NFC_System
                 return;
             }
 
-            // 1. Show the Export Configuration Dialog
             ExportConfigDialog.XamlRoot = this.Content.XamlRoot;
             var dialogResult = await ExportConfigDialog.ShowAsync();
 
-            // If they click cancel, abort the export.
             if (dialogResult != ContentDialogResult.Primary)
             {
                 StatusTextBlock.Text = "Export cancelled.";
                 return;
             }
 
-            // 2. Apply the selected Grouping / Sorting
             var logsToExport = rawLogs.ToList();
             string sortOption = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
 
@@ -873,7 +916,6 @@ namespace NFC_System
                     .OrderBy(l => l.Subject)
                     .ToList();
             }
-            // If "Default (Time of Entry)", leave it in the default descending timestamp order.
 
             var picker = new Windows.Storage.Pickers.FileSavePicker();
             IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -893,7 +935,6 @@ namespace NFC_System
                 {
                     var csvData = new System.Text.StringBuilder();
 
-                    // 3. Build dynamic headers based on CheckBox selection
                     var headers = new List<string>();
                     if (ExportColTimestamp.IsChecked == true) headers.Add("Date & Time");
                     if (ExportColLogType.IsChecked == true) headers.Add("Log Type");
@@ -904,7 +945,6 @@ namespace NFC_System
 
                     csvData.AppendLine(string.Join(",", headers));
 
-                    // 4. Build dynamic rows based on CheckBox selection
                     foreach (var log in logsToExport)
                     {
                         var row = new List<string>();
@@ -914,7 +954,7 @@ namespace NFC_System
                         if (ExportColSubject.IsChecked == true) row.Add($"\"{log.Subject}\"");
                         if (ExportColAction.IsChecked == true) row.Add($"\"{log.Action}\"");
                         if (ExportColStatus.IsChecked == true) row.Add($"\"{log.Status}\"");
-                        if (ExportColDetails.IsChecked == true) row.Add($"\"{log.Details.Replace("\"", "\"\"")}\""); // Escape quotes in details
+                        if (ExportColDetails.IsChecked == true) row.Add($"\"{log.Details.Replace("\"", "\"\"")}\"");
 
                         csvData.AppendLine(string.Join(",", row));
                     }
@@ -961,7 +1001,6 @@ namespace NFC_System
                 folderPicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop;
                 folderPicker.FileTypeFilter.Add("*");
 
-                // Required WinUI 3 initialization for Pickers
                 var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
                 WinRT.Interop.InitializeWithWindow.Initialize(folderPicker, hwnd);
 
@@ -971,8 +1010,6 @@ namespace NFC_System
                     StatusTextBlock.Text = "Exporting system performance metrics to CSV...";
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
-                    // This calls your original method that generates the 3 separate CSV files 
-                    // containing the raw auth_speed_ms and db_query_speed_ms
                     await _database.ExportCleanLogsToCsvAsync(folder.Path);
 
                     StatusTextBlock.Text = $"Performance metrics successfully exported to {folder.Path}";

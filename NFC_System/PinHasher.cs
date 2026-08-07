@@ -7,7 +7,7 @@ public static class PinHasher
 {
     private const int SaltSize = 16;
     private const int HashSize = 32;
-    private const int Iterations = 15_000;
+    private const int Iterations = 100_000;
 
     public static (string Salt, string Hash) HashPin(string pin)
     {

@@ -19,6 +19,10 @@ namespace NFC_System
     {
         public static bool IsLoggedIn { get; set; } = false;
         public static bool IsAdmin { get; set; } = false;
+
+        // PHASE 2 FIX: Added Event Organizer session state
+        public static bool IsEventOrganizer { get; set; } = false;
+
         public static string CurrentStaffName { get; set; } = "";
         public static string CurrentStaffRoleLabel { get; set; } = "";
     }
@@ -52,7 +56,7 @@ namespace NFC_System
             UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
             MaximizeWindow();
 
-            // THE FIX (ITEM 10): Hook into native window closing event to intercept exit
+            // Hook into native window closing event to intercept exit
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
@@ -362,6 +366,7 @@ namespace NFC_System
                 SetupOverlay.Visibility = Visibility.Collapsed;
 
                 AppSession.IsAdmin = true;
+                AppSession.IsEventOrganizer = false;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName;
                 AppSession.CurrentStaffRoleLabel = "Master Admin";
@@ -446,7 +451,6 @@ namespace NFC_System
 
             try
             {
-                // THE FIX: Skip the 3-second timeout wait if we already know we're offline
                 if (DatabaseMonitor.IsOnline)
                 {
                     var details = await _database.GetStaffDetailsAsync(uid);
@@ -469,16 +473,22 @@ namespace NFC_System
                     role = "Security Personnel";
                     fullName = "Simulated Guard";
                 }
+                // PHASE 2 FIX: Fallback key for Organizer debugging
+                else if (uid == "VALID_EVENT_CARD")
+                {
+                    role = "Event Organizer";
+                    fullName = "Simulated Organizer";
+                }
             }
 
             if (role == "Administrator" || role == "Master Administrator")
             {
                 AppSession.IsAdmin = true;
+                AppSession.IsEventOrganizer = false;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName ?? "Administrator";
                 AppSession.CurrentStaffRoleLabel = role == "Master Administrator" ? "Master Admin" : "Admin";
 
-                // THE FIX: Do not attempt to log the login audit if offline
                 if (DatabaseMonitor.IsOnline)
                 {
                     try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
@@ -487,14 +497,31 @@ namespace NFC_System
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
+            else if (role == "Event Organizer")
+            {
+                // PHASE 2 FIX: Event Organizer Login Execution
+                AppSession.IsAdmin = false;
+                AppSession.IsEventOrganizer = true;
+                AppSession.IsLoggedIn = true;
+                AppSession.CurrentStaffName = fullName ?? "Organizer";
+                AppSession.CurrentStaffRoleLabel = "Event Organizer";
+
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
+                }
+
+                PlaySuccessPing();
+                ApplyRoleBasedAccess();
+            }
             else if (role == "Security Personnel")
             {
                 AppSession.IsAdmin = false;
+                AppSession.IsEventOrganizer = false;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName ?? "Guard";
                 AppSession.CurrentStaffRoleLabel = "Personnel";
 
-                // THE FIX: Do not attempt to log the login audit if offline
                 if (DatabaseMonitor.IsOnline)
                 {
                     try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
@@ -537,8 +564,24 @@ namespace NFC_System
 
             if (AppSession.IsAdmin)
             {
+                // Full Access (Restore Grid Placement)
+                RegistrationCard.SetValue(Grid.RowProperty, 0);
+                RegistrationCard.SetValue(Grid.ColumnProperty, 0);
+
+                EventAttendanceCard.SetValue(Grid.RowProperty, 0);
                 EventAttendanceCard.SetValue(Grid.ColumnProperty, 1);
+
+                VerificationCard.SetValue(Grid.RowProperty, 0);
                 VerificationCard.SetValue(Grid.ColumnProperty, 2);
+
+                StudentDirectoryCard.SetValue(Grid.RowProperty, 1);
+                StudentDirectoryCard.SetValue(Grid.ColumnProperty, 0);
+
+                SecurityAdminCard.SetValue(Grid.RowProperty, 1);
+                SecurityAdminCard.SetValue(Grid.ColumnProperty, 1);
+
+                EventReportsCard.SetValue(Grid.RowProperty, 1);
+                EventReportsCard.SetValue(Grid.ColumnProperty, 2);
 
                 RegistrationCard.Visibility = Visibility.Visible;
                 EventAttendanceCard.Visibility = Visibility.Visible;
@@ -548,7 +591,28 @@ namespace NFC_System
                 EventReportsCard.Visibility = Visibility.Visible;
                 DashboardSettingsButton.Visibility = Visibility.Visible;
             }
-            else
+            else if (AppSession.IsEventOrganizer)
+            {
+                // PHASE 2 FIX: Hide Admin/Registration tools and shift the Event tools into focus
+                RegistrationCard.Visibility = Visibility.Collapsed;
+                VerificationCard.Visibility = Visibility.Collapsed;
+                SecurityAdminCard.Visibility = Visibility.Collapsed;
+                DashboardSettingsButton.Visibility = Visibility.Collapsed;
+
+                EventAttendanceCard.SetValue(Grid.RowProperty, 0);
+                EventAttendanceCard.SetValue(Grid.ColumnProperty, 0);
+
+                EventReportsCard.SetValue(Grid.RowProperty, 0);
+                EventReportsCard.SetValue(Grid.ColumnProperty, 1);
+
+                StudentDirectoryCard.SetValue(Grid.RowProperty, 0);
+                StudentDirectoryCard.SetValue(Grid.ColumnProperty, 2);
+
+                EventAttendanceCard.Visibility = Visibility.Visible;
+                EventReportsCard.Visibility = Visibility.Visible;
+                StudentDirectoryCard.Visibility = Visibility.Visible;
+            }
+            else // Security Personnel
             {
                 RegistrationCard.Visibility = Visibility.Collapsed;
                 StudentDirectoryCard.Visibility = Visibility.Collapsed;
@@ -556,7 +620,10 @@ namespace NFC_System
                 EventReportsCard.Visibility = Visibility.Collapsed;
                 DashboardSettingsButton.Visibility = Visibility.Collapsed;
 
+                EventAttendanceCard.SetValue(Grid.RowProperty, 0);
                 EventAttendanceCard.SetValue(Grid.ColumnProperty, 0);
+
+                VerificationCard.SetValue(Grid.RowProperty, 0);
                 VerificationCard.SetValue(Grid.ColumnProperty, 1);
 
                 EventAttendanceCard.Visibility = Visibility.Visible;
@@ -566,9 +633,8 @@ namespace NFC_System
 
         private void SignOut_Click(object sender, RoutedEventArgs e)
         {
-            string activeRole = AppSession.IsAdmin ? "Administrator" : "Security Personnel";
+            string activeRole = AppSession.IsAdmin ? "Administrator" : (AppSession.IsEventOrganizer ? "Event Organizer" : "Security Personnel");
 
-            // THE FIX: Do not attempt to log the logout audit if offline
             if (DatabaseMonitor.IsOnline)
             {
                 try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system."); } catch { }
@@ -576,6 +642,7 @@ namespace NFC_System
 
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
+            AppSession.IsEventOrganizer = false; // Reset role
             AppSession.CurrentStaffName = "";
             AppSession.CurrentStaffRoleLabel = "";
             _isAuthenticating = false;
@@ -706,7 +773,6 @@ namespace NFC_System
             await Task.Delay(500);
 
             // 4. Fetch the latest port in case it was updated, and reconnect
-            // THE FIX: Skip database check if offline to prevent 3-second hang
             if (DatabaseMonitor.IsOnline)
             {
                 try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }

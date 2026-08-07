@@ -108,7 +108,6 @@
                             <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
 
-                                    <!-- THE FIX: Added Staff Directory Button -->
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -121,8 +120,10 @@
                                         <Button Grid.Column="1" Content="View Staff Directory" Click="OpenStaffDirectoryButton_Click" Height="36" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" VerticalAlignment="Top"/>
                                     </Grid>
 
+                                    <!-- PHASE 3 FIX: Added Event Organizer & PIN Box to form -->
                                     <Grid ColumnSpacing="12" RowSpacing="12">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
@@ -134,12 +135,14 @@
                                         <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
                                         <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
                                             <ComboBoxItem Content="Security Personnel"/>
+                                            <ComboBoxItem Content="Event Organizer"/>
                                             <ComboBoxItem Content="Administrator"/>
                                             <ComboBoxItem Content="Master Administrator"/>
                                         </ComboBox>
+                                        <PasswordBox x:Name="StaffPinBox" Grid.Row="0" Grid.Column="2" Header="Set 4-Digit PIN" MaxLength="4" PlaceholderText="****"/>
 
-                                        <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
-                                        <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="1" Content="Register Staff Member" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
+                                        <TextBox x:Name="StaffNfcUidTextBox" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Header="NFC UID (Tap Card to Auto-Fill)" PlaceholderText="Waiting for scan..." IsReadOnly="True"/>
+                                        <Button x:Name="RegisterStaffButton" Grid.Row="1" Grid.Column="2" Content="Register Staff" Click="RegisterStaffButton_Click" Height="55" VerticalAlignment="Bottom" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" HorizontalAlignment="Stretch"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -311,7 +314,6 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBox x:Name="PopupSearchBox" Grid.Column="0" PlaceholderText="Search ID, Subject, or Details..." TextChanged="PopupFilter_Changed"/>
-
                         <CalendarDatePicker x:Name="PopupDatePicker" Grid.Column="1" PlaceholderText="Filter by Date" HorizontalAlignment="Stretch" DateChanged="PopupDatePicker_DateChanged"/>
 
                         <ComboBox x:Name="PopupTypeFilter" Grid.Column="2" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="PopupFilter_Changed">
@@ -353,7 +355,6 @@
                                     <TextBlock Grid.Column="1" Text="Log Type" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                     <TextBlock Grid.Column="2" Text="Subject" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                     <TextBlock Grid.Column="3" Text="Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-
                                     <TextBlock Grid.Column="6" Text="Details" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 </Grid>
                             </Border>
@@ -395,13 +396,16 @@
                 </Grid>
             </ContentDialog>
 
-            <!-- Administrator Authorization Intercept Popup -->
+            <!-- PHASE 3 FIX: Enforcing Security Severity Matrix with Staff PIN input -->
             <ContentDialog x:Name="AdminAuthDialog"
-                   Title="Administrator Authorization"
-                   CloseButtonText="Cancel"
-                   CornerRadius="8">
+                           Title="Administrator Authorization"
+                           CloseButtonText="Cancel"
+                           CornerRadius="8">
                 <StackPanel Spacing="16" Width="350">
                     <TextBlock x:Name="AdminAuthDescriptionText" Text="To prevent unauthorized actions, an Administrator must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                    <PasswordBox x:Name="AdminPinBox" Header="Enter 4-Digit Staff PIN" MaxLength="4" PlaceholderText="****" Visibility="Collapsed"/>
+
                     <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <ProgressRing IsActive="True" Width="24" Height="24"/>

@@ -249,6 +249,20 @@ public sealed class DatabaseService
             );
         ";
 
+        // PHASE 1: Patch the staff table to support High-Severity PINs
+        try
+        {
+            using var alterStaffCmd = new MySqlCommand(@"
+                    ALTER TABLE staff 
+                    ADD COLUMN pin_hash VARCHAR(255) NULL AFTER role,
+                    ADD COLUMN pin_salt VARCHAR(255) NULL AFTER pin_hash;", connection);
+            await alterStaffCmd.ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            // Catch block silently ignores the error if the columns already exist
+        }
+
         using (var schemaCmd = new MySqlCommand(schemaSql, connection))
         {
             await schemaCmd.ExecuteNonQueryAsync();
@@ -2589,21 +2603,37 @@ public sealed class DatabaseService
         return events;
     }
 
-    public async Task RegisterStaffAsync(string uid, string fullName, string role)
+    public async Task RegisterStaffAsync(string nfcUid, string fullName, string role, string? rawPin = null)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand(@"
-            INSERT INTO staff (nfc_uid, full_name, role)
-            VALUES (@uid, @name, @role)
-            ON DUPLICATE KEY UPDATE full_name = @name, role = @role", connection);
+        string pinHash = "";
+        string pinSalt = "";
 
-        command.Parameters.AddWithValue("@uid", uid);
-        command.Parameters.AddWithValue("@name", fullName);
-        command.Parameters.AddWithValue("@role", role);
+        // Cryptographically hash the staff PIN if one was provided
+        if (!string.IsNullOrWhiteSpace(rawPin))
+        {
+            var hashed = PinHasher.HashPin(rawPin);
+            pinHash = hashed.Hash;
+            pinSalt = hashed.Salt;
+        }
 
-        await command.ExecuteNonQueryAsync();
+        // Using UPSERT (ON DUPLICATE KEY UPDATE) to handle overwrites smoothly
+        string query = @"
+                INSERT INTO staff (nfc_uid, full_name, role, pin_hash, pin_salt) 
+                VALUES (@nfcUid, @fullName, @role, @pinHash, @pinSalt)
+                ON DUPLICATE KEY UPDATE 
+                full_name = @fullName, role = @role, pin_hash = @pinHash, pin_salt = @pinSalt";
+
+        using var cmd = new MySqlCommand(query, connection);
+        cmd.Parameters.AddWithValue("@nfcUid", nfcUid);
+        cmd.Parameters.AddWithValue("@fullName", fullName);
+        cmd.Parameters.AddWithValue("@role", role);
+        cmd.Parameters.AddWithValue("@pinHash", string.IsNullOrEmpty(pinHash) ? DBNull.Value : pinHash);
+        cmd.Parameters.AddWithValue("@pinSalt", string.IsNullOrEmpty(pinSalt) ? DBNull.Value : pinSalt);
+
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task<int> BatchUpdateStudentStatusAsync(string? course, string? yearLevel, string newStatus)
@@ -2665,20 +2695,36 @@ public sealed class DatabaseService
         return result?.ToString();
     }
 
-    public async Task<(string? Role, string? FullName)> GetStaffDetailsAsync(string uid)
+    // Custom return class/record for Staff Data
+    public class StaffDetails
+    {
+        public string? Role { get; set; }
+        public string? FullName { get; set; }
+        public string? PinHash { get; set; }
+        public string? PinSalt { get; set; }
+    }
+
+    public async Task<StaffDetails> GetStaffDetailsAsync(string nfcUid)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand("SELECT role, full_name FROM staff WHERE nfc_uid = @uid LIMIT 1", connection);
-        command.Parameters.AddWithValue("@uid", uid);
+        using var cmd = new MySqlCommand("SELECT full_name, role, pin_hash, pin_salt FROM staff WHERE nfc_uid = @nfcUid", connection);
+        cmd.Parameters.AddWithValue("@nfcUid", nfcUid);
 
-        using var reader = await command.ExecuteReaderAsync();
+        using var reader = await cmd.ExecuteReaderAsync();
         if (await reader.ReadAsync())
         {
-            return (reader["role"]?.ToString(), reader["full_name"]?.ToString());
+            return new StaffDetails
+            {
+                FullName = reader.IsDBNull(0) ? null : reader.GetString(0),
+                Role = reader.IsDBNull(1) ? null : reader.GetString(1),
+                PinHash = reader.IsDBNull(2) ? null : reader.GetString(2),
+                PinSalt = reader.IsDBNull(3) ? null : reader.GetString(3)
+            };
         }
-        return (null, null);
+
+        return new StaffDetails(); // Returns null properties if not found
     }
 
     public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)

@@ -11,7 +11,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
 using MySqlConnector;
-using Microsoft.UI.Xaml.Input; // for DoubleTappedRoutedEventArgs
+using Microsoft.UI.Xaml.Input;
 
 namespace NFC_System
 {
@@ -24,19 +24,16 @@ namespace NFC_System
         private int _currentPage = 1;
         private const int PageSize = 10;
 
-        // Serial Port objects to listen for the Admin Tap
         private SerialPort? _serialPort;
         private bool _isAwaitingAdminAuth = false;
         private bool _isAwaitingNfcReplacementScan = false;
         private StudentRecord? _editingStudent = null;
 
-        // Sorting State Variables
         private string _currentSortColumn = "FullName";
         private bool _isSortAscending = true;
         private string _popupSortColumn = "FullName";
         private bool _isPopupSortAscending = true;
 
-        // Snapshot of original values to detect unsaved changes
         private string _origStudentId = "";
         private string _origFullName = "";
         private string _origEmail = "";
@@ -48,12 +45,14 @@ namespace NFC_System
         private bool _origIsTemporary = false;
         private AdminActionType _pendingAction = AdminActionType.None;
 
+        // PHASE 4 FIX: Severity Engine State Variables
+        private string _pendingAdminSeverity = "";
+
         public StudentManagementWindow()
         {
             this.InitializeComponent();
-            // Subscribe to the live monitor
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
-            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
             this.Closed += Window_Closed;
             StudentListView.DoubleTapped += StudentListView_DoubleTapped;
@@ -87,6 +86,12 @@ namespace NFC_System
         {
             try
             {
+                // PHASE 4 FIX: Enforce Read-Only mode for Event Organizers
+                if (AppSession.IsEventOrganizer && ConfigPanelContainer != null)
+                {
+                    ConfigPanelContainer.Visibility = Visibility.Collapsed;
+                }
+
                 if (DatabaseMonitor.IsOnline)
                 {
                     var result = await _database.SearchStudentsAsync("", "All Students", "All Courses", "All Years", 1, 99999);
@@ -109,7 +114,6 @@ namespace NFC_System
                 }
                 else
                 {
-                    // THE FIX: Pull from local shadow cache when offline
                     var cachedStudents = OfflineCacheService.GetCachedStudents();
                     _allStudents = cachedStudents.Select(c => new StudentRecord
                     {
@@ -118,9 +122,9 @@ namespace NFC_System
                         NfcUid = c.NfcUid,
                         Status = c.Status,
                         PinLocked = c.PinLocked,
-                        Course = "Unavailable in Offline Mode", // Cache doesn't store this to save RAM
-                        YearLevel = "-",
-                        SectionName = "-"
+                        Course = "Offline Mode (Restricted View)",
+                        YearLevel = "N/A",
+                        SectionName = "N/A"
                     }).ToList();
 
                     CourseFilterComboBox.Items.Clear();
@@ -135,7 +139,6 @@ namespace NFC_System
                 PopupCourseFilter.SelectedIndex = 0;
                 BatchCourseComboBox.SelectedIndex = 0;
 
-                // THE FIX: Skip DB ping if offline to prevent 3-second delay
                 string nfcPort = "COM3";
                 if (DatabaseMonitor.IsOnline)
                 {
@@ -154,10 +157,6 @@ namespace NFC_System
                 System.Diagnostics.Debug.WriteLine($"[DB ERROR] {ex.Message}");
             }
         }
-
-        // ====================================================================
-        // SORTING LOGIC & ICON MANAGEMENT
-        // ====================================================================
 
         private void SortHeader_Click(object sender, RoutedEventArgs e)
         {
@@ -197,7 +196,7 @@ namespace NFC_System
         {
             string activeColumn = isPopup ? _popupSortColumn : _currentSortColumn;
             bool isAsc = isPopup ? _isPopupSortAscending : _isSortAscending;
-            string glyph = isAsc ? "\uE70E" : "\uE70D"; // \uE70E is ChevronUp, \uE70D is ChevronDown
+            string glyph = isAsc ? "\uE70E" : "\uE70D";
 
             if (!isPopup)
             {
@@ -253,9 +252,6 @@ namespace NFC_System
             }
         }
 
-        // ====================================================================
-        // NATIVE HARDWARE SUCCESS CHIME
-        // ====================================================================
         private void PlaySuccessPing()
         {
             Task.Run(() =>
@@ -270,7 +266,6 @@ namespace NFC_System
                     }
                     else
                     {
-                        // A highly satisfying, rapid ascending major chord (C6 -> E6 -> G6)
                         Console.Beep(1046, 75);
                         System.Threading.Thread.Sleep(15);
                         Console.Beep(1318, 75);
@@ -282,9 +277,20 @@ namespace NFC_System
             });
         }
 
-        // ====================================================================
-        // SERIAL PORT RBAC LISTENER LOGIC
-        // ====================================================================
+        private void PlayErrorAlert()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(2000, 300);
+                    System.Threading.Thread.Sleep(100);
+                    Console.Beep(2000, 300);
+                }
+                catch { }
+            });
+        }
+
         private void TryConnectSerial(string portName)
         {
             if (_serialPort != null && _serialPort.IsOpen) return;
@@ -319,9 +325,10 @@ namespace NFC_System
                 {
                     DispatcherQueue.TryEnqueue(async () =>
                     {
-                        // THE FIX: Allow hardcoded offline admin keys if database is down
                         string? role = null;
                         string? fullName = null;
+                        string? pinHash = null;
+                        string? pinSalt = null;
 
                         if (DatabaseMonitor.IsOnline)
                         {
@@ -330,20 +337,46 @@ namespace NFC_System
                                 var details = await _database.GetStaffDetailsAsync(uid);
                                 role = details.Role;
                                 fullName = details.FullName;
+                                pinHash = details.PinHash;
+                                pinSalt = details.PinSalt;
                             }
                             catch { }
                         }
 
-                        if (role == null)
+                        if (role == null && uid == "04:A1:B2:C3")
                         {
-                            if (uid == "04:A1:B2:C3")
-                            {
-                                role = "Master Administrator";
-                                fullName = "Master Admin";
-                            }
+                            role = "Master Administrator";
+                            fullName = "Master Admin";
                         }
 
-                        if (role == "Administrator" || role == "Master Administrator")
+                        // PHASE 4 FIX: Severity Matrix Check
+                        bool isAuthorized = false;
+                        string failReason = "";
+
+                        if (_pendingAdminSeverity == "CRITICAL")
+                        {
+                            if (role == "Master Administrator") isAuthorized = true;
+                            else failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
+                        }
+                        else if (_pendingAdminSeverity == "HIGH")
+                        {
+                            if (role == "Administrator" || role == "Master Administrator")
+                            {
+                                string enteredPin = AdminPinBox.Password.Trim();
+                                if (string.IsNullOrEmpty(enteredPin)) failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                                else if (string.IsNullOrEmpty(pinHash)) failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                                else if (!PinHasher.VerifyPin(enteredPin, pinSalt!, pinHash)) failReason = "Authorization Denied: Invalid PIN.";
+                                else isAuthorized = true;
+                            }
+                            else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+                        }
+                        else if (_pendingAdminSeverity == "MODERATE")
+                        {
+                            if (role == "Administrator" || role == "Master Administrator") isAuthorized = true;
+                            else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+                        }
+
+                        if (isAuthorized)
                         {
                             _isAwaitingAdminAuth = false;
                             AdminAuthDialog.Hide();
@@ -351,8 +384,9 @@ namespace NFC_System
                         }
                         else
                         {
-                            AuthStatusText.Text = "Authorization Denied: Tapped card is not an Administrator.";
+                            AuthStatusText.Text = failReason;
                             AuthStatusText.Visibility = Visibility.Visible;
+                            PlayErrorAlert();
                         }
                     });
                 }
@@ -377,6 +411,7 @@ namespace NFC_System
 
         private async void StudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
+            if (AppSession.IsEventOrganizer) return; // Block event organizers from double-click edit
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
             {
                 await OpenEditDialogAsync(student);
@@ -385,6 +420,7 @@ namespace NFC_System
 
         private async void PopupStudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
+            if (AppSession.IsEventOrganizer) return; // Block event organizers from double-click edit
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
             {
                 MasterDirectoryDialog.Hide();
@@ -398,7 +434,7 @@ namespace NFC_System
             EditDialogStatusText.Visibility = Visibility.Collapsed;
 
             EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(student.PhotoData);
-            _currentPhotoData = student.PhotoData; // Ensure we keep it if they don't change it
+            _currentPhotoData = student.PhotoData;
 
             EditDialogStudentIdBox.Text = student.StudentId;
             EditDialogFullNameBox.Text = student.FullName;
@@ -427,7 +463,6 @@ namespace NFC_System
 
             EditDialogIsTemporaryCheckBox.IsChecked = student.IsTemporary;
 
-            // Snapshot original state for dirty-checking
             _origStudentId = student.StudentId;
             _origFullName = student.FullName;
             _origEmail = student.Email ?? "";
@@ -472,11 +507,8 @@ namespace NFC_System
                 {
                     using (var stream = await file.OpenReadAsync())
                     {
-                        // Shrink and update the byte array
                         _currentPhotoData = await ImageHelper.ProcessProfileImageAsync(stream);
                         EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(_currentPhotoData);
-
-                        // Trick the system into enabling the "Save Changes" button
                         EditDialog_FieldChanged(this, new RoutedEventArgs());
                     }
                 }
@@ -523,7 +555,7 @@ namespace NFC_System
                 }
             }
 
-            EditDialogNfcUidBox.Text = uid; // fires EditDialog_FieldChanged, which reveals the reason box
+            EditDialogNfcUidBox.Text = uid;
             NfcScanStatusText.Text = "New card captured. Please note the reason below, then press Save Changes.";
             NfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
             NfcScanStatusText.Visibility = Visibility.Visible;
@@ -566,8 +598,6 @@ namespace NFC_System
 
             bool nfcActuallyChanged = curNfcUid != _origNfcUid;
 
-            // Reveal/hide the reason field based purely on whether the UID differs from original,
-            // regardless of whether it came from a tap or manual typing.
             if (NfcReplacementReasonBox != null)
             {
                 NfcReplacementReasonBox.Visibility = nfcActuallyChanged ? Visibility.Visible : Visibility.Collapsed;
@@ -639,7 +669,10 @@ namespace NFC_System
             }
 
             EditStudentDialog.Hide();
+
+            // PHASE 4 FIX: MODERATE Severity (Single Profile Edit)
             _pendingAction = AdminActionType.EditFullProfile;
+            _pendingAdminSeverity = "MODERATE";
 
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
@@ -647,8 +680,12 @@ namespace NFC_System
             }
             else
             {
-                _isAwaitingAdminAuth = true;
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "An Administrator must verify this profile update by tapping their NFC card.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 await AdminAuthDialog.ShowAsync();
             }
@@ -658,12 +695,10 @@ namespace NFC_System
         {
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
             CloseSerialPort();
-
         }
 
         private void UpdateOfflineBanner(bool isOnline)
         {
-            // DispatcherQueue safely pushes the update to the UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (GlobalOfflineBanner != null)
@@ -673,12 +708,8 @@ namespace NFC_System
             });
         }
 
-        // ====================================================================
-        // EXECUTING THE LOCKED ADMIN ACTIONS
-        // ====================================================================
         private async Task ExecutePendingAdminAction(string adminName)
         {
-            // THE FIX: Intercept write actions instantly if offline
             if (!DatabaseMonitor.IsOnline)
             {
                 ContentDialog offlineErrorDialog = new ContentDialog
@@ -737,8 +768,6 @@ namespace NFC_System
                     string status = (BatchNewStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Active";
 
                     int affectedRows = await _database.BatchUpdateStudentStatusAsync(course, year, status);
-
-                    // Add the specific master admin name to the batch log
                     await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", $"Batch updated {affectedRows} students to '{status}' (Course: {course}, Year: {year}).");
                 }
                 else if (_pendingAction == AdminActionType.EditFullProfile)
@@ -760,16 +789,12 @@ namespace NFC_System
                             SectionName = EditDialogSectionBox.Text.Trim(),
                             Status = ((ComboBoxItem)EditDialogStatusComboBox.SelectedItem).Content.ToString() ?? "Active",
                             NfcUid = EditDialogNfcUidBox.Text.Trim(),
-                            QrCredential = EditDialogStudentIdBox.Text.Trim(), // keep QR aligned to Student ID
+                            QrCredential = EditDialogStudentIdBox.Text.Trim(),
                             PhotoData = _currentPhotoData,
                             IsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true
                         };
 
-                        // ----------------------------------------------------
-                        // DYNAMIC DIRTY-CHECKING AUDIT LOG BUILDER
-                        // ----------------------------------------------------
                         List<string> changes = new List<string>();
-
                         if (_origStudentId != updated.StudentId) changes.Add($"Student ID ({_origStudentId} → {updated.StudentId})");
                         if (_origFullName != updated.FullName) changes.Add("Name");
                         if (_origEmail != updated.Email) changes.Add("Email");
@@ -785,10 +810,7 @@ namespace NFC_System
                         string changesString = changes.Count > 0 ? string.Join(", ", changes) : "No specific fields altered (forced save)";
                         string logMessage = $"Edited profile for {updated.FullName} ({updated.StudentId}). Changes: {changesString}.";
 
-                        // Save the student
                         await _database.UpdateStudentAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin);
-
-                        // Save the dynamically built log
                         await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", logMessage);
 
                         if (oldUid != updated.NfcUid)
@@ -800,12 +822,9 @@ namespace NFC_System
                     }
                 }
 
-                // Play the success sound upon successful execution
                 PlaySuccessPing();
-
-                // Clean up and refresh
                 _pendingAction = AdminActionType.None;
-                await LoadDataAsync(); // Fetch latest DB state
+                await LoadDataAsync();
             }
             catch (Exception ex)
             {
@@ -819,10 +838,6 @@ namespace NFC_System
                 await errorDialog.ShowAsync();
             }
         }
-
-        // ====================================================================
-        // UI BINDINGS & CLICKS
-        // ====================================================================
 
         private void RefreshDataGrid()
         {
@@ -848,7 +863,6 @@ namespace NFC_System
                 (courseFilter == "All Courses" || s.Course == courseFilter)
             ).ToList();
 
-            // APPLY SORTING FOR MAIN GRID
             filteredData = _currentSortColumn switch
             {
                 "StudentId" => _isSortAscending ? filteredData.OrderBy(s => s.StudentId).ToList() : filteredData.OrderByDescending(s => s.StudentId).ToList(),
@@ -876,7 +890,6 @@ namespace NFC_System
         {
             if ((sender as Button)?.Name == "PrevBtn") _currentPage--;
             else _currentPage++;
-
             RefreshDataGrid();
         }
 
@@ -887,7 +900,6 @@ namespace NFC_System
             if (StudentListView.SelectedItem is StudentRecord selectedStudent)
             {
                 EditStudentIdBox.Text = selectedStudent.StudentId;
-
                 EditStatusComboBox.SelectedIndex = selectedStudent.Status switch
                 {
                     "Active" => 0,
@@ -915,17 +927,22 @@ namespace NFC_System
         {
             if (string.IsNullOrWhiteSpace(EditStudentIdBox.Text)) return;
 
+            // PHASE 4 FIX: MODERATE Severity (Single edit quick status change)
             _pendingAction = AdminActionType.SaveIndividual;
+            _pendingAdminSeverity = "MODERATE";
 
-            // Master Admins bypass the Sudo prompt entirely
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }
             else
             {
-                _isAwaitingAdminAuth = true;
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "An Administrator must verify this profile update by tapping their NFC card.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 await AdminAuthDialog.ShowAsync();
             }
@@ -948,17 +965,22 @@ namespace NFC_System
             var result = await confirmDialog.ShowAsync();
             if (result != ContentDialogResult.Primary) return;
 
+            // PHASE 4 FIX: CRITICAL Severity (Only Master Admin)
             _pendingAction = AdminActionType.DeleteIndividual;
+            _pendingAdminSeverity = "CRITICAL";
 
-            // Master Admins bypass the Sudo prompt entirely
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }
             else
             {
-                _isAwaitingAdminAuth = true;
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To prevent unauthorized deletions, a Master Administrator must verify this action.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 await AdminAuthDialog.ShowAsync();
             }
@@ -966,19 +988,24 @@ namespace NFC_System
 
         private async void ConfirmBatchButton_Click(object sender, RoutedEventArgs e)
         {
-            BatchUpdateDialog.Hide(); // Hide the config menu before popping the Sudo menu
+            BatchUpdateDialog.Hide();
 
+            // PHASE 4 FIX: HIGH Severity (NFC + PIN required for batch updates)
             _pendingAction = AdminActionType.BatchUpdate;
+            _pendingAdminSeverity = "HIGH";
 
-            // Master Admins bypass the Sudo prompt entirely
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }
             else
             {
-                _isAwaitingAdminAuth = true;
+                AdminPinBox.Visibility = Visibility.Visible;
+                AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To confirm this batch update, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+
+                _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                 await AdminAuthDialog.ShowAsync();
             }
@@ -990,7 +1017,6 @@ namespace NFC_System
             await BatchUpdateDialog.ShowAsync();
         }
 
-        // --- ENLARGE POPUP DIRECTORY LOGIC ---
         private async void OpenPopupDirectoryButton_Click(object sender, RoutedEventArgs e)
         {
             MasterDirectoryDialog.XamlRoot = this.Content.XamlRoot;
@@ -1053,7 +1079,6 @@ namespace NFC_System
             else if (status == "Locked Out") filtered = filtered.Where(s => s.PinLocked);
             else if (status == "Inactive") filtered = filtered.Where(s => s.Status == "Inactive");
 
-            // APPLY SORTING FOR POPUP GRID
             filtered = _popupSortColumn switch
             {
                 "StudentId" => _isPopupSortAscending ? filtered.OrderBy(s => s.StudentId) : filtered.OrderByDescending(s => s.StudentId),
