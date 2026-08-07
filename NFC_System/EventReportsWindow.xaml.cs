@@ -18,7 +18,6 @@ namespace NFC_System
         public string SubValue { get; set; } = "";
     }
 
-    // THE FIX: New ViewModel for the Daily Campus Traffic grouping
     public class DailyTrafficSummary
     {
         public DateTime DateValue { get; set; }
@@ -73,10 +72,20 @@ namespace NFC_System
         {
             try
             {
-                await _database.EnsureSchemaAsync();
+                if (DatabaseMonitor.IsOnline)
+                {
+                    await _database.EnsureSchemaAsync();
+                }
 
-                IReadOnlyList<EventRecord> allEvents = await _database.GetAllEventsAsync();
-                IReadOnlyList<EventRecord> activeEvents = await _database.GetActiveEventsAsync(9999);
+                // 1. Load Event Data (Both Admins and Organizers need this)
+                IReadOnlyList<EventRecord> allEvents = new List<EventRecord>();
+                IReadOnlyList<EventRecord> activeEvents = new List<EventRecord>();
+
+                if (DatabaseMonitor.IsOnline)
+                {
+                    allEvents = await _database.GetAllEventsAsync();
+                    activeEvents = await _database.GetActiveEventsAsync(9999);
+                }
 
                 _allEventDropdownItems = allEvents.Select(e => new EventDropdownItem
                 {
@@ -90,49 +99,66 @@ namespace NFC_System
 
                 EventSearchBox.ItemsSource = _allEventDropdownItems;
 
-                var metrics = await _database.GetUniversityMetricsAsync();
-                UnivTotalScansText.Text = metrics.TotalScansToday.ToString("N0");
-                UnivInsideText.Text = metrics.CurrentlyInside.ToString("N0");
-                UnivDeniedText.Text = metrics.DeniedToday.ToString("N0");
-
-                var dailyStats = await _database.GetDailyEntryStatsAsync();
-                DailyEntriesItemsControl.ItemsSource = dailyStats;
-
-                var alertExtremes = await _database.GetSecurityAlertExtremesAsync();
-                HighAlertDateText.Text = alertExtremes.HighDayLabel;
-                HighAlertCountText.Text = alertExtremes.HighCount.ToString();
-                LowAlertDateText.Text = alertExtremes.LowDayLabel;
-                LowAlertCountText.Text = alertExtremes.LowCount.ToString();
-
-                var allTimeThreats = await _database.GetDailySecurityAlertsAsync();
-                HistoricalThreatsListView.ItemsSource = allTimeThreats;
-
-                var univLogs = await _database.GetGeneralLedgerAsync();
-                _univMasterLogs = univLogs.ToList();
-
-                // THE FIX: Group the master logs by date and generate the new Daily summary list
-                var dailySummaries = _univMasterLogs
-                    .Where(l => l.RawTimestamp != DateTime.MinValue)
-                    .GroupBy(l => l.RawTimestamp.Date)
-                    .Select(g => new DailyTrafficSummary
+                // 2. THE FIX: Apply RBAC to the University Traffic Tab
+                if (AppSession.IsEventOrganizer)
+                {
+                    // Hide University elements and auto-switch to Events
+                    UniversityModeBtn.Visibility = Visibility.Collapsed;
+                    PageSubtitleText.Text = "Analyze event turnout, attendee retention, and demographic engagement";
+                    SwitchToEventMode();
+                }
+                else
+                {
+                    // Only load the heavy University traffic data if the user is a full Admin
+                    if (DatabaseMonitor.IsOnline)
                     {
-                        DateValue = g.Key,
-                        DisplayDate = g.Key.ToString("MMMM dd, yyyy"),
-                        TotalScans = g.Count(),
-                        Granted = g.Count(x => x.Status == "GRANTED"),
-                        Denied = g.Count(x => x.Status == "DENIED")
-                    })
-                    .OrderByDescending(x => x.DateValue)
-                    .ToList();
+                        var metrics = await _database.GetUniversityMetricsAsync();
+                        UnivTotalScansText.Text = metrics.TotalScansToday.ToString("N0");
+                        UnivInsideText.Text = metrics.CurrentlyInside.ToString("N0");
+                        UnivDeniedText.Text = metrics.DeniedToday.ToString("N0");
 
-                DailyTrafficListView.ItemsSource = dailySummaries;
+                        var dailyStats = await _database.GetDailyEntryStatsAsync();
+                        DailyEntriesItemsControl.ItemsSource = dailyStats;
+
+                        var alertExtremes = await _database.GetSecurityAlertExtremesAsync();
+                        HighAlertDateText.Text = alertExtremes.HighDayLabel;
+                        HighAlertCountText.Text = alertExtremes.HighCount.ToString();
+                        LowAlertDateText.Text = alertExtremes.LowDayLabel;
+                        LowAlertCountText.Text = alertExtremes.LowCount.ToString();
+
+                        var allTimeThreats = await _database.GetDailySecurityAlertsAsync();
+                        HistoricalThreatsListView.ItemsSource = allTimeThreats;
+
+                        var univLogs = await _database.GetGeneralLedgerAsync();
+                        _univMasterLogs = univLogs.ToList();
+
+                        var dailySummaries = _univMasterLogs
+                            .Where(l => l.RawTimestamp != DateTime.MinValue)
+                            .GroupBy(l => l.RawTimestamp.Date)
+                            .Select(g => new DailyTrafficSummary
+                            {
+                                DateValue = g.Key,
+                                DisplayDate = g.Key.ToString("MMMM dd, yyyy"),
+                                TotalScans = g.Count(),
+                                Granted = g.Count(x => x.Status == "GRANTED"),
+                                Denied = g.Count(x => x.Status == "DENIED")
+                            })
+                            .OrderByDescending(x => x.DateValue)
+                            .ToList();
+
+                        DailyTrafficListView.ItemsSource = dailySummaries;
+                    }
+                }
             }
             catch { }
         }
 
         // --- TAB TOGGLE LOGIC ---
 
-        private void UniversityModeBtn_Click(object sender, RoutedEventArgs e)
+        private void UniversityModeBtn_Click(object sender, RoutedEventArgs e) => SwitchToUniversityMode();
+        private void EventModeBtn_Click(object sender, RoutedEventArgs e) => SwitchToEventMode();
+
+        private void SwitchToUniversityMode()
         {
             UniversityViewGrid.Visibility = Visibility.Visible;
             EventViewGrid.Visibility = Visibility.Collapsed;
@@ -149,19 +175,7 @@ namespace NFC_System
             EventModeBtn.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
         }
 
-        private void UpdateOfflineBanner(bool isOnline)
-        {
-            // DispatcherQueue safely pushes the update to the UI thread
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (GlobalOfflineBanner != null)
-                {
-                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
-                }
-            });
-        }
-
-        private void EventModeBtn_Click(object sender, RoutedEventArgs e)
+        private void SwitchToEventMode()
         {
             UniversityViewGrid.Visibility = Visibility.Collapsed;
             EventViewGrid.Visibility = Visibility.Visible;
@@ -178,18 +192,26 @@ namespace NFC_System
             UniversityModeBtn.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
         }
 
-        // --- THE FIX: Master-Detail Double Click Drilldown ---
+        private void UpdateOfflineBanner(bool isOnline)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (GlobalOfflineBanner != null)
+                {
+                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                }
+            });
+        }
+
         private async void DailyTrafficListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is DailyTrafficSummary summary)
             {
-                // Prepare the Explorer popup
                 UnivExplorerDialog.XamlRoot = this.Content.XamlRoot;
-                UnivDialogContainer.Width = 1400; // Open expanded so the data grid is fully visible
+                UnivDialogContainer.Width = 1400;
                 UnivPopupExpandToggle.IsChecked = true;
                 UnivPopupExpandToggle.Content = "⮌ Collapse View";
 
-                // Repopulate dynamic drop-down filters
                 var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
                 courses.Insert(0, "All Courses");
                 UnivPopupCourseFilter.ItemsSource = courses;
@@ -198,7 +220,6 @@ namespace NFC_System
                 sections.Insert(0, "All Sections");
                 UnivPopupSectionFilter.ItemsSource = sections;
 
-                // Reset all old filters, but explicitly set the Date to the item they just clicked
                 UnivPopupSearchBox.Text = "";
                 UnivPopupCourseFilter.SelectedIndex = 0;
                 UnivPopupSectionFilter.SelectedIndex = 0;
@@ -211,7 +232,6 @@ namespace NFC_System
                 await UnivExplorerDialog.ShowAsync();
             }
         }
-
 
         // --- SMART SEARCH DROPDOWN LOGIC ---
 
@@ -518,7 +538,6 @@ namespace NFC_System
             var finalData = viewModels;
             AttendanceListView.ItemsSource = finalData;
 
-            // Automatically sync the popup if it is open
             if (EventPopupListView != null)
                 EventPopupListView.ItemsSource = finalData;
         }
@@ -532,7 +551,6 @@ namespace NFC_System
             UnivPopupExpandToggle.IsChecked = false;
             UnivPopupExpandToggle.Content = "⛶ Expand View";
 
-            // Populate the dropdown filters dynamically based on current data
             var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
             courses.Insert(0, "All Courses");
             UnivPopupCourseFilter.ItemsSource = courses;
@@ -619,7 +637,6 @@ namespace NFC_System
                     (l.Timestamp != null && l.Timestamp.ToLower().Contains(query)));
             }
 
-            // THE FIX: Exact Date Matching logic for the Popup
             if (UnivPopupDatePicker != null && UnivPopupDatePicker.Date.HasValue)
             {
                 DateTime targetDate = UnivPopupDatePicker.Date.Value.Date;
@@ -831,20 +848,16 @@ namespace NFC_System
                 return;
             }
 
-            // 1. Show the new Export Configuration Dialog
             ExportConfigDialog.XamlRoot = this.Content.XamlRoot;
             var dialogResult = await ExportConfigDialog.ShowAsync();
 
-            // If they click cancel, abort the export.
             if (dialogResult != ContentDialogResult.Primary) return;
 
-            // 2. Deduplicate by StudentId so each student appears exactly once
             var logsToExport = rawLogs
                 .GroupBy(l => l.StudentId)
                 .Select(g => g.First())
                 .ToList();
 
-            // 3. Apply the selected Grouping / Sorting
             string sortOption = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
 
             if (sortOption == "Group by Course, then Section, then Name")
@@ -868,7 +881,6 @@ namespace NFC_System
                     .OrderBy(l => l.FullName)
                     .ToList();
             }
-            // If "Default (Time of Entry)", leave it exactly as it came from the rawLogs.
 
             var picker = new Windows.Storage.Pickers.FileSavePicker();
 
@@ -895,7 +907,6 @@ namespace NFC_System
             {
                 var csvData = new System.Text.StringBuilder();
 
-                // 4. Build dynamic headers based on CheckBox selection
                 var headers = new List<string>();
                 if (ExportColTimestamp.IsChecked == true) headers.Add("Timestamp");
                 if (ExportColStudentId.IsChecked == true) headers.Add("Student ID");
@@ -907,7 +918,6 @@ namespace NFC_System
 
                 csvData.AppendLine(string.Join(",", headers));
 
-                // 5. Build dynamic rows based on CheckBox selection
                 foreach (var log in logsToExport)
                 {
                     var row = new List<string>();

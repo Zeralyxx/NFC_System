@@ -55,7 +55,8 @@
                 <!-- CENTER: Title & Subtitle -->
                 <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="Analytics &amp; Reporting Center" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                    <TextBlock Text="Analyze daily campus traffic, event turnout, and demographic engagement" Style="{StaticResource BodyTextStyle}" FontSize="16" TextTrimming="CharacterEllipsis"/>
+                    <!-- THE FIX: Added x:Name so we can change the description for Event Organizers -->
+                    <TextBlock x:Name="PageSubtitleText" Text="Analyze daily campus traffic, event turnout, and demographic engagement" Style="{StaticResource BodyTextStyle}" FontSize="16" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
 
                 <!-- RIGHT: Mode Toggle Switcher -->
