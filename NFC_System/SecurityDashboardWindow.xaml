@@ -12,16 +12,60 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
     <Grid Background="{StaticResource AppBackgroundBrush}">
+        <!-- THE FIX: TIER 2 RESPONSIVENESS (VISUAL STATE MANAGER) -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1150" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <!-- Reduce padding for small screens -->
+                        <Setter Target="ContentRoot.Padding" Value="16,24" />
+
+                        <!-- Reorganize Header to Stack Vertically -->
+                        <Setter Target="HeaderCol1.Width" Value="*" />
+                        <Setter Target="HeaderCol2.Width" Value="0" />
+                        <Setter Target="HeaderCol3.Width" Value="0" />
+                        <Setter Target="HeaderRow2.Height" Value="Auto" />
+                        <Setter Target="HeaderRow3.Height" Value="Auto" />
+
+                        <Setter Target="HeaderTitleStack.(Grid.Row)" Value="1" />
+                        <Setter Target="HeaderTitleStack.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderTitleStack.Margin" Value="0,16,0,16" />
+                        <Setter Target="HeaderTitleStack.HorizontalAlignment" Value="Left" />
+
+                        <Setter Target="RefreshButton.(Grid.Row)" Value="2" />
+                        <Setter Target="RefreshButton.(Grid.Column)" Value="0" />
+                        <Setter Target="RefreshButton.HorizontalAlignment" Value="Stretch" />
+
+                        <!-- Reorganize Main Content to Stack Vertically -->
+                        <Setter Target="MainCol1.Width" Value="*" />
+                        <Setter Target="MainCol2.Width" Value="0" />
+                        <Setter Target="MainRow2.Height" Value="Auto" />
+                        <Setter Target="MainContentGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="MainContentGrid.RowSpacing" Value="24" />
+
+                        <!-- Push the Right Panel under the Left Panel -->
+                        <Setter Target="RightPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="RightPanel.(Grid.Column)" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
-            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
-            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
@@ -29,47 +73,53 @@
             </StackPanel>
         </Border>
 
-        <!-- The original content wrapper with its 48px padding -->
-        <Grid Grid.Row="1" Padding="48">
+        <Grid x:Name="ContentRoot" Grid.Row="1" Padding="48">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
             <!-- Header -->
-            <Grid Margin="0,0,0,32">
+            <Grid x:Name="HeaderGrid" Margin="0,0,0,32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="HeaderRow2" Height="0"/>
+                    <RowDefinition x:Name="HeaderRow3" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol1" Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol2" Width="*"/>
+                    <ColumnDefinition x:Name="HeaderCol3" Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
-                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                <StackPanel x:Name="HeaderTitleStack" Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                     <TextBlock Text="Security Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                    <TextBlock Text="Manage active directories, monitor alerts, and execute administrative security overrides" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
                 </StackPanel>
 
                 <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh Logs" Click="RefreshButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Center"/>
             </Grid>
 
             <!-- Main Content -->
-            <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnSpacing="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="MainRow1" Height="*"/>
+                    <RowDefinition x:Name="MainRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="4.5*"/>
-                    <ColumnDefinition Width="5.5*"/>
+                    <ColumnDefinition x:Name="MainCol1" Width="4.5*"/>
+                    <ColumnDefinition x:Name="MainCol2" Width="5.5*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Left Column: Administration Modules -->
-                <Grid Grid.Column="0">
+                <Grid x:Name="LeftPanel" Grid.Column="0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Sticky Status Banner Pinned to Top -->
-                    <Border Grid.Row="0" Margin="0,0,16,24" Padding="16,12" CornerRadius="8" Background="#15FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1">
+                    <Border Grid.Row="0" Margin="0,0,0,24" Padding="16,12" CornerRadius="8" Background="#15FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1">
                         <TextBlock x:Name="StatusTextBlock" Text="System Ready: Waiting for input..." Style="{StaticResource BodyTextStyle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                     </Border>
 
@@ -113,14 +163,13 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" Spacing="4">
+                                        <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,12,0">
                                             <TextBlock Text="Staff Access &amp; RBAC Registration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
                                             <TextBlock Text="Register NFC cards for Security Personnel and Administrators." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                                         </StackPanel>
                                         <Button Grid.Column="1" Content="View Staff Directory" Click="OpenStaffDirectoryButton_Click" Height="36" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" VerticalAlignment="Top"/>
                                     </Grid>
 
-                                    <!-- PHASE 3 FIX: Added Event Organizer & PIN Box to form -->
                                     <Grid ColumnSpacing="12" RowSpacing="12">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -152,16 +201,16 @@
                 </Grid>
 
                 <!-- Right Column: Live Feed & Explorer Trigger -->
-                <Grid Grid.Column="1" RowSpacing="24">
+                <Grid x:Name="RightPanel" Grid.Column="1" RowSpacing="24">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
-                        <Button x:Name="ExportMetricsButton" Content="Export System Metrics" Click="ExportMetricsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
-                        <Button x:Name="ExportLogsButton" Content="Export Audit Log" Click="ExportLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="24,0"/>
-                        <Button x:Name="OpenPopupLogsButton" Content="⛶ Open Master Audit Explorer" Click="OpenPopupLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="40" Padding="24,0"/>
+                        <Button x:Name="ExportMetricsButton" Content="Export System Metrics" Click="ExportMetricsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="12,0"/>
+                        <Button x:Name="ExportLogsButton" Content="Export Audit Log" Click="ExportLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Height="40" Padding="12,0"/>
+                        <Button x:Name="OpenPopupLogsButton" Content="⛶ Master Explorer" Click="OpenPopupLogsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Height="40" Padding="12,0"/>
                     </StackPanel>
 
                     <!-- Live System Activity Feed -->
@@ -189,7 +238,7 @@
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="1.8*"/>
-                                        <ColumnDefinition Width="1.5*"/>
+                                        <ColumnDefinition Width="1.3*"/>
                                         <ColumnDefinition Width="1.5*"/>
                                         <ColumnDefinition Width="1.2*"/>
                                         <ColumnDefinition Width="0.7*"/>
@@ -242,14 +291,10 @@
             </Grid>
 
             <!-- Manage Courses Dialog -->
-            <ContentDialog x:Name="ManageCoursesDialog"
-                           Title="Manage Academic Courses"
-                           CloseButtonText="Close"
-                           CornerRadius="8">
+            <ContentDialog x:Name="ManageCoursesDialog" Title="Manage Academic Courses" CloseButtonText="Close" CornerRadius="8">
+                <!-- Keep unchanged -->
                 <StackPanel Spacing="24" Width="400">
                     <TextBlock x:Name="CourseDialogStatusText" Text="Select an action below." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-
-                    <!-- Add Course -->
                     <StackPanel Spacing="8">
                         <TextBlock Text="Add New Course" FontWeight="SemiBold"/>
                         <Grid ColumnSpacing="8">
@@ -261,8 +306,6 @@
                             <Button x:Name="DialogAddCourseButton" Grid.Column="1" Content="Add" Click="DialogAddCourseButton_Click" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" BorderThickness="0" Width="80"/>
                         </Grid>
                     </StackPanel>
-
-                    <!-- Delete Course -->
                     <StackPanel Spacing="8">
                         <TextBlock Text="Delete Existing Course" FontWeight="SemiBold"/>
                         <Grid ColumnSpacing="8">
@@ -278,11 +321,7 @@
             </ContentDialog>
 
             <!-- Expandable Popup Dialog for Deep Inspection-->
-            <ContentDialog x:Name="MasterLogsDialog"
-                           CloseButtonText="Close"
-                           DefaultButton="Close"
-                           CornerRadius="8">
-
+            <ContentDialog x:Name="MasterLogsDialog" CloseButtonText="Close" DefaultButton="Close" CornerRadius="8">
                 <ContentDialog.Resources>
                     <x:Double x:Key="ContentDialogMaxWidth">1600</x:Double>
                 </ContentDialog.Resources>
@@ -303,7 +342,6 @@
                         <ToggleButton x:Name="PopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="PopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                     </Grid>
 
-                    <!-- Filters -->
                     <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="2*"/>
@@ -339,7 +377,6 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <!-- Header -->
                             <Border Grid.Row="0" Background="#0AFFFFFF" CornerRadius="8,8,0,0" Padding="16,12">
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
@@ -359,7 +396,8 @@
                                 </Grid>
                             </Border>
 
-                            <ListView Grid.Row="1" x:Name="PopupLogsListView" Height="500" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
+                            <!-- THE FIX: POPUP MAXIMUM HEIGHT PREVENTS CLIPPING -->
+                            <ListView Grid.Row="1" x:Name="PopupLogsListView" MaxHeight="400" Background="Transparent" Padding="0,8,0,0" SelectionMode="None">
                                 <ListView.ItemContainerStyle>
                                     <Style TargetType="ListViewItem">
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -385,7 +423,6 @@
                                             <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                             <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                             <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-
                                             <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                         </Grid>
                                     </DataTemplate>
@@ -396,16 +433,11 @@
                 </Grid>
             </ContentDialog>
 
-            <!-- PHASE 3 FIX: Enforcing Security Severity Matrix with Staff PIN input -->
-            <ContentDialog x:Name="AdminAuthDialog"
-                           Title="Administrator Authorization"
-                           CloseButtonText="Cancel"
-                           CornerRadius="8">
+            <ContentDialog x:Name="AdminAuthDialog" Title="Administrator Authorization" CloseButtonText="Cancel" CornerRadius="8">
+                <!-- Keep unchanged -->
                 <StackPanel Spacing="16" Width="350">
                     <TextBlock x:Name="AdminAuthDescriptionText" Text="To prevent unauthorized actions, an Administrator must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
-
                     <PasswordBox x:Name="AdminPinBox" Header="Enter 4-Digit Staff PIN" MaxLength="4" PlaceholderText="****" Visibility="Collapsed"/>
-
                     <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <ProgressRing IsActive="True" Width="24" Height="24"/>
@@ -416,12 +448,8 @@
                 </StackPanel>
             </ContentDialog>
 
-            <!-- POPUP: AUDIT EXPORT CONFIGURATION -->
-            <ContentDialog x:Name="ExportConfigDialog"
-                           Title="Configure Audit Export"
-                           PrimaryButtonText="Export to CSV"
-                           CloseButtonText="Cancel"
-                           CornerRadius="8">
+            <ContentDialog x:Name="ExportConfigDialog" Title="Configure Audit Export" PrimaryButtonText="Export to CSV" CloseButtonText="Cancel" CornerRadius="8">
+                <!-- Keep unchanged -->
                 <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
                     <TextBlock Text="Select the columns to include in the exported audit log:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                     <Border Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">
@@ -444,11 +472,8 @@
                 </StackPanel>
             </ContentDialog>
 
-            <!-- Staff Directory Dialog -->
-            <ContentDialog x:Name="StaffDirectoryDialog"
-                           Title="Staff Directory"
-                           CloseButtonText="Close"
-                           CornerRadius="8">
+            <ContentDialog x:Name="StaffDirectoryDialog" Title="Staff Directory" CloseButtonText="Close" CornerRadius="8">
+                <!-- Keep unchanged -->
                 <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
                     <TextBlock Text="List of all registered personnel and their assigned system roles." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                     <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">

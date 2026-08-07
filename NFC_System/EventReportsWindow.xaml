@@ -12,16 +12,75 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
     <Grid Background="{StaticResource AppBackgroundBrush}">
+
+        <!-- THE FIX: TIER 2 RESPONSIVENESS (VISUAL STATE MANAGER) -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1200" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <!-- Reduce overall padding -->
+                        <Setter Target="ContentRoot.Padding" Value="16,24" />
+
+                        <!-- Reorganize Header to Stack Vertically -->
+                        <Setter Target="HeaderCol1.Width" Value="*" />
+                        <Setter Target="HeaderCol2.Width" Value="0" />
+                        <Setter Target="HeaderCol3.Width" Value="0" />
+                        <Setter Target="HeaderRow2.Height" Value="Auto" />
+                        <Setter Target="HeaderRow3.Height" Value="Auto" />
+
+                        <Setter Target="HeaderTitleStack.(Grid.Row)" Value="1" />
+                        <Setter Target="HeaderTitleStack.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderTitleStack.Margin" Value="0,16,0,16" />
+                        <Setter Target="HeaderTitleStack.HorizontalAlignment" Value="Left" />
+
+                        <Setter Target="HeaderModeStack.(Grid.Row)" Value="2" />
+                        <Setter Target="HeaderModeStack.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderModeStack.HorizontalAlignment" Value="Stretch" />
+                        <Setter Target="UniversityModeBtn.HorizontalAlignment" Value="Stretch" />
+                        <Setter Target="EventModeBtn.HorizontalAlignment" Value="Stretch" />
+
+                        <!-- Reorganize University Grid to Stack Vertically -->
+                        <Setter Target="UnivCol1.Width" Value="*" />
+                        <Setter Target="UnivCol2.Width" Value="0" />
+                        <Setter Target="UnivRow2.Height" Value="Auto" />
+                        <Setter Target="UniversityViewGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="UniversityViewGrid.RowSpacing" Value="24" />
+
+                        <Setter Target="UnivRightPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="UnivRightPanel.(Grid.Column)" Value="0" />
+                        <Setter Target="UnivLeftPanel.Padding" Value="0" />
+
+                        <!-- Reorganize Event Grid to Stack Vertically -->
+                        <Setter Target="EventCol1.Width" Value="*" />
+                        <Setter Target="EventCol2.Width" Value="0" />
+                        <Setter Target="EventRow2.Height" Value="Auto" />
+                        <Setter Target="EventViewGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="EventViewGrid.RowSpacing" Value="24" />
+
+                        <Setter Target="EventRightPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="EventRightPanel.(Grid.Column)" Value="0" />
+                        <Setter Target="EventLeftScrollViewer.Padding" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
-            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
-            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <!-- GLOBAL OFFLINE BANNER -->
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
@@ -29,38 +88,36 @@
             </StackPanel>
         </Border>
 
-        <!-- The original content wrapper with its 48px padding -->
-        <Grid Grid.Row="1" Padding="48" Tapped="Background_Tapped">
+        <!-- The main content wrapper -->
+        <Grid x:Name="ContentRoot" Grid.Row="1" Padding="48" Tapped="Background_Tapped">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- ========================================================= -->
-            <!-- HEADER: [Navigation] -> [Title] -> [Mode Toggles]         -->
-            <!-- ========================================================= -->
-            <Grid Grid.Row="0" Margin="0,0,0,32">
+            <!-- HEADER -->
+            <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="HeaderRow2" Height="0"/>
+                    <RowDefinition x:Name="HeaderRow3" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol1" Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol2" Width="*"/>
+                    <ColumnDefinition x:Name="HeaderCol3" Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- LEFT: Navigation Buttons -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,24,0">
                     <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
                     <Button Content="Go to Event Management" Padding="16,10" Click="ManageEventsButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </StackPanel>
 
-                <!-- CENTER: Title & Subtitle -->
-                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <StackPanel x:Name="HeaderTitleStack" Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="Analytics &amp; Reporting Center" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                    <!-- THE FIX: Added x:Name so we can change the description for Event Organizers -->
-                    <TextBlock x:Name="PageSubtitleText" Text="Analyze daily campus traffic, event turnout, and demographic engagement" Style="{StaticResource BodyTextStyle}" FontSize="16" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
 
-                <!-- RIGHT: Mode Toggle Switcher -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <StackPanel x:Name="HeaderModeStack" Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                     <Button x:Name="UniversityModeBtn" Content="University Traffic" Click="UniversityModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                     <Button x:Name="EventModeBtn" Content="Event Analytics" Click="EventModeBtn_Click" Width="160" Height="44" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" Foreground="White" FontWeight="Normal"/>
                 </StackPanel>
@@ -70,13 +127,17 @@
             <!-- VIEW 1: UNIVERSITY CAMPUS TRAFFIC                         -->
             <!-- ========================================================= -->
             <Grid x:Name="UniversityViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Visible">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="UnivRow1" Height="*"/>
+                    <RowDefinition x:Name="UnivRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="4.5*"/>
-                    <ColumnDefinition Width="5.5*"/>
+                    <ColumnDefinition x:Name="UnivCol1" Width="4.5*"/>
+                    <ColumnDefinition x:Name="UnivCol2" Width="5.5*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Left: Campus Statistics -->
-                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                <ScrollViewer x:Name="UnivLeftPanel" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                     <StackPanel Spacing="24">
 
                         <!-- Campus Traffic -->
@@ -200,7 +261,7 @@
                 </ScrollViewer>
 
                 <!-- Right Column: Date Master-Detail view -->
-                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border x:Name="UnivRightPanel" Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -214,11 +275,11 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                 <TextBlock Text="Daily Campus Traffic" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="Double-click a date to view full student logs and apply filters." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                <TextBlock Text="Double-click a date to view full student logs and apply filters." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
-                                <Button Content="⛶ Open Master Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
+                                <Button Content="⛶ Master Explorer" Click="OpenUnivExplorer_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                             </StackPanel>
                         </Grid>
 
@@ -273,9 +334,13 @@
             <!-- VIEW 2: EVENT ANALYTICS                                   -->
             <!-- ========================================================= -->
             <Grid x:Name="EventViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="EventRow1" Height="*"/>
+                    <RowDefinition x:Name="EventRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="4*"/>
-                    <ColumnDefinition Width="6*"/>
+                    <ColumnDefinition x:Name="EventCol1" Width="4*"/>
+                    <ColumnDefinition x:Name="EventCol2" Width="6*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Left Column: Controls & Analytics -->
@@ -411,7 +476,7 @@
                 </ScrollViewer>
 
                 <!-- Right Column: Ledger Grid -->
-                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border x:Name="EventRightPanel" Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -431,7 +496,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                     <TextBlock Text="Event Attendance Ledger" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
-                                    <TextBlock Text="Filterable stream of all event interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                    <TextBlock Text="Filterable stream of all event interactions" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <Button x:Name="ExportButton" Content="Export to Excel" Click="ExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold" IsEnabled="False"/>
@@ -546,7 +611,6 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Popup Title -->
                 <Grid Grid.Row="0" Margin="0,0,0,16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -556,7 +620,6 @@
                     <ToggleButton x:Name="UnivPopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="UnivPopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </Grid>
 
-                <!-- Unified Explorer Filter Bar -->
                 <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,16">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBox x:Name="UnivPopupSearchBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="UnivPopupFilter_Changed"/>
@@ -580,7 +643,6 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Data Table -->
                 <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -605,7 +667,8 @@
                             </Grid>
                         </Border>
 
-                        <ListView Grid.Row="1" x:Name="UnivPopupListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                        <!-- THE FIX: POPUP MAXIMUM HEIGHT -->
+                        <ListView Grid.Row="1" x:Name="UnivPopupListView" MaxHeight="400" Background="Transparent" Padding="0,8" SelectionMode="None">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="local:VerificationLogRecord">
                                     <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
@@ -660,7 +723,6 @@
                     <ToggleButton x:Name="EventPopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="EventPopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </Grid>
 
-                <!-- Unified Explorer Filter Bar for Events -->
                 <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,16">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBox x:Name="EventPopupSearchBox" PlaceholderText="Search by name or ID..." Width="220" TextChanged="EventPopupFilter_Changed"/>
@@ -708,7 +770,8 @@
                             </Grid>
                         </Border>
 
-                        <ListView Grid.Row="1" x:Name="EventPopupListView" Height="500" Background="Transparent" Padding="0,8" SelectionMode="None">
+                        <!-- THE FIX: POPUP MAXIMUM HEIGHT -->
+                        <ListView Grid.Row="1" x:Name="EventPopupListView" MaxHeight="400" Background="Transparent" Padding="0,8" SelectionMode="None">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="local:EventAttendanceViewModel">
                                     <Grid Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
@@ -719,16 +782,21 @@
                                             <ColumnDefinition Width="1.5*"/>
                                             <ColumnDefinition Width="2*"/>
                                         </Grid.ColumnDefinitions>
+
                                         <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
                                             <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
                                         </StackPanel>
+
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
                                             <TextBlock Text="{x:Bind Course}" Style="{StaticResource BodyTextStyle}" Foreground="White" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="{x:Bind Section}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Left"/>
                                         </StackPanel>
+
                                         <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+
                                         <Border Grid.Column="4" Background="#10FFFFFF" CornerRadius="6" Padding="12,6" HorizontalAlignment="Left" VerticalAlignment="Center">
                                             <TextBlock Text="{x:Bind CompletionStatus}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
                                         </Border>
@@ -740,14 +808,9 @@
                 </Border>
             </Grid>
         </ContentDialog>
-        <!-- ========================================================= -->
-        <!-- POPUP: EVENT EXPORT CONFIGURATION                         -->
-        <!-- ========================================================= -->
-        <ContentDialog x:Name="ExportConfigDialog"
-                       Title="Configure Export Data"
-                       PrimaryButtonText="Export to CSV"
-                       CloseButtonText="Cancel"
-                       CornerRadius="8">
+
+        <ContentDialog x:Name="ExportConfigDialog" Title="Configure Export Data" PrimaryButtonText="Export to CSV" CloseButtonText="Cancel" CornerRadius="8">
+            <!-- Keep unchanged -->
             <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
                 <TextBlock Text="Select the columns you want to include in the exported report:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 <Border Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">

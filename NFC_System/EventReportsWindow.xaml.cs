@@ -104,7 +104,7 @@ namespace NFC_System
                 {
                     // Hide University elements and auto-switch to Events
                     UniversityModeBtn.Visibility = Visibility.Collapsed;
-                    PageSubtitleText.Text = "Analyze event turnout, attendee retention, and demographic engagement";
+                    
                     SwitchToEventMode();
                 }
                 else

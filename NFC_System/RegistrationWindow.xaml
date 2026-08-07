@@ -47,7 +47,6 @@
 
                 <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                     <TextBlock Text="Student Enrollment" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                    <TextBlock Text="Register details, set 2FA PIN, and bind NFC/QR credentials" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
                 </StackPanel>
             </Grid>
 

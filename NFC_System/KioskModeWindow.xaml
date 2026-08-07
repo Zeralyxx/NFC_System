@@ -8,8 +8,51 @@
     mc:Ignorable="d"
     Title="Guard Kiosk Mode">
 
-    <!-- Deep dark background to make the colored status cards pop -->
-    <Grid Background="#0A0A0A" Padding="32">
+    <Grid Background="#0A0A0A" Padding="32" x:Name="RootGrid">
+
+        <!-- THE FIX: Visual State Manager acts like CSS Media Queries -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <!-- Wide Screen State (Default) -->
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1000" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <!-- Tablet / Narrow Screen State -->
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <!-- Reduce padding and font sizes so text doesn't clip -->
+                        <Setter Target="RootGrid.Padding" Value="16" />
+                        <Setter Target="StatusBackgroundBorder.Padding" Value="24" />
+                        <Setter Target="StatusHeadlineText.FontSize" Value="32" />
+                        <Setter Target="StatusSubheadlineText.FontSize" Value="16" />
+                        <Setter Target="KioskHeaderSubtitle.FontSize" Value="14" />
+                        <Setter Target="KioskHeaderSubtitle.CharacterSpacing" Value="50" />
+
+                        <!-- Collapse the 2-Column layout into a 2-Row Layout -->
+                        <Setter Target="ContentLeftCol.Width" Value="*" />
+                        <Setter Target="ContentRightCol.Width" Value="0" />
+                        <Setter Target="ContentTopRow.Height" Value="Auto" />
+                        <Setter Target="ContentBottomRow.Height" Value="Auto" />
+                        <Setter Target="ContentGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="ContentGrid.RowSpacing" Value="24" />
+
+                        <!-- Move the Profile Border to the bottom row -->
+                        <Setter Target="ProfileBorder.(Grid.Row)" Value="1" />
+                        <Setter Target="ProfileBorder.(Grid.Column)" Value="0" />
+
+                        <!-- Hide the massive photo to save vertical space on tablets -->
+                        <Setter Target="StudentPhotoDisplay.Visibility" Value="Collapsed" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -25,7 +68,7 @@
 
             <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xEA18;" FontSize="24" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock x:Name="KioskHeaderSubtitle" Text="NFC VERIFICATION TERMINAL" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" CharacterSpacing="150" VerticalAlignment="Center"/>
+                <TextBlock x:Name="KioskHeaderSubtitle" Text="NFC VERIFICATION TERMINAL" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" CharacterSpacing="150" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </StackPanel>
 
             <Button Grid.Column="1" Click="ExitKiosk_Click" Padding="16,10" CornerRadius="8" Background="#1AFFFFFF" BorderThickness="0">
@@ -37,14 +80,18 @@
         </Grid>
 
         <!-- Massive Full-Screen Content -->
-        <Grid Grid.Row="1" ColumnSpacing="32" VerticalAlignment="Stretch">
+        <Grid x:Name="ContentGrid" Grid.Row="1" ColumnSpacing="32" VerticalAlignment="Stretch">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.2*"/>
-                <ColumnDefinition Width="0.8*"/>
+                <ColumnDefinition x:Name="ContentLeftCol" Width="1.2*"/>
+                <ColumnDefinition x:Name="ContentRightCol" Width="0.8*"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="ContentTopRow" Height="*"/>
+                <RowDefinition x:Name="ContentBottomRow" Height="0"/>
+            </Grid.RowDefinitions>
 
             <!-- LEFT: Dynamic Authentication Stage (Status, PIN, or QR) -->
-            <Border x:Name="StatusBackgroundBorder" Grid.Column="0" CornerRadius="24" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="2" Padding="32">
+            <Border x:Name="StatusBackgroundBorder" Grid.Row="0" Grid.Column="0" CornerRadius="24" Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="2" Padding="32">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -88,8 +135,8 @@
                             </Viewbox>
 
                             <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="12">
-                                <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center"/>
-                                <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center"/>
+                                <TextBlock x:Name="StatusHeadlineText" Text="READY TO SCAN" FontSize="56" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="StatusSubheadlineText" Text="Please tap NFC ID on the reader" FontSize="24" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
 
                                 <Button x:Name="ForgotIdButton" Content="Forgot ID? Use QR (Press D)" Click="ForgotIdButton_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF" Foreground="White" CornerRadius="8" Padding="16,10" Margin="0,24,0,0" HorizontalAlignment="Center"/>
                             </StackPanel>
@@ -126,7 +173,7 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="QR VERIFICATION" FontSize="32" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" CharacterSpacing="100" Margin="0,0,0,24"/>
+                            <TextBlock Grid.Row="0" Text="QR VERIFICATION" FontSize="32" FontWeight="Black" Foreground="#60A5FA" HorizontalAlignment="Center" CharacterSpacing="100" Margin="0,0,0,24" TextAlignment="Center" TextWrapping="Wrap"/>
 
                             <!-- Camera Viewport Base -->
                             <Border Grid.Row="1" CornerRadius="16" Background="Black" BorderBrush="#30FFFFFF" BorderThickness="2" MaxWidth="500" MaxHeight="500" HorizontalAlignment="Center">
@@ -135,7 +182,7 @@
                                 </Grid>
                             </Border>
 
-                            <TextBlock Grid.Row="2" Text="Align your QR code inside the frame." FontSize="20" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" Margin="0,24,0,0"/>
+                            <TextBlock Grid.Row="2" Text="Align your QR code inside the frame." FontSize="20" Foreground="White" Opacity="0.8" HorizontalAlignment="Center" Margin="0,24,0,0" TextAlignment="Center" TextWrapping="Wrap"/>
                         </Grid>
 
                     </Grid>
@@ -143,11 +190,10 @@
             </Border>
 
             <!-- RIGHT: Student Photo & Details -->
-            <Border x:Name="ProfileBorder" Grid.Column="1" CornerRadius="24" Background="#10FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="2" Padding="32" Opacity="0.3">
+            <Border x:Name="ProfileBorder" Grid.Row="0" Grid.Column="1" CornerRadius="24" Background="#10FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="2" Padding="32" Opacity="0.3">
                 <Grid VerticalAlignment="Center">
                     <StackPanel Spacing="16">
 
-                        <!-- THE FIX: Temporary Badge overlay -->
                         <Grid>
                             <PersonPicture x:Name="StudentPhotoDisplay" Height="200" Width="200" HorizontalAlignment="Center"/>
                             <Border x:Name="TempBadgeBorder" Background="#EF4444" CornerRadius="4" Padding="12,4" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,-12,0,0" Visibility="Collapsed">
@@ -164,7 +210,7 @@
 
                         <StackPanel Spacing="6">
                             <TextBlock Text="STUDENT ID" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" CharacterSpacing="100"/>
-                            <TextBlock x:Name="StudentIdText" Text="---" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#A0A0A0"/>
+                            <TextBlock x:Name="StudentIdText" Text="---" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#A0A0A0" TextWrapping="Wrap"/>
                         </StackPanel>
                     </StackPanel>
                 </Grid>

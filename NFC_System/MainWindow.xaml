@@ -12,25 +12,68 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
-    <Grid>
+    <Grid x:Name="RootGrid">
+
+        <!-- THE FIX: Dynamic Responsive Triggers -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1100" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <!-- Login Screen Adjustments -->
+                        <Setter Target="MainLoginTitle.FontSize" Value="28" />
+                        <Setter Target="MainLoginTitle.CharacterSpacing" Value="25" />
+                        <Setter Target="MainLoginTitle.Margin" Value="16,0,16,0" />
+                        <Setter Target="SetupTitle.FontSize" Value="28" />
+                        <Setter Target="SetupTitle.Margin" Value="16,0,16,0" />
+
+                        <!-- Dashboard Header Adjustments (Break columns into stacked rows) -->
+                        <Setter Target="DashboardHeaderLeftCol.Width" Value="*" />
+                        <Setter Target="DashboardHeaderRightCol.Width" Value="Auto" />
+                        <Setter Target="DashboardHeaderMidCol.Width" Value="0" />
+                        <Setter Target="DashboardHeaderBottomRow.Height" Value="Auto" />
+
+                        <!-- Push the main title down to row 1 to give it breathing room -->
+                        <Setter Target="DashboardTitleStack.(Grid.Row)" Value="1" />
+                        <Setter Target="DashboardTitleStack.(Grid.Column)" Value="0" />
+                        <Setter Target="DashboardTitleStack.(Grid.ColumnSpan)" Value="3" />
+                        <Setter Target="DashboardTitleStack.Margin" Value="0,24,0,0" />
+
+                        <!-- Shrink text size for narrow fit -->
+                        <Setter Target="DashboardTitleText.FontSize" Value="24" />
+                        <Setter Target="DashboardSubtitleText.FontSize" Value="13" />
+                        <Setter Target="DashboardSubtitleText.TextWrapping" Value="Wrap" />
+
+                        <Setter Target="DashboardContent.Padding" Value="16" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
-            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
-            <!-- Row 1: The Main Content Overlays -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <!-- GLOBAL OFFLINE BANNER -->
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
-                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
 
         <!-- Container for all Overlays (Dashboard, Setup, Login) -->
         <Grid Grid.Row="1">
+
             <!-- MAIN DASHBOARD CONTENT -->
             <Grid x:Name="DashboardContent" Padding="24,32,24,24" Background="{StaticResource AppBackgroundBrush}" Visibility="Collapsed">
                 <Grid.RowDefinitions>
@@ -40,42 +83,50 @@
                 </Grid.RowDefinitions>
 
                 <!-- Dynamic Header Layer -->
-                <Grid Grid.Row="0" Margin="0,0,0,24">
+                <Grid x:Name="DashboardHeaderGrid" Grid.Row="0" Margin="0,0,0,24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="DashboardHeaderBottomRow" Height="0"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="280"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition x:Name="DashboardHeaderLeftCol" Width="280"/>
+                        <ColumnDefinition x:Name="DashboardHeaderMidCol" Width="*"/>
+                        <ColumnDefinition x:Name="DashboardHeaderRightCol" Width="280"/>
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" VerticalAlignment="Top" HorizontalAlignment="Left" Spacing="4">
+                    <StackPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Top" HorizontalAlignment="Left" Spacing="4">
                         <TextBlock Text="LOGGED IN AS" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" CharacterSpacing="100"/>
                         <TextBlock x:Name="ActiveRoleText" Text="Administrator" FontSize="16" FontWeight="SemiBold" Foreground="#60A5FA"/>
                         <Button Content="Sign Out" Click="SignOut_Click" Margin="0,8,0,0" Padding="12,6" Background="Transparent" BorderBrush="#30FFFFFF" FontSize="12"/>
                     </StackPanel>
 
-                    <!-- 1. Central Title and Logo -->
-                    <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="8">
+                    <!-- Central Title and Logo -->
+                    <StackPanel x:Name="DashboardTitleStack" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Center" Spacing="8">
                         <Border Width="64" Height="64" CornerRadius="16" Background="#1AFFFFFF" HorizontalAlignment="Center">
                             <Viewbox Margin="16">
                                 <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
                             </Viewbox>
                         </Border>
 
-                        <TextBlock Text="Risk-Based Verification System"
+                        <TextBlock x:Name="DashboardTitleText" 
+                                   Text="Risk-Based Verification System"
                                    Style="{StaticResource PageTitleStyle}"
                                    FontSize="36"
                                    HorizontalAlignment="Center"
-                                   Margin="0"/>
+                                   Margin="0"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"/>
 
-                        <TextBlock Text="Two-Factor Student Verification and Event Attendance Management"
+                        <TextBlock x:Name="DashboardSubtitleText" 
+                                   Text="Two-Factor Student Verification and Event Attendance Management"
                                    Style="{StaticResource BodyTextStyle}"
                                    FontSize="16"
                                    HorizontalAlignment="Center"
                                    TextAlignment="Center"/>
                     </StackPanel>
 
-                    <!-- 2. Settings Trigger Button -->
-                    <Button Grid.Column="2" x:Name="DashboardSettingsButton" Click="DashboardSettingsButton_Click" 
+                    <!-- Settings Trigger Button -->
+                    <Button x:Name="DashboardSettingsButton" Grid.Row="0" Grid.Column="2" Click="DashboardSettingsButton_Click" 
                             Width="48" Height="48" CornerRadius="12" Background="#1AFFFFFF" BorderThickness="0" 
                             VerticalAlignment="Top" HorizontalAlignment="Right" ToolTipService.ToolTip="Application Settings">
                         <FontIcon Glyph="&#xE713;" FontSize="20" Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -83,7 +134,7 @@
                 </Grid>
 
                 <!-- Scrollable Main Container -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,12">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="0,0,0,12">
                     <!-- Main Cards Container: 3x2 Grid Layout -->
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Center" ColumnSpacing="24" RowSpacing="24" Margin="0,12">
                         <Grid.ColumnDefinitions>
@@ -293,7 +344,7 @@
                     <Viewbox MaxHeight="80" Margin="0,0,0,8">
                         <FontIcon Glyph="&#xE713;" Foreground="{StaticResource PrimaryAccentBrush}"/>
                     </Viewbox>
-                    <TextBlock Text="System Initialization" FontSize="36" FontWeight="Black" Foreground="White" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="SetupTitle" Text="System Initialization" FontSize="36" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center"/>
                     <TextBlock x:Name="SetupInstructionText" Text="Please tap an NFC card to register as the Master Administrator." FontSize="16" Foreground="#A0A0A0" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,16"/>
 
                     <StackPanel x:Name="SetupFormPanel" Spacing="16" Visibility="Collapsed">
@@ -315,8 +366,8 @@
                         <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
                     </Viewbox>
 
-                    <TextBlock Text="Risk-Based NFC Verification System" FontSize="48" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" CharacterSpacing="150"/>
-                    <TextBlock x:Name="LoginStatusText" Text="Please tap your Staff or Admin NFC ID to log in." FontSize="18" Foreground="#A0A0A0" HorizontalAlignment="Center" Margin="0,0,0,32"/>
+                    <TextBlock x:Name="MainLoginTitle" Text="Risk-Based NFC Verification System" FontSize="48" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" CharacterSpacing="150" TextAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="LoginStatusText" Text="Please tap your Staff or Admin NFC ID to log in." FontSize="18" Foreground="#A0A0A0" HorizontalAlignment="Center" Margin="0,0,0,32" TextAlignment="Center" TextWrapping="Wrap"/>
                     <Button Click="RefreshComPort_Click" 
                             Background="Transparent" 
                             BorderBrush="Transparent"
