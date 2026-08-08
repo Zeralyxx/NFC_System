@@ -12,16 +12,53 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
     <Grid Background="{StaticResource AppBackgroundBrush}">
+        <!-- THE FIX: TIER 2 RESPONSIVENESS (VISUAL STATE MANAGER) -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1100" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="ContentRoot.Padding" Value="16,24" />
+
+                        <!-- Reorganize Header to Stack Vertically -->
+                        <Setter Target="HeaderCol1.Width" Value="*" />
+                        <Setter Target="HeaderCol2.Width" Value="0" />
+                        <Setter Target="HeaderRow2.Height" Value="Auto" />
+
+                        <Setter Target="HeaderTitleStack.(Grid.Row)" Value="1" />
+                        <Setter Target="HeaderTitleStack.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderTitleStack.Margin" Value="0,16,0,0" />
+
+                        <!-- Reorganize Main Content to Stack Vertically -->
+                        <Setter Target="MainCol1.Width" Value="*" />
+                        <Setter Target="MainCol2.Width" Value="0" />
+                        <Setter Target="MainRow2.Height" Value="Auto" />
+                        <Setter Target="MainContentGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="MainContentGrid.RowSpacing" Value="24" />
+
+                        <!-- Push the Right Panel under the Left Panel -->
+                        <Setter Target="RightPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="RightPanel.(Grid.Column)" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
-            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
-            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <!-- GLOBAL OFFLINE BANNER -->
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
@@ -29,51 +66,58 @@
             </StackPanel>
         </Border>
 
-        <!-- The original content wrapper with its 48px padding -->
-        <Grid Grid.Row="1" Padding="48">
+        <!-- The main content wrapper -->
+        <Grid x:Name="ContentRoot" Grid.Row="1" Padding="48">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
             <!-- Header -->
-            <Grid Margin="0,0,0,32">
+            <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="HeaderRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition x:Name="HeaderCol1" Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol2" Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                <Button Grid.Row="0" Grid.Column="0" Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
-                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                <StackPanel x:Name="HeaderTitleStack" Grid.Row="0" Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                     <TextBlock Text="Student Enrollment" Style="{StaticResource PageTitleStyle}" Margin="0"/>
                 </StackPanel>
             </Grid>
 
             <!-- Main Content -->
-            <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnSpacing="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="MainRow1" Height="*"/>
+                    <RowDefinition x:Name="MainRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="5.5*"/>
-                    <ColumnDefinition Width="4.5*"/>
+                    <ColumnDefinition x:Name="MainCol1" Width="5.5*"/>
+                    <ColumnDefinition x:Name="MainCol2" Width="4.5*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Left Column: Form -->
-                <Border Grid.Column="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border Grid.Row="0" Grid.Column="0" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                         <StackPanel Spacing="20">
                             <TextBlock Text="Identity Information" Style="{StaticResource CardTitleStyle}"/>
 
-                            <!-- THE FIX: Int-only formatting applied via TextChanging -->
                             <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" TextChanging="NumberOnly_TextChanging"/>
                             <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
                             <TextBox x:Name="EmailTextBox" Header="Institutional Email" PlaceholderText="e.g. michael.sintay@tcu.edu.ph" />
                             <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>
+
                             <Grid ColumnSpacing="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <!-- THE FIX: Int-only formatting applied via TextChanging -->
                                 <TextBox Grid.Column="0" x:Name="YearLevelTextBox" Header="Year Level" PlaceholderText="e.g. 3" TextChanging="NumberOnly_TextChanging"/>
                                 <TextBox Grid.Column="1" x:Name="SectionTextBox" Header="Section" PlaceholderText="e.g. 3A"/>
                             </Grid>
@@ -99,7 +143,6 @@
                                     <TextBox x:Name="NfcUidTextBox" Header="NFC UID" PlaceholderText="Tap NFC card or type UID for testing"/>
                                     <TextBox x:Name="QrCredentialTextBox" Header="QR Credential Payload" PlaceholderText="Auto-generated from Student ID" IsReadOnly="True"/>
 
-                                    <!-- THE FIX: Phase 2 - Temporary Credential Flag -->
                                     <CheckBox x:Name="IsTemporaryCheckBox" Content="Issue as Temporary Credential (NFC Sticker / Paper QR)" Foreground="#60A5FA" FontWeight="SemiBold" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Border>
@@ -114,7 +157,6 @@
                                 <Button Grid.Column="0" x:Name="ScanUidButton" Content="Scan UID" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
                                 <Button Grid.Column="1" x:Name="ClearButton" Content="Clear" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch"/>
 
-                                <!-- Primary Call to Action -->
                                 <Button Grid.Column="2" x:Name="SaveButton" Content="Save Student" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                             </Grid>
                         </StackPanel>
@@ -122,7 +164,7 @@
                 </Border>
 
                 <!-- Right Column: Preview & Logs -->
-                <Grid Grid.Column="1" RowSpacing="24">
+                <Grid x:Name="RightPanel" Grid.Row="0" Grid.Column="1" RowSpacing="24">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="6*"/>
                         <RowDefinition Height="4*"/>
@@ -151,7 +193,6 @@
                                 <Border Grid.Column="0" CornerRadius="12" Padding="20" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                         <StackPanel Spacing="16">
-                                            <!-- THE FIX: PersonPicture profile preview -->
                                             <PersonPicture x:Name="StudentPhotoPreview" ProfilePicture="{x:Null}" Height="120" Width="120" HorizontalAlignment="Center" Margin="0,0,0,8"/>
                                             <TextBlock x:Name="PreviewTextBlock" Text="Student information will appear here once entered." Style="{StaticResource BodyTextStyle}" FontSize="16" LineHeight="26" TextWrapping="Wrap"/>
                                         </StackPanel>
@@ -164,10 +205,10 @@
                                         <!-- Pending State -->
                                         <StackPanel x:Name="QrPlaceholderPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
                                             <FontIcon Glyph="&#xED14;" FontSize="72" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                            <TextBlock Text="Waiting for Scan..." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Waiting for Scan..." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
                                         </StackPanel>
 
-                                        <!-- Generated QR Image (Hidden until ready) -->
+                                        <!-- Generated QR Image -->
                                         <Image x:Name="QrCodeImage" Stretch="Uniform" Visibility="Collapsed"/>
                                     </Grid>
                                 </Border>
@@ -189,5 +230,37 @@
                 </Grid>
             </Grid>
         </Grid>
+
+        <!-- ========================================================= -->
+        <!-- EXIT SYNC OVERLAY MASK                                    -->
+        <!-- ========================================================= -->
+        <Grid x:Name="SyncOverlay" Background="#D9000000" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24">
+                <ProgressRing IsActive="True" Width="64" Height="64"/>
+                <TextBlock Text="Pushing data to cloud. Please do not force close..." FontSize="18" FontWeight="SemiBold" Foreground="White"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ========================================================= -->
+        <!-- ADMINISTRATOR AUTHORIZATION INTERCEPT POPUP               -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="AdminAuthDialog"
+                       Title="Administrator Authorization Required"
+                       CloseButtonText="Cancel"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="350">
+                <TextBlock x:Name="AdminAuthDescriptionText" Text="This action requires Administrator privileges. Please tap your authorized NFC card to proceed." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                <PasswordBox x:Name="AdminPinBox" Header="Enter 4-Digit Staff PIN" MaxLength="4" PlaceholderText="****" Visibility="Collapsed"/>
+
+                <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ProgressRing IsActive="True" Width="24" Height="24"/>
+                        <TextBlock Text="Awaiting Admin NFC tap..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+            </StackPanel>
+        </ContentDialog>
     </Grid>
 </Window>

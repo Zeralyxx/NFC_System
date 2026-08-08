@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using WinRT.Interop;
 using ZXing;
 using ZXing.Common;
+using System.IO;
 
 namespace NFC_System
 {
@@ -21,16 +22,27 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private bool _duplicateWarningAcknowledged = false;
 
-        // THE FIX: Hold the processed byte array in memory until the admin hits Save
         private byte[]? _currentPhotoData = null;
+
+        // THE FIX: State variables for Exit Interceptor
+        private string _currentPort = "COM3";
+        private bool _isForceClosing = false;
+        private bool _isAwaitingAdminAuth = false;
+        private string _pendingAdminAction = "";
+        private string _pendingAdminSeverity = "";
 
         public RegistrationWindow()
         {
             this.InitializeComponent();
-            // Subscribe to the live monitor
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
-            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
+
+            IntPtr hWnd = WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.Closing += AppWindow_Closing;
+
             this.Closed += Window_Closed;
 
             ScanUidButton.Click += ScanUidButton_Click;
@@ -38,10 +50,130 @@ namespace NFC_System
             SaveButton.Click += SaveButton_Click;
             FullNameTextBox.TextChanged += (s, e) => _duplicateWarningAcknowledged = false;
 
-            // Kick off the async loader
             _ = InitializeAsync();
         }
 
+        // ====================================================================
+        // RBAC SEVERITY-AWARE EXIT INTERCEPTOR
+        // ====================================================================
+        private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (_isForceClosing) return;
+            args.Cancel = true;
+
+            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                ContentDialog masterDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You may have unsynced offline data. Would you like to push it to the cloud before exiting?",
+                    PrimaryButtonText = "Push to Cloud & Exit",
+                    SecondaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await masterDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
+                else if (result == ContentDialogResult.Secondary) ForceExit();
+            }
+            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
+            else if (AppSession.IsAdmin)
+            {
+                ContentDialog adminDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You have unsynced offline data. Pushing this to the cloud requires High-Severity authorization (PIN + NFC Tap).",
+                    PrimaryButtonText = "Authorize Sync & Exit",
+                    SecondaryButtonText = "Exit Without Syncing",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await adminDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    _pendingAdminAction = "EXIT_SYNC";
+                    _pendingAdminSeverity = "HIGH";
+
+                    AdminPinBox.Visibility = Visibility.Visible;
+                    AdminPinBox.Password = "";
+                    AuthStatusText.Visibility = Visibility.Collapsed;
+                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
+
+                    _isAwaitingAdminAuth = true;
+                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                    var authResult = await AdminAuthDialog.ShowAsync();
+
+                    if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                    {
+                        _isAwaitingAdminAuth = false;
+                        _pendingAdminAction = "";
+                    }
+                }
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    ForceExit();
+                }
+            }
+            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
+            else
+            {
+                ContentDialog restrictedDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "Warning: There may be unsynced offline data. You do not have Administrator privileges to push this data to the cloud. If you exit now, the data will remain safely stored locally.",
+                    PrimaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+
+                var result = await restrictedDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) ForceExit();
+            }
+        }
+
+        private async Task PerformCloudPushAndExit()
+        {
+            SyncOverlay.Visibility = Visibility.Visible;
+
+            try
+            {
+                if (await _database.TestConnectionAsync())
+                {
+                    await _database.SyncOfflineLogsToServerAsync();
+                    await _database.PushStudentsToCloudAsync();
+                    await _database.PushStaffToCloudAsync();
+                    await _database.PushCoursesToCloudAsync();
+                    await _database.PushEventsToCloudAsync();
+                    await _database.PushEventApprovedStudentsToCloudAsync();
+                    await _database.PushLogsToCloudAsync();
+                    await _database.PushEventAttendanceToCloudAsync();
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", "Authorized Cloud Push on Application Exit.");
+                }
+            }
+            catch { }
+
+            ForceExit();
+        }
+
+        private void ForceExit()
+        {
+            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
+            {
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
+            }
+
+            _isForceClosing = true;
+            Application.Current.Exit();
+        }
+
+        // ====================================================================
+        // SERIAL PORT & AUTHORIZATION HANDLING
+        // ====================================================================
         private async Task InitializeAsync()
         {
             try
@@ -50,11 +182,13 @@ namespace NFC_System
 
                 CourseComboBox.ItemsSource = await _database.GetDistinctCoursesAsync();
 
-                // Fetch the port dynamically from the database, fallback to COM3
-                string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
+                }
 
-                TryConnectSerial(nfcPort);
-                UidLogListView.Items.Insert(0, $"[INFO] Ready for new enrollment. Port: {nfcPort}");
+                TryConnectSerial(_currentPort);
+                UidLogListView.Items.Insert(0, $"[INFO] Ready for new enrollment. Port: {_currentPort}");
             }
             catch (Exception ex)
             {
@@ -62,7 +196,227 @@ namespace NFC_System
             }
         }
 
-        // --- NEW: Upload Photo Logic ---
+        private void TryConnectSerial(string portName)
+        {
+            if (_serialPort != null && _serialPort.IsOpen) return;
+
+            try
+            {
+                _serialPort = new SerialPort(portName, 115200);
+                _serialPort.NewLine = "\n";
+                _serialPort.DataReceived += SerialPort_DataReceived;
+                _serialPort.Open();
+            }
+            catch (Exception ex)
+            {
+                UidLogListView.Items.Add($"[ERROR] Serial terminal connection failed: {ex.Message}");
+            }
+        }
+
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            try
+            {
+                if (_serialPort == null || !_serialPort.IsOpen) return;
+                string line = _serialPort.ReadLine().Trim();
+
+                if (line.StartsWith("UID="))
+                {
+                    string uid = line.Substring(4).Trim();
+
+                    // 1. Check if the app is waiting for an Admin Authentication Tap (Exit Routine)
+                    if (_isAwaitingAdminAuth)
+                    {
+                        DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
+                        return;
+                    }
+
+                    // 2. Otherwise, check if we are actively registering a student
+                    if (_isScanning)
+                    {
+                        bool invalidUid = IsInvalidUid(uid);
+                        StudentRecord? existingStudent = null;
+
+                        // Query the database synchronously on the background thread
+                        if (!invalidUid && DatabaseMonitor.IsOnline)
+                        {
+                            var task = _database.GetStudentByUidAsync(uid);
+                            task.Wait();
+                            existingStudent = task.Result;
+                        }
+
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            if (invalidUid)
+                            {
+                                NfcUidTextBox.Text = "";
+                                UidLogListView.Items.Insert(0, "[WARNING] Invalid hardware read. Please scan again.");
+                                PreviewTextBlock.Text = "NFC UID: Corrupted transmission layout - re-tap card";
+                            }
+                            else if (existingStudent != null)
+                            {
+                                NfcUidTextBox.Text = "";
+                                UidLogListView.Items.Insert(0, $"[ERROR] Card is already registered to {existingStudent.FullName} ({existingStudent.StudentId}). Please use the Student Management window to edit this profile.");
+                                PreviewTextBlock.Text = "NFC UID: Card already in use by another student.";
+                            }
+                            else
+                            {
+                                NfcUidTextBox.Text = uid;
+                                PinPasswordBox.PlaceholderText = "****";
+                                UidLogListView.Items.Insert(0, $"[INFO] New unassigned card scanned: {uid}");
+
+                                string currentId = StudentIdTextBox.Text.Trim();
+                                string generatedQr = BuildQrCredential(currentId);
+                                QrCredentialTextBox.Text = generatedQr;
+
+                                if (!string.IsNullOrEmpty(generatedQr))
+                                {
+                                    QrCodeImage.Source = GenerateQrBitmap(generatedQr);
+                                    QrCodeImage.Visibility = Visibility.Visible;
+                                    QrPlaceholderPanel.Visibility = Visibility.Collapsed;
+                                }
+                                else
+                                {
+                                    QrCodeImage.Visibility = Visibility.Collapsed;
+                                    QrPlaceholderPanel.Visibility = Visibility.Visible;
+                                    UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
+                                }
+
+                                PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
+                            }
+                        });
+                        _isScanning = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DispatcherQueue.TryEnqueue(() => { UidLogListView.Items.Insert(0, $"[ERROR] Buffer extraction breakdown: {ex.Message}"); });
+            }
+        }
+
+        private async Task HandleAdminAuthScanAsync(string uid)
+        {
+            string? role = null;
+            string? pinHash = null;
+            string? pinSalt = null;
+
+            if (DatabaseMonitor.IsOnline)
+            {
+                try
+                {
+                    var details = await _database.GetStaffDetailsAsync(uid);
+                    role = details.Role;
+                    pinHash = details.PinHash;
+                    pinSalt = details.PinSalt;
+                }
+                catch { }
+            }
+
+            if (role == null && uid == "04:A1:B2:C3")
+            {
+                role = "Master Administrator";
+            }
+
+            bool isAuthorized = false;
+            string failReason = "";
+
+            if (_pendingAdminSeverity == "HIGH")
+            {
+                if (role == "Administrator" || role == "Master Administrator")
+                {
+                    string enteredPin = AdminPinBox.Password.Trim();
+                    if (string.IsNullOrEmpty(enteredPin)) failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                    else if (string.IsNullOrEmpty(pinHash)) failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                    else if (!PinHasher.VerifyPin(enteredPin, pinSalt!, pinHash)) failReason = "Authorization Denied: Invalid PIN.";
+                    else isAuthorized = true;
+                }
+                else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+            }
+
+            if (isAuthorized)
+            {
+                _isAwaitingAdminAuth = false;
+                AdminAuthDialog.Hide();
+                PlaySuccessPing();
+
+                if (_pendingAdminAction == "EXIT_SYNC")
+                {
+                    _pendingAdminAction = "";
+                    await PerformCloudPushAndExit();
+                }
+            }
+            else
+            {
+                AuthStatusText.Text = failReason;
+                AuthStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+            }
+        }
+
+        private void CloseSerialPort()
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    _serialPort.DataReceived -= SerialPort_DataReceived;
+                    _serialPort.Close();
+                    _serialPort.Dispose();
+                    _serialPort = null;
+                }
+            }
+            catch { }
+        }
+
+        private void Window_Closed(object sender, WindowEventArgs args)
+        {
+            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
+            CloseSerialPort();
+        }
+
+        private void PlaySuccessPing()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "success_ping.wav");
+                    if (File.Exists(soundPath))
+                    {
+                        using var player = new System.Media.SoundPlayer(soundPath);
+                        player.PlaySync();
+                    }
+                    else
+                    {
+                        Console.Beep(1046, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1318, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1568, 200);
+                    }
+                }
+                catch { }
+            });
+        }
+
+        private void PlayErrorAlert()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(2000, 300);
+                    System.Threading.Thread.Sleep(100);
+                    Console.Beep(2000, 300);
+                }
+                catch { }
+            });
+        }
+
+        // ====================================================================
+        // STANDARD REGISTRATION LOGIC
+        // ====================================================================
         private async void UploadPhotoButton_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -84,12 +438,8 @@ namespace NFC_System
                 {
                     using (var stream = await file.OpenReadAsync())
                     {
-                        // 1. Crunch the photo down to a tiny 250x250 JPEG byte array
                         _currentPhotoData = await ImageHelper.ProcessProfileImageAsync(stream);
-
-                        // 2. Decode it back into a BitmapImage so the UI can display it
                         StudentPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(_currentPhotoData);
-
                         UidLogListView.Items.Insert(0, $"[INFO] Profile photo attached successfully. ({_currentPhotoData.Length / 1024} KB)");
                     }
                 }
@@ -104,15 +454,10 @@ namespace NFC_System
         {
             string text = sender.Text;
 
-            // Checks if there are any characters that are NOT a digit and NOT a hyphen
             if (text.Any(c => !char.IsDigit(c) && c != '-'))
             {
                 int selectionStart = sender.SelectionStart;
-
-                // Filters the string, keeping only digits and hyphens
                 sender.Text = new string(text.Where(c => char.IsDigit(c) || c == '-').ToArray());
-
-                // Restore cursor position smoothly
                 sender.SelectionStart = Math.Max(0, selectionStart - 1);
             }
         }
@@ -137,15 +482,8 @@ namespace NFC_System
             }
         }
 
-        private void Window_Closed(object sender, WindowEventArgs args)
-        {
-            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
-            CloseSerialPort();
-        }
-
         private void UpdateOfflineBanner(bool isOnline)
         {
-            // DispatcherQueue safely pushes the update to the UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (GlobalOfflineBanner != null)
@@ -175,91 +513,6 @@ namespace NFC_System
             return false;
         }
 
-        private void TryConnectSerial(string portName)
-        {
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-                UidLogListView.Items.Add($"[INFO] Serial stream link active on {portName}");
-            }
-            catch (Exception ex)
-            {
-                UidLogListView.Items.Add($"[ERROR] Serial terminal connection failed: {ex.Message}");
-            }
-        }
-
-        private async void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-
-                if (_isScanning && line.StartsWith("UID="))
-                {
-                    string uid = line.Substring(4).Trim();
-                    bool invalidUid = IsInvalidUid(uid);
-
-                    // Query the database on the background thread BEFORE updating the UI
-                    StudentRecord? existingStudent = null;
-                    if (!invalidUid)
-                    {
-                        existingStudent = await _database.GetStudentByUidAsync(uid);
-                    }
-
-                    await DispatcherQueue.TryEnqueueAsync(() =>
-                    {
-                        if (invalidUid)
-                        {
-                            NfcUidTextBox.Text = "";
-                            UidLogListView.Items.Insert(0, "[WARNING] Invalid hardware read. Please scan again.");
-                            PreviewTextBlock.Text = "NFC UID: Corrupted transmission layout - re-tap card";
-                        }
-                        else if (existingStudent != null)
-                        {
-                            // THE FIX: Immediately reject cards that are already registered
-                            NfcUidTextBox.Text = "";
-                            UidLogListView.Items.Insert(0, $"[ERROR] Card is already registered to {existingStudent.FullName} ({existingStudent.StudentId}). Please use the Student Management window to edit this profile.");
-                            PreviewTextBlock.Text = "NFC UID: Card already in use by another student.";
-                        }
-                        else
-                        {
-                            NfcUidTextBox.Text = uid;
-                            PinPasswordBox.PlaceholderText = "****";
-                            UidLogListView.Items.Insert(0, $"[INFO] New unassigned card scanned: {uid}");
-
-                            string currentId = StudentIdTextBox.Text.Trim();
-                            string generatedQr = BuildQrCredential(currentId);
-                            QrCredentialTextBox.Text = generatedQr;
-
-                            if (!string.IsNullOrEmpty(generatedQr))
-                            {
-                                QrCodeImage.Source = GenerateQrBitmap(generatedQr);
-                                QrCodeImage.Visibility = Visibility.Visible;
-                                QrPlaceholderPanel.Visibility = Visibility.Collapsed;
-                            }
-                            else
-                            {
-                                QrCodeImage.Visibility = Visibility.Collapsed;
-                                QrPlaceholderPanel.Visibility = Visibility.Visible;
-                                UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
-                            }
-
-                            PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
-                        }
-                    });
-                    _isScanning = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                await DispatcherQueue.TryEnqueueAsync(() => { UidLogListView.Items.Insert(0, $"[ERROR] Buffer extraction breakdown: {ex.Message}"); });
-            }
-        }
-
         private void ScanUidButton_Click(object sender, RoutedEventArgs e)
         {
             _isScanning = true;
@@ -283,7 +536,6 @@ namespace NFC_System
             string status = StatusComboBox.SelectedItem is ComboBoxItem item ? item.Content?.ToString() ?? "Active" : "Active";
             string course = CourseComboBox.SelectedItem?.ToString() ?? "";
 
-            // Capture the boolean value
             bool isTemporary = IsTemporaryCheckBox.IsChecked == true;
 
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
@@ -303,8 +555,7 @@ namespace NFC_System
                 var possibleDupes = await _database.FindPotentialDuplicatesByNameAsync(fullName);
                 if (possibleDupes.Count > 0)
                 {
-                    UidLogListView.Items.Insert(0,
-                        $"[WARNING] {possibleDupes.Count} existing student(s) share this name — possible duplicate:");
+                    UidLogListView.Items.Insert(0, $"[WARNING] {possibleDupes.Count} existing student(s) share this name — possible duplicate:");
                     foreach (var dupe in possibleDupes)
                         UidLogListView.Items.Insert(1, $"    → {dupe.StudentId} | {dupe.FullName} | {dupe.Course} {dupe.SectionName}");
 
@@ -335,7 +586,7 @@ namespace NFC_System
                     NfcUid = nfcUid,
                     QrCredential = qrCredential,
                     PhotoData = _currentPhotoData,
-                    IsTemporary = isTemporary // <-- THE FIX: Save flag to DB
+                    IsTemporary = isTemporary
                 };
 
                 await _database.SaveStudentAsync(student, pin);
@@ -343,15 +594,19 @@ namespace NFC_System
                 string tempTag = isTemporary ? "[TEMP] " : "";
                 UidLogListView.Items.Insert(0, $"[SUCCESS] Access profile committed: {tempTag}{fullName}");
                 PreviewTextBlock.Text = $"Student ID: {studentId}\nFull Name: {fullName}\nEmail: {email}\nCourse: {course}\nStatus: {status}\nNFC UID: {nfcUid}\nTemporary: {isTemporary}\nQR Credential: {qrCredential}\nPIN Status: Encrypted & Salted (PBKDF2)";
+
+                PlaySuccessPing();
                 ClearForm();
             }
             catch (InvalidOperationException ex)
             {
                 UidLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
+                PlayErrorAlert();
             }
             catch (Exception ex)
             {
                 UidLogListView.Items.Insert(0, $"[ERROR] Transaction breakdown: {ex.Message}");
+                PlayErrorAlert();
             }
         }
 
@@ -371,7 +626,7 @@ namespace NFC_System
             QrCodeImage.Visibility = Visibility.Collapsed;
             QrPlaceholderPanel.Visibility = Visibility.Visible;
             StatusComboBox.SelectedIndex = 0;
-            IsTemporaryCheckBox.IsChecked = false; // <-- THE FIX: Reset flag
+            IsTemporaryCheckBox.IsChecked = false;
             _duplicateWarningAcknowledged = false;
 
             _currentPhotoData = null;
@@ -387,7 +642,7 @@ namespace NFC_System
                 {
                     Height = 400,
                     Width = 400,
-                    Margin = 1 // Keeps the white border minimal
+                    Margin = 1
                 }
             };
 
@@ -406,21 +661,6 @@ namespace NFC_System
         {
             if (string.IsNullOrWhiteSpace(studentId)) return "";
             return studentId;
-        }
-
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                }
-                _serialPort?.Dispose();
-                _serialPort = null;
-            }
-            catch { }
         }
     }
 }

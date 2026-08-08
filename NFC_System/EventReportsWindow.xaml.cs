@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
@@ -53,21 +55,306 @@ namespace NFC_System
         private List<string> _completedStudentIds = new();
         private List<string> _incompleteStudentIds = new();
         private List<EventDropdownItem> _allEventDropdownItems = new();
-
         private EventDropdownItem? _currentSelectedEvent = null;
-
         private List<VerificationLogRecord> _univMasterLogs = new();
+
+        // THE FIX: State variables for Exit Interceptor and Serial Port
+        private SerialPort? _serialPort;
+        private string _currentPort = "COM3";
+        private bool _isForceClosing = false;
+        private bool _isAwaitingAdminAuth = false;
+        private string _pendingAdminAction = "";
+        private string _pendingAdminSeverity = "";
 
         public EventReportsWindow()
         {
             this.InitializeComponent();
-            // Subscribe to the live monitor
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
-            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
+
+            IntPtr hWnd = WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.Closing += AppWindow_Closing;
+            this.Closed += Window_Closed;
+
             _ = InitializeAsync();
         }
 
+        // ====================================================================
+        // RBAC SEVERITY-AWARE EXIT INTERCEPTOR
+        // ====================================================================
+        private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (_isForceClosing) return;
+            args.Cancel = true;
+
+            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                ContentDialog masterDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You may have unsynced offline data. Would you like to push it to the cloud before exiting?",
+                    PrimaryButtonText = "Push to Cloud & Exit",
+                    SecondaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await masterDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
+                else if (result == ContentDialogResult.Secondary) ForceExit();
+            }
+            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
+            else if (AppSession.IsAdmin)
+            {
+                ContentDialog adminDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You have unsynced offline data. Pushing this to the cloud requires High-Severity authorization (PIN + NFC Tap).",
+                    PrimaryButtonText = "Authorize Sync & Exit",
+                    SecondaryButtonText = "Exit Without Syncing",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await adminDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    _pendingAdminAction = "EXIT_SYNC";
+                    _pendingAdminSeverity = "HIGH";
+
+                    AdminPinBox.Visibility = Visibility.Visible;
+                    AdminPinBox.Password = "";
+                    AuthStatusText.Visibility = Visibility.Collapsed;
+                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
+
+                    _isAwaitingAdminAuth = true;
+                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                    var authResult = await AdminAuthDialog.ShowAsync();
+
+                    if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                    {
+                        _isAwaitingAdminAuth = false;
+                        _pendingAdminAction = "";
+                    }
+                }
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    ForceExit();
+                }
+            }
+            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
+            else
+            {
+                ContentDialog restrictedDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "Warning: There may be unsynced offline data. You do not have Administrator privileges to push this data to the cloud. If you exit now, the data will remain safely stored locally.",
+                    PrimaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+
+                var result = await restrictedDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) ForceExit();
+            }
+        }
+
+        private async Task PerformCloudPushAndExit()
+        {
+            try
+            {
+                if (await _database.TestConnectionAsync())
+                {
+                    await _database.SyncOfflineLogsToServerAsync();
+                    await _database.PushStudentsToCloudAsync();
+                    await _database.PushStaffToCloudAsync();
+                    await _database.PushCoursesToCloudAsync();
+                    await _database.PushEventsToCloudAsync();
+                    await _database.PushEventApprovedStudentsToCloudAsync();
+                    await _database.PushLogsToCloudAsync();
+                    await _database.PushEventAttendanceToCloudAsync();
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", "Authorized Cloud Push on Application Exit.");
+                }
+            }
+            catch { }
+
+            ForceExit();
+        }
+
+        private void ForceExit()
+        {
+            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
+            {
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
+            }
+
+            _isForceClosing = true;
+            Application.Current.Exit();
+        }
+
+        // ====================================================================
+        // SERIAL PORT & AUTHORIZATION HANDLING
+        // ====================================================================
+        private void TryConnectSerial(string portName)
+        {
+            if (_serialPort != null && _serialPort.IsOpen) return;
+
+            try
+            {
+                _serialPort = new SerialPort(portName, 115200);
+                _serialPort.NewLine = "\n";
+                _serialPort.DataReceived += SerialPort_DataReceived;
+                _serialPort.Open();
+            }
+            catch { }
+        }
+
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            try
+            {
+                if (_serialPort == null || !_serialPort.IsOpen) return;
+                string line = _serialPort.ReadLine().Trim();
+                if (!line.StartsWith("UID=")) return;
+
+                string uid = line.Substring(4).Trim();
+
+                if (_isAwaitingAdminAuth)
+                {
+                    DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
+                }
+            }
+            catch { }
+        }
+
+        private async Task HandleAdminAuthScanAsync(string uid)
+        {
+            string? role = null;
+            string? pinHash = null;
+            string? pinSalt = null;
+
+            if (DatabaseMonitor.IsOnline)
+            {
+                try
+                {
+                    var details = await _database.GetStaffDetailsAsync(uid);
+                    role = details.Role;
+                    pinHash = details.PinHash;
+                    pinSalt = details.PinSalt;
+                }
+                catch { }
+            }
+
+            if (role == null && uid == "04:A1:B2:C3")
+            {
+                role = "Master Administrator";
+            }
+
+            bool isAuthorized = false;
+            string failReason = "";
+
+            if (_pendingAdminSeverity == "HIGH")
+            {
+                if (role == "Administrator" || role == "Master Administrator")
+                {
+                    string enteredPin = AdminPinBox.Password.Trim();
+                    if (string.IsNullOrEmpty(enteredPin)) failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                    else if (string.IsNullOrEmpty(pinHash)) failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                    else if (!PinHasher.VerifyPin(enteredPin, pinSalt!, pinHash)) failReason = "Authorization Denied: Invalid PIN.";
+                    else isAuthorized = true;
+                }
+                else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+            }
+
+            if (isAuthorized)
+            {
+                _isAwaitingAdminAuth = false;
+                AdminAuthDialog.Hide();
+                PlaySuccessPing();
+
+                if (_pendingAdminAction == "EXIT_SYNC")
+                {
+                    _pendingAdminAction = "";
+                    await PerformCloudPushAndExit();
+                }
+            }
+            else
+            {
+                AuthStatusText.Text = failReason;
+                AuthStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+            }
+        }
+
+        private void CloseSerialPort()
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    _serialPort.DataReceived -= SerialPort_DataReceived;
+                    _serialPort.Close();
+                    _serialPort.Dispose();
+                    _serialPort = null;
+                }
+            }
+            catch { }
+        }
+
+        private void Window_Closed(object sender, WindowEventArgs args)
+        {
+            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
+            CloseSerialPort();
+        }
+
+        private void PlaySuccessPing()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "success_ping.wav");
+                    if (File.Exists(soundPath))
+                    {
+                        using var player = new System.Media.SoundPlayer(soundPath);
+                        player.PlaySync();
+                    }
+                    else
+                    {
+                        Console.Beep(1046, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1318, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1568, 200);
+                    }
+                }
+                catch { }
+            });
+        }
+
+        private void PlayErrorAlert()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(2000, 300);
+                    System.Threading.Thread.Sleep(100);
+                    Console.Beep(2000, 300);
+                }
+                catch { }
+            });
+        }
+
+        // ====================================================================
+        // EVENT REPORTS LOGIC
+        // ====================================================================
         private async Task InitializeAsync()
         {
             try
@@ -75,9 +362,11 @@ namespace NFC_System
                 if (DatabaseMonitor.IsOnline)
                 {
                     await _database.EnsureSchemaAsync();
+                    try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
                 }
 
-                // 1. Load Event Data (Both Admins and Organizers need this)
+                TryConnectSerial(_currentPort);
+
                 IReadOnlyList<EventRecord> allEvents = new List<EventRecord>();
                 IReadOnlyList<EventRecord> activeEvents = new List<EventRecord>();
 
@@ -99,17 +388,13 @@ namespace NFC_System
 
                 EventSearchBox.ItemsSource = _allEventDropdownItems;
 
-                // 2. THE FIX: Apply RBAC to the University Traffic Tab
                 if (AppSession.IsEventOrganizer)
                 {
-                    // Hide University elements and auto-switch to Events
                     UniversityModeBtn.Visibility = Visibility.Collapsed;
-                    
                     SwitchToEventMode();
                 }
                 else
                 {
-                    // Only load the heavy University traffic data if the user is a full Admin
                     if (DatabaseMonitor.IsOnline)
                     {
                         var metrics = await _database.GetUniversityMetricsAsync();
@@ -152,8 +437,6 @@ namespace NFC_System
             }
             catch { }
         }
-
-        // --- TAB TOGGLE LOGIC ---
 
         private void UniversityModeBtn_Click(object sender, RoutedEventArgs e) => SwitchToUniversityMode();
         private void EventModeBtn_Click(object sender, RoutedEventArgs e) => SwitchToEventMode();
@@ -233,8 +516,6 @@ namespace NFC_System
             }
         }
 
-        // --- SMART SEARCH DROPDOWN LOGIC ---
-
         private void EventSearchBox_GotFocus(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(EventSearchBox.Text))
@@ -246,10 +527,7 @@ namespace NFC_System
 
         private void Background_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
         {
-            if (EventSearchBox.IsSuggestionListOpen)
-            {
-                EventSearchBox.IsSuggestionListOpen = false;
-            }
+            if (EventSearchBox.IsSuggestionListOpen) EventSearchBox.IsSuggestionListOpen = false;
         }
 
         private void EventSearchBox_LostFocus(object sender, RoutedEventArgs e)
@@ -259,10 +537,7 @@ namespace NFC_System
 
         private void EventLeftScrollViewer_ViewChanging(object sender, ScrollViewerViewChangingEventArgs e)
         {
-            if (EventSearchBox.IsSuggestionListOpen)
-            {
-                EventSearchBox.IsSuggestionListOpen = false;
-            }
+            if (EventSearchBox.IsSuggestionListOpen) EventSearchBox.IsSuggestionListOpen = false;
         }
 
         private void EventSearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -293,8 +568,6 @@ namespace NFC_System
                 await ProcessEventSelectionAsync(selectedWrapper);
             }
         }
-
-        // --- EVENT DATA LOADING LOGIC ---
 
         private async Task ProcessEventSelectionAsync(EventDropdownItem selectedWrapper)
         {
@@ -409,13 +682,10 @@ namespace NFC_System
             catch { }
         }
 
-        // --- EVENT LEDGER FILTERING ---
-
         private void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (FilterCourseComboBox == null || FilterSectionComboBox == null) return;
 
-            // DYNAMIC SECTION UPDATING
             if (sender == FilterCourseComboBox && _eventMasterLogs != null)
             {
                 string course = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
@@ -511,9 +781,9 @@ namespace NFC_System
                 string statusText = isCompleted ? (isEventLive ? "Ongoing" : "Completed") : "Incomplete";
                 SolidColorBrush statusColor = isCompleted
                     ? (isEventLive
-                        ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250)) // Blue for Ongoing
-                        : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153))) // Green for Completed
-                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113)); // Red for Incomplete
+                        ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250))
+                        : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)))
+                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
 
                 return new EventAttendanceViewModel
                 {
@@ -522,7 +792,7 @@ namespace NFC_System
                     StudentId = l.StudentId ?? "",
                     Course = l.Course ?? "",
                     Section = l.Section ?? "",
-                    Action = l.Status ?? "", // Maps the "PRESENT/DEPARTED" state
+                    Action = l.Status ?? "",
                     CompletionStatus = statusText,
                     CompletionColor = statusColor
                 };
@@ -541,8 +811,6 @@ namespace NFC_System
             if (EventPopupListView != null)
                 EventPopupListView.ItemsSource = finalData;
         }
-
-        // --- MASTER EXPLORER POPUPS ---
 
         private async void OpenUnivExplorer_Click(object sender, RoutedEventArgs e)
         {
@@ -577,8 +845,6 @@ namespace NFC_System
                 UnivPopupExpandToggle.Content = "⛶ Expand View";
             }
         }
-
-        // --- DEDICATED UNIVERSITY POPUP FILTERING LOGIC ---
 
         private void UnivPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyUnivPopupFilters();
         private void UnivPopupFilter_Changed(object sender, SelectionChangedEventArgs e)
@@ -667,8 +933,6 @@ namespace NFC_System
 
             UnivPopupListView.ItemsSource = filtered.ToList();
         }
-
-        // --- DEDICATED EVENT POPUP EXPLORER LOGIC ---
 
         private async void OpenEventExplorer_Click(object sender, RoutedEventArgs e)
         {
@@ -828,8 +1092,6 @@ namespace NFC_System
 
             EventPopupListView.ItemsSource = viewModels;
         }
-
-        // --- EXPORT LOGIC ---
 
         private async void ExportButton_Click(object sender, RoutedEventArgs e)
         {
@@ -1010,10 +1272,9 @@ namespace NFC_System
             }
         }
 
-        // --- WINDOW MANAGEMENT ---
-
         private void DashboardButton_Click(object sender, RoutedEventArgs e)
         {
+            CloseSerialPort();
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
@@ -1021,6 +1282,7 @@ namespace NFC_System
 
         private void ManageEventsButton_Click(object sender, RoutedEventArgs e)
         {
+            CloseSerialPort();
             var adminWin = new EventManagementWindow();
             adminWin.Activate();
             this.Close();

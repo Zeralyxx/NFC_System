@@ -19,10 +19,7 @@ namespace NFC_System
     {
         public static bool IsLoggedIn { get; set; } = false;
         public static bool IsAdmin { get; set; } = false;
-
-        // PHASE 2 FIX: Added Event Organizer session state
         public static bool IsEventOrganizer { get; set; } = false;
-
         public static string CurrentStaffName { get; set; } = "";
         public static string CurrentStaffRoleLabel { get; set; } = "";
     }
@@ -41,9 +38,11 @@ namespace NFC_System
         // APP LIFECYCLE
         private bool _isForceClosing = false;
 
-        // ====================================================================
-        // CLOUD FIRESTORE CONFIGURATION
-        // ====================================================================
+        // SEVERITY ENGINE STATE VARIABLES
+        private bool _isAwaitingAdminAuth = false;
+        private string _pendingAdminAction = "";
+        private string _pendingAdminSeverity = "";
+
         private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
         private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin";
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -51,12 +50,10 @@ namespace NFC_System
         public MainWindow()
         {
             this.InitializeComponent();
-            // Subscribe to the live monitor
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
-            UpdateOfflineBanner(DatabaseMonitor.IsOnline); // Set initial state on load
+            UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
 
-            // Hook into native window closing event to intercept exit
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
@@ -64,7 +61,6 @@ namespace NFC_System
 
             this.Closed += MainWindow_Closed;
 
-            // Load the dynamic IP configuration BEFORE anything else runs
             DatabaseService.LoadConfig();
 
             if (this.Content is FrameworkElement rootElement)
@@ -73,60 +69,131 @@ namespace NFC_System
             }
         }
 
+        // ====================================================================
+        // THE FIX: RBAC SEVERITY-AWARE EXIT INTERCEPTOR
+        // ====================================================================
         private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
         {
             if (_isForceClosing) return;
+            args.Cancel = true;
 
-            args.Cancel = true; // Always intercept the initial close command
-
-            ContentDialog exitDialog = new ContentDialog
+            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
-                Title = "Exit Application",
-                Content = "Wait! You may have unsynced data. Would you like to push it to the cloud before exiting?",
-                PrimaryButtonText = "Push to Cloud & Exit",
-                SecondaryButtonText = "Exit Anyway",
-                CloseButtonText = "Cancel",
-                XamlRoot = this.Content.XamlRoot
-            };
-
-            var result = await exitDialog.ShowAsync();
-
-            if (result == ContentDialogResult.Primary)
-            {
-                // Mask the UI to show syncing status
-                DashboardContent.Visibility = Visibility.Collapsed;
-                SetupOverlay.Visibility = Visibility.Collapsed;
-                LoginOverlay.Visibility = Visibility.Visible;
-
-                LoginStatusText.Text = "Pushing data to cloud. Please do not force close...";
-                LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
-                LoginLoadingRing.IsActive = true;
-                LoginLoadingRing.Visibility = Visibility.Visible;
-
-                try
+                ContentDialog masterDialog = new ContentDialog
                 {
-                    if (await _database.TestConnectionAsync())
+                    Title = "Exit Application",
+                    Content = "You may have unsynced offline data. Would you like to push it to the cloud before exiting?",
+                    PrimaryButtonText = "Push to Cloud & Exit",
+                    SecondaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await masterDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
+                else if (result == ContentDialogResult.Secondary) ForceExit();
+            }
+            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
+            else if (AppSession.IsAdmin)
+            {
+                ContentDialog adminDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You have unsynced offline data. Pushing this to the cloud requires High-Severity authorization (PIN + NFC Tap).",
+                    PrimaryButtonText = "Authorize Sync & Exit",
+                    SecondaryButtonText = "Exit Without Syncing",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await adminDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    // Trigger the Sudo Prompt for High Severity
+                    _pendingAdminAction = "EXIT_SYNC";
+                    _pendingAdminSeverity = "HIGH";
+
+                    AdminPinBox.Visibility = Visibility.Visible;
+                    AdminPinBox.Password = "";
+                    AuthStatusText.Visibility = Visibility.Collapsed;
+                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
+
+                    _isAwaitingAdminAuth = true;
+                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                    var authResult = await AdminAuthDialog.ShowAsync();
+
+                    if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
                     {
-                        await _database.SyncOfflineLogsToServerAsync();
-                        await _database.PushStudentsToCloudAsync();
-                        await _database.PushStaffToCloudAsync();
-                        await _database.PushCoursesToCloudAsync();
-                        await _database.PushEventsToCloudAsync();
-                        await _database.PushEventApprovedStudentsToCloudAsync();
-                        await _database.PushLogsToCloudAsync();
-                        await _database.PushEventAttendanceToCloudAsync();
+                        _isAwaitingAdminAuth = false;
+                        _pendingAdminAction = "";
                     }
                 }
-                catch { }
-
-                _isForceClosing = true;
-                Application.Current.Exit();
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    ForceExit();
+                }
             }
-            else if (result == ContentDialogResult.Secondary)
+            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
+            else
             {
-                _isForceClosing = true;
-                Application.Current.Exit();
+                ContentDialog restrictedDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "Warning: There may be unsynced offline data. You do not have Administrator privileges to push this data to the cloud. If you exit now, the data will remain safely stored locally.",
+                    PrimaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                // Paint the text orange to indicate a warning
+                restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+
+                var result = await restrictedDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) ForceExit();
             }
+        }
+
+        private async Task PerformCloudPushAndExit()
+        {
+            DashboardContent.Visibility = Visibility.Collapsed;
+            SetupOverlay.Visibility = Visibility.Collapsed;
+            LoginOverlay.Visibility = Visibility.Visible;
+
+            LoginStatusText.Text = "Pushing data to cloud. Please do not force close...";
+            LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+            LoginLoadingRing.IsActive = true;
+            LoginLoadingRing.Visibility = Visibility.Visible;
+
+            try
+            {
+                if (await _database.TestConnectionAsync())
+                {
+                    await _database.SyncOfflineLogsToServerAsync();
+                    await _database.PushStudentsToCloudAsync();
+                    await _database.PushStaffToCloudAsync();
+                    await _database.PushCoursesToCloudAsync();
+                    await _database.PushEventsToCloudAsync();
+                    await _database.PushEventApprovedStudentsToCloudAsync();
+                    await _database.PushLogsToCloudAsync();
+                    await _database.PushEventAttendanceToCloudAsync();
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", "Authorized Cloud Push on Application Exit.");
+                }
+            }
+            catch { }
+
+            ForceExit();
+        }
+
+        private void ForceExit()
+        {
+            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
+            {
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
+            }
+
+            _isForceClosing = true;
+            Application.Current.Exit();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -166,9 +233,19 @@ namespace NFC_System
             });
         }
 
-        /* =========================================================================
-         * SYSTEM INITIALIZATION & FIREBASE CLOUD SYNC
-         * ========================================================================= */
+        private void PlayErrorAlert()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(2000, 300);
+                    System.Threading.Thread.Sleep(100);
+                    Console.Beep(2000, 300);
+                }
+                catch { }
+            });
+        }
 
         private async Task InitializeSystemAsync()
         {
@@ -179,13 +256,11 @@ namespace NFC_System
 
             try
             {
-                // 1. Ensure local schema exists
                 if (DatabaseMonitor.IsOnline)
                 {
                     try { await _database.EnsureSchemaAsync(); } catch { }
                 }
 
-                // 2. Count local staff
                 int staffCount = 0;
                 if (DatabaseMonitor.IsOnline)
                 {
@@ -197,7 +272,6 @@ namespace NFC_System
                     }
                 }
 
-                // 3. Check Firestore for Global Master Card if local MySQL has no staff
                 if (staffCount == 0 && DatabaseMonitor.IsOnline)
                 {
                     try
@@ -216,11 +290,9 @@ namespace NFC_System
 
                                     if (!string.IsNullOrWhiteSpace(globalMasterUid))
                                     {
-                                        // Sync the global master card into local MySQL database
                                         await _database.RegisterStaffAsync(globalMasterUid, globalMasterName, "Master Administrator");
                                         await _database.AddAlertAsync(null, "ADMIN_ACTION", $"Global Master Card synced from Firestore: '{globalMasterName}'.");
-
-                                        staffCount = 1; // Mark as initialized so setup screen is skipped
+                                        staffCount = 1;
                                     }
                                 }
                             }
@@ -281,7 +353,6 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
-                // Graceful Offline Fallback instead of infinite crashing
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
                 LoginStatusText.Text = "Database connection failed.";
@@ -294,25 +365,20 @@ namespace NFC_System
 
                 if (result == ContentDialogResult.Primary)
                 {
-                    // User entered a new IP and hit Save & Retry
                     DatabaseService.SaveConfig(ServerIpTextBox.Text);
-                    _ = InitializeSystemAsync(); // Restart the connection attempt
+                    _ = InitializeSystemAsync();
                 }
                 else
                 {
-                    // User hit "Continue Offline" 
                     LoginStatusText.Text = "System Offline. Please tap an authorized offline key.";
                     LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
-                    _currentPort = "COM3"; // Failsafe if DB is fully down
+                    _currentPort = "COM3";
                     TryConnectSerial(_currentPort);
                 }
             }
         }
 
-        /* =========================================================================
-         * FIRST-TIME SETUP REGISTRATION (UPLOADS TO FIREBASE)
-         * ========================================================================= */
         private async void CompleteSetupButton_Click(object sender, RoutedEventArgs e)
         {
             string firstName = SetupFirstNameBox.Text.Trim();
@@ -330,14 +396,12 @@ namespace NFC_System
 
             try
             {
-                // 1. Save locally to MySQL
                 if (DatabaseMonitor.IsOnline)
                 {
                     await _database.RegisterStaffAsync(_pendingMasterUid, fullName, "Master Administrator");
                     await _database.AddAlertAsync(null, "ADMIN_ACTION", $"System initialized. Master Administrator '{fullName}' registered.");
                 }
 
-                // 2. Upload to Cloud Firestore REST API
                 if (DatabaseMonitor.IsOnline)
                 {
                     try
@@ -355,8 +419,6 @@ namespace NFC_System
 
                         string jsonPayload = JsonSerializer.Serialize(firestorePayload);
                         var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                        // PATCH creates or overwrites the document at /MasterCard/master_admin
                         await _httpClient.PatchAsync(FIRESTORE_URL, content);
                     }
                     catch { }
@@ -381,10 +443,6 @@ namespace NFC_System
             }
         }
 
-        /* =========================================================================
-         * ROLE-BASED ACCESS CONTROL & LOGIN LOGIC
-         * ========================================================================= */
-
         private bool TryConnectSerial(string portName)
         {
             try
@@ -405,20 +463,86 @@ namespace NFC_System
         {
             try
             {
-                if (_isAuthenticating || AppSession.IsLoggedIn) return;
-
                 if (_serialPort == null || !_serialPort.IsOpen) return;
                 string line = _serialPort.ReadLine().Trim();
 
                 if (line.StartsWith("UID="))
                 {
-                    _isAuthenticating = true;
                     string uid = line.Substring(4).Trim();
 
+                    // THE FIX: Listen for Admin tap during Exit Sync, even if someone is logged in.
+                    if (_isAwaitingAdminAuth)
+                    {
+                        DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
+                        return;
+                    }
+
+                    if (_isAuthenticating || AppSession.IsLoggedIn) return;
+
+                    _isAuthenticating = true;
                     DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
                 }
             }
             catch { }
+        }
+
+        private async Task HandleAdminAuthScanAsync(string uid)
+        {
+            string? role = null;
+            string? pinHash = null;
+            string? pinSalt = null;
+
+            if (DatabaseMonitor.IsOnline)
+            {
+                try
+                {
+                    var details = await _database.GetStaffDetailsAsync(uid);
+                    role = details.Role;
+                    pinHash = details.PinHash;
+                    pinSalt = details.PinSalt;
+                }
+                catch { }
+            }
+
+            if (role == null && uid == "04:A1:B2:C3")
+            {
+                role = "Master Administrator";
+            }
+
+            bool isAuthorized = false;
+            string failReason = "";
+
+            if (_pendingAdminSeverity == "HIGH")
+            {
+                if (role == "Administrator" || role == "Master Administrator")
+                {
+                    string enteredPin = AdminPinBox.Password.Trim();
+                    if (string.IsNullOrEmpty(enteredPin)) failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                    else if (string.IsNullOrEmpty(pinHash)) failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                    else if (!PinHasher.VerifyPin(enteredPin, pinSalt!, pinHash)) failReason = "Authorization Denied: Invalid PIN.";
+                    else isAuthorized = true;
+                }
+                else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+            }
+
+            if (isAuthorized)
+            {
+                _isAwaitingAdminAuth = false;
+                AdminAuthDialog.Hide();
+                PlaySuccessPing();
+
+                if (_pendingAdminAction == "EXIT_SYNC")
+                {
+                    _pendingAdminAction = "";
+                    await PerformCloudPushAndExit();
+                }
+            }
+            else
+            {
+                AuthStatusText.Text = failReason;
+                AuthStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+            }
         }
 
         private async Task ProcessLoginScanAsync(string uid)
@@ -462,7 +586,6 @@ namespace NFC_System
 
             if (role == null)
             {
-                // Hardcoded fallback keys for Offline Mode bypass
                 if (uid == "04:A1:B2:C3")
                 {
                     role = "Master Administrator";
@@ -473,7 +596,6 @@ namespace NFC_System
                     role = "Security Personnel";
                     fullName = "Simulated Guard";
                 }
-                // PHASE 2 FIX: Fallback key for Organizer debugging
                 else if (uid == "VALID_EVENT_CARD")
                 {
                     role = "Event Organizer";
@@ -499,7 +621,6 @@ namespace NFC_System
             }
             else if (role == "Event Organizer")
             {
-                // PHASE 2 FIX: Event Organizer Login Execution
                 AppSession.IsAdmin = false;
                 AppSession.IsEventOrganizer = true;
                 AppSession.IsLoggedIn = true;
@@ -564,7 +685,6 @@ namespace NFC_System
 
             if (AppSession.IsAdmin)
             {
-                // Full Access (Restore Grid Placement)
                 RegistrationCard.SetValue(Grid.RowProperty, 0);
                 RegistrationCard.SetValue(Grid.ColumnProperty, 0);
 
@@ -593,7 +713,6 @@ namespace NFC_System
             }
             else if (AppSession.IsEventOrganizer)
             {
-                // PHASE 2 FIX: Hide Admin/Registration tools and shift the Event tools into focus
                 RegistrationCard.Visibility = Visibility.Collapsed;
                 VerificationCard.Visibility = Visibility.Collapsed;
                 SecurityAdminCard.Visibility = Visibility.Collapsed;
@@ -633,8 +752,6 @@ namespace NFC_System
 
         private void SignOut_Click(object sender, RoutedEventArgs e)
         {
-            string activeRole = AppSession.IsAdmin ? "Administrator" : (AppSession.IsEventOrganizer ? "Event Organizer" : "Security Personnel");
-
             if (DatabaseMonitor.IsOnline)
             {
                 try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} signed out of the system."); } catch { }
@@ -642,7 +759,7 @@ namespace NFC_System
 
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
-            AppSession.IsEventOrganizer = false; // Reset role
+            AppSession.IsEventOrganizer = false;
             AppSession.CurrentStaffName = "";
             AppSession.CurrentStaffRoleLabel = "";
             _isAuthenticating = false;
@@ -657,14 +774,8 @@ namespace NFC_System
             TryConnectSerial(_currentPort);
         }
 
-        // --- DEBUG SIMULATIONS ---
         private void SimulateAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("04:A1:B2:C3");
         private void SimulatePersonnelLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_STAFF_CARD");
-
-
-        /* =========================================================================
-         * WINDOW NAVIGATION
-         * ========================================================================= */
 
         private void Registration_Click(object sender, RoutedEventArgs e)
         {
@@ -715,7 +826,6 @@ namespace NFC_System
 
         private void UpdateOfflineBanner(bool isOnline)
         {
-            // DispatcherQueue safely pushes the update to the UI thread
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (GlobalOfflineBanner != null)
@@ -747,13 +857,11 @@ namespace NFC_System
 
         private async void RefreshComPort_Click(object sender, RoutedEventArgs e)
         {
-            // 1. Update UI to show activity
             LoginStatusText.Text = "Reconnecting NFC Terminal...";
             LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
             LoginLoadingRing.IsActive = true;
             LoginLoadingRing.Visibility = Visibility.Visible;
 
-            // 2. Synchronously close existing port to prevent "Access Denied" exceptions
             if (_serialPort != null)
             {
                 try
@@ -769,10 +877,8 @@ namespace NFC_System
                 }
             }
 
-            // 3. Brief delay to allow the OS to fully release the COM port
             await Task.Delay(500);
 
-            // 4. Fetch the latest port in case it was updated, and reconnect
             if (DatabaseMonitor.IsOnline)
             {
                 try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
@@ -780,7 +886,6 @@ namespace NFC_System
 
             bool isConnected = TryConnectSerial(_currentPort);
 
-            // 5. Restore UI
             LoginLoadingRing.IsActive = false;
             LoginLoadingRing.Visibility = Visibility.Collapsed;
 

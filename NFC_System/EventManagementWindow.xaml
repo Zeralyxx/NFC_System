@@ -12,8 +12,47 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
     <Grid Background="{StaticResource AppBackgroundBrush}">
+        <!-- THE FIX: TIER 2 RESPONSIVENESS (VISUAL STATE MANAGER) -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1100" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="ContentRoot.Padding" Value="16,24" />
+
+                        <!-- Reorganize Header to Stack Vertically -->
+                        <Setter Target="HeaderCol1.Width" Value="*" />
+                        <Setter Target="HeaderCol2.Width" Value="0" />
+                        <Setter Target="HeaderRow2.Height" Value="Auto" />
+
+                        <Setter Target="HeaderTitleStack.(Grid.Row)" Value="1" />
+                        <Setter Target="HeaderTitleStack.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderTitleStack.Margin" Value="0,16,0,0" />
+
+                        <!-- Reorganize Main Content to Stack Vertically -->
+                        <Setter Target="MainCol1.Width" Value="*" />
+                        <Setter Target="MainCol2.Width" Value="0" />
+                        <Setter Target="MainRow2.Height" Value="Auto" />
+                        <Setter Target="MainContentGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="MainContentGrid.RowSpacing" Value="24" />
+
+                        <!-- Push the Right Panel under the Left Panel -->
+                        <Setter Target="RightPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="RightPanel.(Grid.Column)" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
             <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
@@ -21,7 +60,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
+        <!-- GLOBAL OFFLINE BANNER -->
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
@@ -29,37 +68,44 @@
             </StackPanel>
         </Border>
 
-        <!-- The original content wrapper with its 48px padding -->
-        <Grid Grid.Row="1" Padding="48">
+        <Grid x:Name="ContentRoot" Grid.Row="1" Padding="48">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Grid Margin="0,0,0,32">
+            <Grid x:Name="HeaderGrid" Margin="0,0,0,32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="HeaderRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition x:Name="HeaderCol1" Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol2" Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
+                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Top" Margin="0,4,0,0">
                     <Button Content="Back to Dashboard" Padding="16,10" Click="DashboardButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
                     <Button Content="Back to Attendance" Padding="16,10" Click="BackToAttendanceButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
+                <StackPanel x:Name="HeaderTitleStack" Grid.Row="0" Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                     <TextBlock Text="Event Administration" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-                    <TextBlock Text="Create new events, manage restricted attendee lists, and review audit logs" Style="{StaticResource BodyTextStyle}" FontSize="16"/>
+                    <TextBlock Text="Create new events, manage restricted attendee lists, and review audit logs" Style="{StaticResource BodyTextStyle}" FontSize="16" TextWrapping="Wrap"/>
                 </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="1" ColumnSpacing="24">
+            <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnSpacing="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="MainRow1" Height="*"/>
+                    <RowDefinition x:Name="MainRow2" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="4*"/>
-                    <ColumnDefinition Width="6*"/>
+                    <ColumnDefinition x:Name="MainCol1" Width="4*"/>
+                    <ColumnDefinition x:Name="MainCol2" Width="6*"/>
                 </Grid.ColumnDefinitions>
 
-                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
+                <ScrollViewer x:Name="LeftPanel" Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                     <StackPanel Spacing="24">
 
                         <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
@@ -96,7 +142,7 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <Grid Grid.Column="1" RowSpacing="24">
+                <Grid x:Name="RightPanel" Grid.Column="1" RowSpacing="24">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -109,9 +155,9 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Spacing="4">
+                                <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,12,0">
                                     <TextBlock Text="Active Events" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                    <TextBlock Text="Single-click to select and close an event. Double-click a restricted event to manage its attendee list." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                    <TextBlock Text="Single-click to select and close an event. Double-click a restricted event to manage its attendee list." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <Button x:Name="CloseEventButton" Grid.Column="1" Content="Close Selected Event" Click="CloseEventButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" IsEnabled="False" VerticalAlignment="Top"/>
                             </Grid>
@@ -175,27 +221,22 @@
             </Grid>
         </Grid>
 
-        <!-- The ContentDialog overlays. These can stay safely outside the Grid since they mount to the Window Root anyway. -->
+        <!-- Overrides ContentDialog boundaries to enable horizontal scrolling grid -->
         <ContentDialog x:Name="AttendeeManagementDialog"
                        CloseButtonText="Done"
                        DefaultButton="Close"
                        CornerRadius="8">
 
-            <!-- Overrides the strict default Windows width limits -->
             <ContentDialog.Resources>
                 <x:Double x:Key="ContentDialogMaxWidth">1400</x:Double>
             </ContentDialog.Resources>
 
-            <!-- Base width set to 600. The C# code will dynamically bump this to 1100 when expanding -->
             <Grid x:Name="DialogContentContainer" Width="600" Margin="0,16,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <!-- Edit Event Name Section -->
                     <RowDefinition Height="*"/>
-                    <!-- Attendee Management Section -->
                 </Grid.RowDefinitions>
 
-                <!-- SECTION 0: Edit Event Details -->
                 <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,24">
                     <TextBlock Text="Edit Event Details" FontWeight="SemiBold" FontSize="16"/>
                     <Grid ColumnSpacing="12">
@@ -208,7 +249,6 @@
                     </Grid>
                 </StackPanel>
 
-                <!-- ATTENDEE MANAGEMENT WRAPPER -->
                 <Grid x:Name="AttendeeManagementSection" Grid.Row="1">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -216,7 +256,6 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- SECTION 1: Add by Filter -->
                     <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,24">
                         <TextBlock Text="Add by Filter (Batch)" FontWeight="SemiBold" FontSize="16"/>
                         <Grid ColumnSpacing="12">
@@ -239,7 +278,6 @@
                         </Grid>
                     </StackPanel>
 
-                    <!-- SECTION 2: Add Individual -->
                     <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,24">
                         <TextBlock Text="Add Individual Student" FontWeight="SemiBold" FontSize="16"/>
                         <Grid ColumnSpacing="12">
@@ -252,7 +290,6 @@
                         </Grid>
                     </StackPanel>
 
-                    <!-- SECTION 3: The Attendee List / Grid (This part scrolls internally) -->
                     <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF" Padding="16">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -260,7 +297,6 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <!-- Header & Filters -->
                             <Grid Grid.Row="0" Margin="0,0,0,16">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -276,7 +312,6 @@
                                     <ToggleButton x:Name="ExpandDialogToggle" Grid.Column="1" Content="⛶ Expand View" Click="ExpandDialogToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                                 </Grid>
 
-                                <!-- Proportional Search Bar -->
                                 <Grid Grid.Row="1" ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="2*"/>
@@ -330,13 +365,11 @@
                                       ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.VerticalScrollMode="Disabled">
                                 <GridView.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <!-- Forces exactly 5 per column, then flows horizontally -->
                                         <ItemsWrapGrid Orientation="Vertical" MaximumRowsOrColumns="5" />
                                     </ItemsPanelTemplate>
                                 </GridView.ItemsPanel>
                                 <GridView.ItemTemplate>
                                     <DataTemplate x:DataType="local:StudentRecord">
-                                        <!-- Using Border to create the neat line separation between grid items -->
                                         <Grid Width="250" Padding="12,8" BorderBrush="#20FFFFFF" BorderThickness="0,0,1,1" Margin="0,0,8,0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -357,11 +390,32 @@
                                     </DataTemplate>
                                 </GridView.ItemTemplate>
                             </GridView>
-
                         </Grid>
                     </Border>
                 </Grid>
             </Grid>
+        </ContentDialog>
+
+        <!-- ========================================================= -->
+        <!-- THE FIX: ADMINISTRATOR AUTHORIZATION INTERCEPT POPUP      -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="AdminAuthDialog"
+                       Title="Administrator Authorization Required"
+                       CloseButtonText="Cancel"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="350">
+                <TextBlock x:Name="AdminAuthDescriptionText" Text="This action requires Administrator privileges. Please tap your authorized NFC card to proceed." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                <PasswordBox x:Name="AdminPinBox" Header="Enter 4-Digit Staff PIN" MaxLength="4" PlaceholderText="****" Visibility="Collapsed"/>
+
+                <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ProgressRing IsActive="True" Width="24" Height="24"/>
+                        <TextBlock Text="Awaiting Admin NFC tap..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+            </StackPanel>
         </ContentDialog>
     </Grid>
 </Window>

@@ -45,7 +45,6 @@ namespace NFC_System
         private bool _origIsTemporary = false;
         private AdminActionType _pendingAction = AdminActionType.None;
 
-        // PHASE 4 FIX: Severity Engine State Variables
         private string _pendingAdminSeverity = "";
 
         public StudentManagementWindow()
@@ -86,11 +85,18 @@ namespace NFC_System
         {
             try
             {
-                // PHASE 4 FIX: Enforce Read-Only mode for Event Organizers
                 if (AppSession.IsEventOrganizer && ConfigPanelContainer != null)
                 {
                     ConfigPanelContainer.Visibility = Visibility.Collapsed;
                 }
+
+                // THE FIX: Snapshot active UI selections to prevent wiping filters
+                string activeMainCourse = CourseFilterComboBox?.SelectedItem?.ToString() ?? "All Courses";
+                string activePopupCourse = PopupCourseFilter?.SelectedItem?.ToString() ?? "All Courses";
+
+                // THE FIX: Detach the event temporarily so rebuilding the list doesn't trigger _currentPage = 1
+                if (CourseFilterComboBox != null)
+                    CourseFilterComboBox.SelectionChanged -= Filter_SelectionChanged;
 
                 if (DatabaseMonitor.IsOnline)
                 {
@@ -98,18 +104,18 @@ namespace NFC_System
                     _allStudents = result.Students.ToList();
                     var courses = await _database.GetDistinctCoursesAsync();
 
-                    CourseFilterComboBox.Items.Clear();
-                    CourseFilterComboBox.Items.Add("All Courses");
-                    PopupCourseFilter.Items.Clear();
-                    PopupCourseFilter.Items.Add("All Courses");
-                    BatchCourseComboBox.Items.Clear();
-                    BatchCourseComboBox.Items.Add("All Courses");
+                    CourseFilterComboBox?.Items.Clear();
+                    CourseFilterComboBox?.Items.Add("All Courses");
+                    PopupCourseFilter?.Items.Clear();
+                    PopupCourseFilter?.Items.Add("All Courses");
+                    BatchCourseComboBox?.Items.Clear();
+                    BatchCourseComboBox?.Items.Add("All Courses");
 
                     foreach (var course in courses)
                     {
-                        CourseFilterComboBox.Items.Add(course);
-                        PopupCourseFilter.Items.Add(course);
-                        BatchCourseComboBox.Items.Add(course);
+                        CourseFilterComboBox?.Items.Add(course);
+                        PopupCourseFilter?.Items.Add(course);
+                        BatchCourseComboBox?.Items.Add(course);
                     }
                 }
                 else
@@ -127,17 +133,28 @@ namespace NFC_System
                         SectionName = "N/A"
                     }).ToList();
 
-                    CourseFilterComboBox.Items.Clear();
-                    CourseFilterComboBox.Items.Add("All Courses");
-                    PopupCourseFilter.Items.Clear();
-                    PopupCourseFilter.Items.Add("All Courses");
-                    BatchCourseComboBox.Items.Clear();
-                    BatchCourseComboBox.Items.Add("All Courses");
+                    CourseFilterComboBox?.Items.Clear();
+                    CourseFilterComboBox?.Items.Add("All Courses");
+                    PopupCourseFilter?.Items.Clear();
+                    PopupCourseFilter?.Items.Add("All Courses");
+                    BatchCourseComboBox?.Items.Clear();
+                    BatchCourseComboBox?.Items.Add("All Courses");
                 }
 
-                CourseFilterComboBox.SelectedIndex = 0;
-                PopupCourseFilter.SelectedIndex = 0;
-                BatchCourseComboBox.SelectedIndex = 0;
+                // THE FIX: Safely restore the previous selections without resetting the page
+                if (CourseFilterComboBox != null)
+                {
+                    CourseFilterComboBox.SelectedItem = CourseFilterComboBox.Items.Contains(activeMainCourse) ? activeMainCourse : "All Courses";
+                    // Re-attach the listener once it's safe
+                    CourseFilterComboBox.SelectionChanged += Filter_SelectionChanged;
+                }
+
+                if (PopupCourseFilter != null)
+                {
+                    PopupCourseFilter.SelectedItem = PopupCourseFilter.Items.Contains(activePopupCourse) ? activePopupCourse : "All Courses";
+                }
+
+                if (BatchCourseComboBox != null) BatchCourseComboBox.SelectedIndex = 0;
 
                 string nfcPort = "COM3";
                 if (DatabaseMonitor.IsOnline)
@@ -349,7 +366,6 @@ namespace NFC_System
                             fullName = "Master Admin";
                         }
 
-                        // PHASE 4 FIX: Severity Matrix Check
                         bool isAuthorized = false;
                         string failReason = "";
 
@@ -411,7 +427,7 @@ namespace NFC_System
 
         private async void StudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
-            if (AppSession.IsEventOrganizer) return; // Block event organizers from double-click edit
+            if (AppSession.IsEventOrganizer) return;
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
             {
                 await OpenEditDialogAsync(student);
@@ -420,7 +436,7 @@ namespace NFC_System
 
         private async void PopupStudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
-            if (AppSession.IsEventOrganizer) return; // Block event organizers from double-click edit
+            if (AppSession.IsEventOrganizer) return;
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
             {
                 MasterDirectoryDialog.Hide();
@@ -670,7 +686,6 @@ namespace NFC_System
 
             EditStudentDialog.Hide();
 
-            // PHASE 4 FIX: MODERATE Severity (Single Profile Edit)
             _pendingAction = AdminActionType.EditFullProfile;
             _pendingAdminSeverity = "MODERATE";
 
@@ -927,7 +942,6 @@ namespace NFC_System
         {
             if (string.IsNullOrWhiteSpace(EditStudentIdBox.Text)) return;
 
-            // PHASE 4 FIX: MODERATE Severity (Single edit quick status change)
             _pendingAction = AdminActionType.SaveIndividual;
             _pendingAdminSeverity = "MODERATE";
 
@@ -965,7 +979,6 @@ namespace NFC_System
             var result = await confirmDialog.ShowAsync();
             if (result != ContentDialogResult.Primary) return;
 
-            // PHASE 4 FIX: CRITICAL Severity (Only Master Admin)
             _pendingAction = AdminActionType.DeleteIndividual;
             _pendingAdminSeverity = "CRITICAL";
 
@@ -990,7 +1003,6 @@ namespace NFC_System
         {
             BatchUpdateDialog.Hide();
 
-            // PHASE 4 FIX: HIGH Severity (NFC + PIN required for batch updates)
             _pendingAction = AdminActionType.BatchUpdate;
             _pendingAdminSeverity = "HIGH";
 

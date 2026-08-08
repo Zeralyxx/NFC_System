@@ -12,16 +12,53 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!-- THE FIX: Wrap the entire window in a master Grid with NO padding. -->
     <Grid Background="{StaticResource AppBackgroundBrush}">
+        <!-- THE FIX: TIER 2 RESPONSIVENESS (VISUAL STATE MANAGER) -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1100" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="ContentRoot.Padding" Value="16,24" />
+
+                        <!-- Reorganize Header to Stack Vertically -->
+                        <Setter Target="HeaderCol1.Width" Value="*" />
+                        <Setter Target="HeaderCol3.Width" Value="0" />
+                        <Setter Target="HeaderRow3.Height" Value="Auto" />
+
+                        <Setter Target="HeaderRightBorder.(Grid.Row)" Value="2" />
+                        <Setter Target="HeaderRightBorder.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderRightBorder.Margin" Value="0,16,0,0" />
+                        <Setter Target="HeaderRightBorder.HorizontalAlignment" Value="Stretch" />
+
+                        <!-- Reorganize Main Content to Stack Vertically -->
+                        <Setter Target="MainCol1.Width" Value="*" />
+                        <Setter Target="MainCol2.Width" Value="0" />
+                        <Setter Target="MainRow2.Height" Value="Auto" />
+                        <Setter Target="MainContentGrid.ColumnSpacing" Value="0" />
+                        <Setter Target="MainContentGrid.RowSpacing" Value="24" />
+
+                        <!-- Push the Right Panel under the Left Panel -->
+                        <Setter Target="RightPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="RightPanel.(Grid.Column)" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
         <Grid.RowDefinitions>
-            <!-- Row 0: The dynamic Offline Banner -->
             <RowDefinition Height="Auto"/>
-            <!-- Row 1: The Main Content -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- GLOBAL OFFLINE BANNER (Now at the absolute top edge) -->
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
@@ -29,61 +66,62 @@
             </StackPanel>
         </Border>
 
-        <!-- The original content wrapper with its 48px padding -->
-        <Grid Grid.Row="1" Padding="48">
+        <Grid x:Name="ContentRoot" Grid.Row="1" Padding="48">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- NEW: Clean Two-Row Header Layout -->
-            <StackPanel Grid.Row="0" Margin="0,0,0,32" Spacing="20">
-                <!-- Top Row: Title -->
-                <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
-
-                <!-- Bottom Row: Toolbar -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <!-- Left Buttons -->
-                        <ColumnDefinition Width="*"/>
-                        <!-- Empty Space Spacer -->
-                        <ColumnDefinition Width="Auto"/>
-                        <!-- Right Dropdowns -->
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                        <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
-                        <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-                    </StackPanel>
-
-                    <!-- Security Mode & Anti-Tailgating Controls -->
-                    <Border Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16,8" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                            <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
-                            <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
-                                <ComboBoxItem Content="Entry"/>
-                                <ComboBoxItem Content="Exit"/>
-                            </ComboBox>
-                            <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="220" SelectionChanged="SecurityModeComboBox_SelectionChanged">
-                                <ComboBoxItem Content="Fast (NFC Only)"/>
-                                <ComboBoxItem Content="Standard (NFC + PIN)"/>
-                                <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
-
-                            </ComboBox>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </StackPanel>
-
-            <!-- Main Content (Two Columns: Logs & Live Photo Feed) -->
-            <Grid Grid.Row="1" ColumnSpacing="24">
+            <!-- Clean Responsive Header Layout -->
+            <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="HeaderRow2" Height="Auto"/>
+                    <RowDefinition x:Name="HeaderRow3" Height="0"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="6.5*"/>
-                    <ColumnDefinition Width="3.5*"/>
+                    <ColumnDefinition x:Name="HeaderCol1" Width="Auto"/>
+                    <ColumnDefinition x:Name="HeaderCol2" Width="*"/>
+                    <ColumnDefinition x:Name="HeaderCol3" Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Grid Grid.Column="0" RowSpacing="24">
+                <StackPanel x:Name="HeaderTitleStack" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,20">
+                    <TextBlock Text="Automated Verification Gate" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                </StackPanel>
+
+                <StackPanel x:Name="HeaderLeftStack" Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button Content="Back to Dashboard" Padding="16,10" Click="BackButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}"/>
+                    <Button x:Name="LaunchKioskButton" Content="Launch Fullscreen Kiosk" Click="LaunchKioskButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                </StackPanel>
+
+                <Border x:Name="HeaderRightBorder" Grid.Row="1" Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16,8" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
+                        <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Entry"/>
+                            <ComboBoxItem Content="Exit"/>
+                        </ComboBox>
+                        <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="220" SelectionChanged="SecurityModeComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Fast (NFC Only)"/>
+                            <ComboBoxItem Content="Standard (NFC + PIN)"/>
+                            <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Main Content (Two Columns: Logs & Live Photo Feed) -->
+            <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnSpacing="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="MainRow1" Height="*"/>
+                    <RowDefinition x:Name="MainRow2" Height="0"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="MainCol1" Width="6.5*"/>
+                    <ColumnDefinition x:Name="MainCol2" Width="3.5*"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid x:Name="LeftPanel" Grid.Column="0" RowSpacing="24">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -133,7 +171,7 @@
                 </Grid>
 
                 <!-- 3. Live Authentication Feed -->
-                <Border Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border x:Name="RightPanel" Grid.Column="1" Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -162,5 +200,37 @@
                 </Border>
             </Grid>
         </Grid>
+
+        <!-- ========================================================= -->
+        <!-- EXIT SYNC OVERLAY MASK                                    -->
+        <!-- ========================================================= -->
+        <Grid x:Name="SyncOverlay" Background="#D9000000" Visibility="Collapsed" Grid.RowSpan="2">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24">
+                <ProgressRing IsActive="True" Width="64" Height="64"/>
+                <TextBlock Text="Pushing data to cloud. Please do not force close..." FontSize="18" FontWeight="SemiBold" Foreground="White"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ========================================================= -->
+        <!-- ADMINISTRATOR AUTHORIZATION INTERCEPT POPUP               -->
+        <!-- ========================================================= -->
+        <ContentDialog x:Name="AdminAuthDialog"
+                       Title="Administrator Authorization Required"
+                       CloseButtonText="Cancel"
+                       CornerRadius="8">
+            <StackPanel Spacing="16" Width="350">
+                <TextBlock x:Name="AdminAuthDescriptionText" Text="This action requires Administrator privileges. Please tap your authorized NFC card to proceed." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                <PasswordBox x:Name="AdminPinBox" Header="Enter 4-Digit Staff PIN" MaxLength="4" PlaceholderText="****" Visibility="Collapsed"/>
+
+                <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ProgressRing IsActive="True" Width="24" Height="24"/>
+                        <TextBlock Text="Awaiting Admin NFC tap..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+            </StackPanel>
+        </ContentDialog>
     </Grid>
 </Window>

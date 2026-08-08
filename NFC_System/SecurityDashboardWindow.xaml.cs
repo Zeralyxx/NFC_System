@@ -25,9 +25,12 @@ namespace NFC_System
         private string _pendingStaffRole = "";
         private string _pendingStaffPin = "";
 
-        // PHASE 3 FIX: Severity Engine State Variables
+        // Severity Engine State Variables
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
+
+        // Exit Interceptor Flags
+        private bool _isForceClosing = false;
 
         // DEBOUNCE TIMER FOR SEARCH
         private readonly DispatcherTimer _searchDebounceTimer = new();
@@ -39,6 +42,12 @@ namespace NFC_System
             UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
 
+            // THE FIX: Hook into native window closing event to intercept exit
+            IntPtr hWnd = WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.Closing += AppWindow_Closing;
+
             this.Closed += Window_Closed;
             this.Activated += Window_Activated;
 
@@ -46,6 +55,124 @@ namespace NFC_System
             _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
 
             _ = InitializeAsync();
+        }
+
+        // ====================================================================
+        // RBAC SEVERITY-AWARE EXIT INTERCEPTOR
+        // ====================================================================
+        private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (_isForceClosing) return;
+            args.Cancel = true;
+
+            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                ContentDialog masterDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You may have unsynced offline data. Would you like to push it to the cloud before exiting?",
+                    PrimaryButtonText = "Push to Cloud & Exit",
+                    SecondaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await masterDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
+                else if (result == ContentDialogResult.Secondary) ForceExit();
+            }
+            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
+            else if (AppSession.IsAdmin)
+            {
+                ContentDialog adminDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You have unsynced offline data. Pushing this to the cloud requires High-Severity authorization (PIN + NFC Tap).",
+                    PrimaryButtonText = "Authorize Sync & Exit",
+                    SecondaryButtonText = "Exit Without Syncing",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await adminDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    _pendingAdminAction = "EXIT_SYNC";
+                    _pendingAdminSeverity = "HIGH";
+
+                    AdminPinBox.Visibility = Visibility.Visible;
+                    AdminPinBox.Password = "";
+                    AuthStatusText.Visibility = Visibility.Collapsed;
+                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
+
+                    _isAwaitingAdminAuth = true;
+                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                    var authResult = await AdminAuthDialog.ShowAsync();
+
+                    if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                    {
+                        _isAwaitingAdminAuth = false;
+                        _pendingAdminAction = "";
+                    }
+                }
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    ForceExit();
+                }
+            }
+            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
+            else
+            {
+                ContentDialog restrictedDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "Warning: There may be unsynced offline data. You do not have Administrator privileges to push this data to the cloud. If you exit now, the data will remain safely stored locally.",
+                    PrimaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+
+                var result = await restrictedDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) ForceExit();
+            }
+        }
+
+        private async Task PerformCloudPushAndExit()
+        {
+            SyncOverlay.Visibility = Visibility.Visible;
+
+            try
+            {
+                if (await _database.TestConnectionAsync())
+                {
+                    await _database.SyncOfflineLogsToServerAsync();
+                    await _database.PushStudentsToCloudAsync();
+                    await _database.PushStaffToCloudAsync();
+                    await _database.PushCoursesToCloudAsync();
+                    await _database.PushEventsToCloudAsync();
+                    await _database.PushEventApprovedStudentsToCloudAsync();
+                    await _database.PushLogsToCloudAsync();
+                    await _database.PushEventAttendanceToCloudAsync();
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", "Authorized Cloud Push on Application Exit.");
+                }
+            }
+            catch { }
+
+            ForceExit();
+        }
+
+        private void ForceExit()
+        {
+            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
+            {
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
+            }
+
+            _isForceClosing = true;
+            Application.Current.Exit();
         }
 
         private void Window_Activated(object sender, WindowActivatedEventArgs args)
@@ -152,7 +279,6 @@ namespace NFC_System
                             bool isAuthorized = false;
                             string failReason = "";
 
-                            // PHASE 3 FIX: Severity Check Routing
                             if (_pendingAdminSeverity == "CRITICAL")
                             {
                                 if (details.Role == "Master Administrator")
@@ -213,6 +339,9 @@ namespace NFC_System
                                         break;
                                     case "DOWNLOAD_DATA":
                                         await ExecuteDownloadDataAsync(authorizedByName);
+                                        break;
+                                    case "EXIT_SYNC": // THE FIX: Catch the Exit Interceptor case
+                                        await PerformCloudPushAndExit();
                                         break;
                                 }
                             }
@@ -382,7 +511,6 @@ namespace NFC_System
                 return;
             }
 
-            // PHASE 3 FIX: Validate PIN formats and enforce requirements for Admins
             if (!string.IsNullOrWhiteSpace(rawPin) && (rawPin.Length != 4 || !rawPin.All(char.IsDigit)))
             {
                 StatusTextBlock.Text = "If provided, the Staff PIN must be exactly 4 numeric digits.";
@@ -423,7 +551,6 @@ namespace NFC_System
                 }
             }
 
-            // Master Admins bypass the Sudo prompt entirely
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecuteStaffRegistration(uid, fullName, role, AppSession.CurrentStaffName, rawPin);
@@ -435,7 +562,6 @@ namespace NFC_System
                 _pendingStaffRole = role;
                 _pendingStaffPin = rawPin;
 
-                // PHASE 3 FIX: CRITICAL Severity Trigger
                 _pendingAdminAction = "REGISTER_STAFF";
                 _pendingAdminSeverity = "CRITICAL";
 
@@ -534,7 +660,6 @@ namespace NFC_System
             }
             else
             {
-                // PHASE 3 FIX: HIGH Severity Trigger (Requires PIN)
                 _pendingAdminAction = "UPLOAD_DATA";
                 _pendingAdminSeverity = "HIGH";
 
@@ -646,7 +771,6 @@ namespace NFC_System
             }
             else
             {
-                // PHASE 3 FIX: HIGH Severity Trigger (Requires PIN)
                 _pendingAdminAction = "DOWNLOAD_DATA";
                 _pendingAdminSeverity = "HIGH";
 
