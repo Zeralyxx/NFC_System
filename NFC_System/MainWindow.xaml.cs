@@ -111,6 +111,10 @@ namespace NFC_System
                     AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
 
                     _isAwaitingAdminAuth = true;
+
+                    // THE FIX: Wake up the serial port temporarily so the dashboard can hear the card tap!
+                    TryConnectSerial(_currentPort);
+
                     AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                     var authResult = await AdminAuthDialog.ShowAsync();
 
@@ -118,6 +122,9 @@ namespace NFC_System
                     {
                         _isAwaitingAdminAuth = false;
                         _pendingAdminAction = "";
+
+                        // THE FIX: If they hit cancel, politely close the port again so other windows don't break.
+                        CloseSerialPort();
                     }
                 }
                 else if (result == ContentDialogResult.Secondary)

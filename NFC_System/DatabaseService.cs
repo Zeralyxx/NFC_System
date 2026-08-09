@@ -93,7 +93,6 @@ public sealed class DatabaseService
         ServerIp = ip.Trim();
     }
 
-    // THE FIX: Embed the API Key strictly for REST queries
     private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
     private const string FIREBASE_API_KEY = "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo";
     private static readonly HttpClient _httpClient = new HttpClient();
@@ -110,6 +109,7 @@ public sealed class DatabaseService
 
         await connection.ChangeDatabaseAsync("nfc_system");
 
+        // THE FIX: Added pin_hash and pin_salt natively to the CREATE TABLE staff command
         string schemaSql = @"
             CREATE TABLE IF NOT EXISTS students (
                 student_id VARCHAR(50) PRIMARY KEY,
@@ -247,10 +247,19 @@ public sealed class DatabaseService
             CREATE TABLE IF NOT EXISTS staff (
                 nfc_uid VARCHAR(50) PRIMARY KEY,
                 full_name VARCHAR(100),
-                role VARCHAR(50)
+                role VARCHAR(50),
+                pin_hash VARCHAR(255),
+                pin_salt VARCHAR(255)
             );
         ";
 
+        // THE FIX: Execute CREATE TABLE commands FIRST
+        using (var schemaCmd = new MySqlCommand(schemaSql, connection))
+        {
+            await schemaCmd.ExecuteNonQueryAsync();
+        }
+
+        // THEN execute ALTER TABLE patches (for backwards compatibility with older installs)
         try
         {
             using var alterStaffCmd = new MySqlCommand(@"
@@ -260,11 +269,6 @@ public sealed class DatabaseService
             await alterStaffCmd.ExecuteNonQueryAsync();
         }
         catch { }
-
-        using (var schemaCmd = new MySqlCommand(schemaSql, connection))
-        {
-            await schemaCmd.ExecuteNonQueryAsync();
-        }
 
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN email VARCHAR(150);", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
         try { using var alterCmd = new MySqlCommand("ALTER TABLE students ADD COLUMN photo_data MEDIUMBLOB NULL;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
@@ -1731,14 +1735,19 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
+        // THE FIX: Added an OR condition to the LEFT JOIN. 
+        // If the student_id was lost during offline sync, it falls back to matching their NFC UID!
         using var command = new MySqlCommand($@"
-            SELECT vl.timestamp, vl.student_id, vl.student_name as full_name, s.course, s.section_name, 
-                   vl.transaction_type, vl.is_granted, vl.verification_mode, vl.db_query_speed_ms
-            FROM ({CombinedLogsQuery}) vl
-            LEFT JOIN students s ON vl.student_id = s.student_id
-            WHERE vl.transaction_type != 'EventAttendance'
-            ORDER BY vl.timestamp DESC
-            LIMIT 500", connection);
+        SELECT vl.timestamp, 
+               COALESCE(NULLIF(vl.student_id, ''), s.student_id) as student_id, 
+               COALESCE(NULLIF(vl.student_name, ''), s.full_name) as full_name, 
+               s.course, s.section_name, 
+               vl.transaction_type, vl.is_granted, vl.verification_mode, vl.db_query_speed_ms
+        FROM ({CombinedLogsQuery}) vl
+        LEFT JOIN students s ON (s.student_id = vl.student_id OR (vl.nfc_uid != '' AND s.nfc_uid = vl.nfc_uid))
+        WHERE vl.transaction_type != 'EventAttendance'
+        ORDER BY vl.timestamp DESC
+        LIMIT 500", connection);
 
         var list = new List<VerificationLogRecord>();
         using var reader = await command.ExecuteReaderAsync();
@@ -1750,6 +1759,7 @@ public sealed class DatabaseService
             {
                 Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
                 RawTimestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]) : DateTime.MinValue,
+                // The query now dynamically heals the Student ID if it was missing
                 StudentId = Value(reader["student_id"]),
                 FullName = string.IsNullOrWhiteSpace(Value(reader["full_name"])) ? "Unknown / Unregistered" : Value(reader["full_name"]),
                 Course = Value(reader["course"]),

@@ -181,6 +181,16 @@ public sealed class VerificationEngine
             TotalDbQueryMs = dbQueryMs
         };
 
+        // ==============================================================================
+        // THE FIX: Check for PIN_LOCKED *BEFORE* allowing QR Fallback or Fast Mode
+        // ==============================================================================
+        if (student!.PinLocked)
+        {
+            string error = "PIN_LOCKED";
+            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", session.NfcSystemMs, 0, 0, 0, 0, session.TotalDbQueryMs);
+            return Denied(uid, student, isOffline ? "OFFLINE: ACCESS DENIED" : "ACCESS DENIED", "PIN is locked after repeated failed attempts", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | PIN LOCKED");
+        }
+
         if (isQrFallback)
         {
             return new VerificationOutcome
@@ -191,20 +201,13 @@ public sealed class VerificationEngine
                 ResultMessage = "Please enter your PIN to verify identity",
                 Student = student,
                 Session = session,
-                LogLine = $"{scanTime} | {student!.StudentId} | {student.FullName} | {(isOffline ? "OFFLINE " : "")}QR OK | PIN REQUIRED"
+                LogLine = $"{scanTime} | {student.StudentId} | {student.FullName} | {(isOffline ? "OFFLINE " : "")}QR OK | PIN REQUIRED"
             };
         }
 
         if (mode == VerificationMode.Fast || transactionType == TransactionType.Exit)
         {
             return await GrantAsync(session, transactionType == TransactionType.Exit ? "NFC validation passed." : "NFC validation passed in Fast Mode.");
-        }
-
-        if (student!.PinLocked)
-        {
-            string error = "PIN_LOCKED";
-            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", session.NfcSystemMs, 0, 0, 0, 0, session.TotalDbQueryMs);
-            return Denied(uid, student, isOffline ? "OFFLINE: ACCESS DENIED" : "ACCESS DENIED", "PIN is locked after repeated failed attempts", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | PIN LOCKED");
         }
 
         return new VerificationOutcome
@@ -247,7 +250,6 @@ public sealed class VerificationEngine
 
                 authTimer.Stop();
 
-                // THE FIX: Isolate the human time and system time accurately
                 session.PinWorkflowMs = uiPinTimeMs;
                 session.PinSystemMs = authTimer.Elapsed.TotalMilliseconds;
                 session.TotalDbQueryMs += dbQueryMs;
@@ -311,7 +313,6 @@ public sealed class VerificationEngine
 
         authTimer.Stop();
 
-        // THE FIX: Isolate the human time and system time accurately
         session.QrWorkflowMs = uiQrTimeMs;
         session.QrSystemMs = authTimer.Elapsed.TotalMilliseconds;
 
@@ -490,4 +491,4 @@ public sealed class VerificationEngine
 
         return new VerificationOutcome { Step = VerificationStep.Completed, IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory, Student = student, LogLine = finalLogLine };
     }
-}
+}   
