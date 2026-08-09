@@ -14,7 +14,6 @@ using System.Text;
 
 namespace NFC_System
 {
-    // GLOBAL SESSION STATE
     public static class AppSession
     {
         public static bool IsLoggedIn { get; set; } = false;
@@ -31,20 +30,18 @@ namespace NFC_System
         private string _currentPort = "COM3";
         private bool _isAuthenticating = false;
 
-        // FIRST-TIME SETUP VARIABLES
         private bool _isFirstTimeSetup = false;
         private string _pendingMasterUid = "";
 
-        // APP LIFECYCLE
         private bool _isForceClosing = false;
-
-        // SEVERITY ENGINE STATE VARIABLES
         private bool _isAwaitingAdminAuth = false;
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
 
+        // THE FIX: Included the API key to bypass Firestore 403 Forbidden errors
         private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
-        private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin";
+        private const string FIREBASE_API_KEY = "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo";
+        private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin?key={FIREBASE_API_KEY}";
         private static readonly HttpClient _httpClient = new HttpClient();
 
         public MainWindow()
@@ -69,15 +66,11 @@ namespace NFC_System
             }
         }
 
-        // ====================================================================
-        // THE FIX: RBAC SEVERITY-AWARE EXIT INTERCEPTOR
-        // ====================================================================
         private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
         {
             if (_isForceClosing) return;
             args.Cancel = true;
 
-            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 ContentDialog masterDialog = new ContentDialog
@@ -94,7 +87,6 @@ namespace NFC_System
                 if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
                 else if (result == ContentDialogResult.Secondary) ForceExit();
             }
-            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
             else if (AppSession.IsAdmin)
             {
                 ContentDialog adminDialog = new ContentDialog
@@ -110,7 +102,6 @@ namespace NFC_System
                 var result = await adminDialog.ShowAsync();
                 if (result == ContentDialogResult.Primary)
                 {
-                    // Trigger the Sudo Prompt for High Severity
                     _pendingAdminAction = "EXIT_SYNC";
                     _pendingAdminSeverity = "HIGH";
 
@@ -134,7 +125,6 @@ namespace NFC_System
                     ForceExit();
                 }
             }
-            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
             else
             {
                 ContentDialog restrictedDialog = new ContentDialog
@@ -146,7 +136,6 @@ namespace NFC_System
                     XamlRoot = this.Content.XamlRoot
                 };
 
-                // Paint the text orange to indicate a warning
                 restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
                 var result = await restrictedDialog.ShowAsync();
@@ -177,20 +166,9 @@ namespace NFC_System
                     await _database.PushEventApprovedStudentsToCloudAsync();
                     await _database.PushLogsToCloudAsync();
                     await _database.PushEventAttendanceToCloudAsync();
-                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", "Authorized Cloud Push on Application Exit.");
                 }
             }
             catch { }
-
-            ForceExit();
-        }
-
-        private void ForceExit()
-        {
-            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
-            {
-                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
-            }
 
             _isForceClosing = true;
             Application.Current.Exit();
@@ -208,43 +186,15 @@ namespace NFC_System
             }
         }
 
-        private void PlaySuccessPing()
+        private void ForceExit()
         {
-            Task.Run(() =>
+            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
             {
-                try
-                {
-                    string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "success_ping.wav");
-                    if (File.Exists(soundPath))
-                    {
-                        using var player = new System.Media.SoundPlayer(soundPath);
-                        player.PlaySync();
-                    }
-                    else
-                    {
-                        Console.Beep(1046, 75);
-                        System.Threading.Thread.Sleep(15);
-                        Console.Beep(1318, 75);
-                        System.Threading.Thread.Sleep(15);
-                        Console.Beep(1568, 200);
-                    }
-                }
-                catch { }
-            });
-        }
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
+            }
 
-        private void PlayErrorAlert()
-        {
-            Task.Run(() =>
-            {
-                try
-                {
-                    Console.Beep(2000, 300);
-                    System.Threading.Thread.Sleep(100);
-                    Console.Beep(2000, 300);
-                }
-                catch { }
-            });
+            _isForceClosing = true;
+            Application.Current.Exit();
         }
 
         private async Task InitializeSystemAsync()
@@ -285,8 +235,15 @@ namespace NFC_System
                                 using JsonDocument doc = JsonDocument.Parse(json);
                                 if (doc.RootElement.TryGetProperty("fields", out var fields))
                                 {
-                                    string globalMasterUid = fields.GetProperty("uid").GetProperty("stringValue").GetString() ?? "";
-                                    string globalMasterName = fields.GetProperty("name").GetProperty("stringValue").GetString() ?? "Global Master Admin";
+                                    string globalMasterUid = "";
+                                    string globalMasterName = "Global Master Admin";
+
+                                    // THE FIX: Safe JSON Extraction to prevent KeyNotFoundException crashes
+                                    if (fields.TryGetProperty("uid", out var uidField) && uidField.TryGetProperty("stringValue", out var uidVal))
+                                        globalMasterUid = uidVal.GetString() ?? "";
+
+                                    if (fields.TryGetProperty("name", out var nameField) && nameField.TryGetProperty("stringValue", out var nameVal))
+                                        globalMasterName = nameVal.GetString() ?? "Global Master Admin";
 
                                     if (!string.IsNullOrWhiteSpace(globalMasterUid))
                                     {
@@ -298,7 +255,10 @@ namespace NFC_System
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Cloud Master Sync Failed: {ex.Message}");
+                    }
                 }
 
                 if (DatabaseMonitor.IsOnline)
@@ -470,7 +430,6 @@ namespace NFC_System
                 {
                     string uid = line.Substring(4).Trim();
 
-                    // THE FIX: Listen for Admin tap during Exit Sync, even if someone is logged in.
                     if (_isAwaitingAdminAuth)
                     {
                         DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
@@ -917,6 +876,45 @@ namespace NFC_System
                 };
                 await warningDialog.ShowAsync();
             }
+        }
+
+        private void PlaySuccessPing()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "success_ping.wav");
+                    if (File.Exists(soundPath))
+                    {
+                        using var player = new System.Media.SoundPlayer(soundPath);
+                        player.PlaySync();
+                    }
+                    else
+                    {
+                        Console.Beep(1046, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1318, 75);
+                        System.Threading.Thread.Sleep(15);
+                        Console.Beep(1568, 200);
+                    }
+                }
+                catch { }
+            });
+        }
+
+        private void PlayErrorAlert()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    Console.Beep(2000, 300);
+                    System.Threading.Thread.Sleep(100);
+                    Console.Beep(2000, 300);
+                }
+                catch { }
+            });
         }
 
         private void MaximizeWindow()

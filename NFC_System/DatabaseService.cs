@@ -13,7 +13,7 @@ namespace NFC_System;
 public sealed class VerificationLogRecord
 {
     public string Timestamp { get; set; } = "";
-    public DateTime RawTimestamp { get; set; } // Added to allow strict Date grouping
+    public DateTime RawTimestamp { get; set; }
     public string StudentId { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Course { get; set; } = "";
@@ -93,7 +93,9 @@ public sealed class DatabaseService
         ServerIp = ip.Trim();
     }
 
+    // THE FIX: Embed the API Key strictly for REST queries
     private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
+    private const string FIREBASE_API_KEY = "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo";
     private static readonly HttpClient _httpClient = new HttpClient();
 
     public async Task EnsureSchemaAsync()
@@ -249,7 +251,6 @@ public sealed class DatabaseService
             );
         ";
 
-        // PHASE 1: Patch the staff table to support High-Severity PINs
         try
         {
             using var alterStaffCmd = new MySqlCommand(@"
@@ -258,10 +259,7 @@ public sealed class DatabaseService
                     ADD COLUMN pin_salt VARCHAR(255) NULL AFTER pin_hash;", connection);
             await alterStaffCmd.ExecuteNonQueryAsync();
         }
-        catch
-        {
-            // Catch block silently ignores the error if the columns already exist
-        }
+        catch { }
 
         using (var schemaCmd = new MySqlCommand(schemaSql, connection))
         {
@@ -279,7 +277,7 @@ public sealed class DatabaseService
 
     private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{collectionName}?pageSize=1000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{collectionName}?pageSize=1000&key={FIREBASE_API_KEY}";
         try
         {
             var response = await _httpClient.GetAsync(url);
@@ -297,7 +295,7 @@ public sealed class DatabaseService
 
                 if (!string.IsNullOrWhiteSpace(cloudId) && !localIds.Contains(cloudId))
                 {
-                    await _httpClient.DeleteAsync($"https://firestore.googleapis.com/v1/{docName}");
+                    await _httpClient.DeleteAsync($"https://firestore.googleapis.com/v1/{docName}?key={FIREBASE_API_KEY}");
                 }
             }
         }
@@ -317,7 +315,7 @@ public sealed class DatabaseService
 
     public async Task<int> PullStudentsFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students?pageSize=1000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
         try
@@ -444,7 +442,7 @@ public sealed class DatabaseService
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 string docId = Uri.EscapeDataString(studentId);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students/{docId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students/{docId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode) pushedCount++;
@@ -465,7 +463,7 @@ public sealed class DatabaseService
 
         foreach (var tableName in logTables)
         {
-            string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{tableName}?pageSize=2000";
+            string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{tableName}?pageSize=2000&key={FIREBASE_API_KEY}";
 
             try
             {
@@ -545,7 +543,7 @@ public sealed class DatabaseService
             catch { }
         }
 
-        string urlAlerts = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts?pageSize=2000";
+        string urlAlerts = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts?pageSize=2000&key={FIREBASE_API_KEY}";
         try
         {
             var response = await _httpClient.GetAsync(urlAlerts);
@@ -595,7 +593,7 @@ public sealed class DatabaseService
 
     public async Task<int> PullEventAttendanceFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance?pageSize=2000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance?pageSize=2000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
         try
         {
@@ -654,7 +652,7 @@ public sealed class DatabaseService
 
     public async Task<int> PullStaffFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff?pageSize=1000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
         try
@@ -738,7 +736,7 @@ public sealed class DatabaseService
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 string docId = Uri.EscapeDataString(nfcUid);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff/{docId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff/{docId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode) pushedCount++;
@@ -754,7 +752,7 @@ public sealed class DatabaseService
 
     public async Task<int> PullCoursesFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses?pageSize=1000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
         try
@@ -827,7 +825,7 @@ public sealed class DatabaseService
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 string docId = Uri.EscapeDataString(courseName);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses/{docId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses/{docId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode) pushedCount++;
@@ -843,7 +841,7 @@ public sealed class DatabaseService
 
     public async Task<int> PullEventsFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events?pageSize=1000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
         try
@@ -961,7 +959,7 @@ public sealed class DatabaseService
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 string docId = Uri.EscapeDataString(eventId);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events/{docId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events/{docId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode) pushedCount++;
@@ -977,7 +975,7 @@ public sealed class DatabaseService
 
     public async Task<int> PullEventApprovedStudentsFromCloudAsync()
     {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students?pageSize=2000";
+        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students?pageSize=2000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
         try
@@ -1052,7 +1050,7 @@ public sealed class DatabaseService
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 string docId = Uri.EscapeDataString(combinedId);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students/{docId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students/{docId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode) pushedCount++;
@@ -1121,7 +1119,7 @@ public sealed class DatabaseService
             foreach (var log in pendingLogs)
             {
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{log.SourceTable}/{log.CloudDocId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{log.SourceTable}/{log.CloudDocId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode)
@@ -1162,7 +1160,7 @@ public sealed class DatabaseService
             foreach (var log in pendingAlerts)
             {
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts/{log.CloudDocId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts/{log.CloudDocId}?key={FIREBASE_API_KEY}";
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode)
                 {
@@ -1221,7 +1219,7 @@ public sealed class DatabaseService
             foreach (var log in pendingLogs)
             {
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance/{log.CloudDocId}";
+                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance/{log.CloudDocId}?key={FIREBASE_API_KEY}";
 
                 var response = await _httpClient.PatchAsync(url, content);
                 if (response.IsSuccessStatusCode)
@@ -2243,7 +2241,6 @@ public sealed class DatabaseService
             _ => "standard_mode_logs"
         };
 
-        // Calculate Totals
         double totalWorkflowMs = pinWorkflowMs + qrWorkflowMs;
         double totalSystemMs = nfcSystemMs + pinSystemMs + qrSystemMs;
         double authSpeedMs = totalWorkflowMs + totalSystemMs;
@@ -2611,7 +2608,6 @@ public sealed class DatabaseService
         string pinHash = "";
         string pinSalt = "";
 
-        // Cryptographically hash the staff PIN if one was provided
         if (!string.IsNullOrWhiteSpace(rawPin))
         {
             var hashed = PinHasher.HashPin(rawPin);
@@ -2619,7 +2615,6 @@ public sealed class DatabaseService
             pinSalt = hashed.Salt;
         }
 
-        // Using UPSERT (ON DUPLICATE KEY UPDATE) to handle overwrites smoothly
         string query = @"
                 INSERT INTO staff (nfc_uid, full_name, role, pin_hash, pin_salt) 
                 VALUES (@nfcUid, @fullName, @role, @pinHash, @pinSalt)
@@ -2695,7 +2690,6 @@ public sealed class DatabaseService
         return result?.ToString();
     }
 
-    // Custom return class/record for Staff Data
     public class StaffDetails
     {
         public string? Role { get; set; }
@@ -2724,7 +2718,7 @@ public sealed class DatabaseService
             };
         }
 
-        return new StaffDetails(); // Returns null properties if not found
+        return new StaffDetails();
     }
 
     public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)
