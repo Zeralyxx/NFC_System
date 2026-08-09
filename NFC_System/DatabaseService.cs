@@ -1303,7 +1303,8 @@ public sealed class DatabaseService
             await connection.OpenAsync();
 
             var students = new List<CachedStudent>();
-            using (var cmd = new MySqlCommand("SELECT student_id, full_name, nfc_uid, pin_hash, pin_salt, status, pin_locked FROM students WHERE nfc_uid IS NOT NULL AND nfc_uid != ''", connection))
+            // THE FIX: Added entry_state, failed_pin_attempts, and qr_credential to the offline sync query
+            using (var cmd = new MySqlCommand("SELECT student_id, full_name, nfc_uid, pin_hash, pin_salt, status, pin_locked, entry_state, failed_pin_attempts, qr_credential FROM students WHERE nfc_uid IS NOT NULL AND nfc_uid != ''", connection))
             using (var reader = await cmd.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
@@ -1316,7 +1317,10 @@ public sealed class DatabaseService
                         PinHash = Value(reader["pin_hash"]),
                         PinSalt = Value(reader["pin_salt"]),
                         Status = Value(reader["status"]),
-                        PinLocked = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true"
+                        PinLocked = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true",
+                        EntryState = string.IsNullOrWhiteSpace(Value(reader["entry_state"])) ? "OUTSIDE" : Value(reader["entry_state"]),
+                        FailedPinAttempts = int.TryParse(Value(reader["failed_pin_attempts"]), out int attempts) ? attempts : 0,
+                        QrCredential = Value(reader["qr_credential"])
                     });
                 }
             }
@@ -1370,12 +1374,17 @@ public sealed class DatabaseService
     {
         if (!OfflineCacheService.HasPendingLogs()) return;
 
+        // THE FIX: Atomic extraction. Pulls logs and deletes file safely in one millisecond to prevent wiping out concurrent taps.
+        var gateLogs = OfflineCacheService.ExtractPendingGateLogs();
+        var eventLogs = OfflineCacheService.ExtractPendingEventLogs();
+
+        if (gateLogs.Count == 0 && eventLogs.Count == 0) return;
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
-            var gateLogs = OfflineCacheService.GetPendingGateLogs();
             foreach (var log in gateLogs)
             {
                 string targetTable = log.VerificationMode switch
@@ -1401,7 +1410,6 @@ public sealed class DatabaseService
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            var eventLogs = OfflineCacheService.GetPendingEventLogs();
             foreach (var log in eventLogs)
             {
                 using var cmd = new MySqlCommand(@"
@@ -1417,10 +1425,13 @@ public sealed class DatabaseService
 
                 await cmd.ExecuteNonQueryAsync();
             }
-
-            OfflineCacheService.ClearPendingLogs();
         }
-        catch { }
+        catch
+        {
+            // THE FIX: If the database connection drops halfway through the sync, push all the logs back to the local file!
+            OfflineCacheService.RestoreFailedGateLogs(gateLogs);
+            OfflineCacheService.RestoreFailedEventLogs(eventLogs);
+        }
     }
 
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(

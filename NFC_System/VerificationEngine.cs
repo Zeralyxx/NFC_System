@@ -57,37 +57,47 @@ public sealed class VerificationEngine
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         StudentRecord? student = null;
-        bool isOffline = false;
 
-        dbTimer.Start();
-        try
+        // THE FIX: Instantly drop to offline mode without suffering the 3-second ADO.NET timeout
+        bool isOffline = !DatabaseMonitor.IsOnline;
+
+        if (!isOffline)
         {
-            student = await _database.GetStudentByUidAsync(uid);
+            dbTimer.Start();
+            try
+            {
+                student = await _database.GetStudentByUidAsync(uid);
+            }
+            catch
+            {
+                isOffline = true;
+            }
+            dbTimer.Stop();
         }
-        catch
-        {
-            isOffline = true;
-        }
-        dbTimer.Stop();
+
         double dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
-
         LogPerformanceMetric("Database Query Performance Monitor", dbQueryMs, student != null ? $"Initial Profile Retrieval: Found ({(isOffline ? "OFFLINE CACHE" : "ONLINE")})" : "Initial Profile Retrieval: Not Found");
 
         if (isOffline)
         {
-            var offlineResult = OfflineCacheService.VerifyStudentOffline(uid);
+            // THE FIX: Pass the transactionType to enforce strict offline anti-tailgating
+            var offlineResult = OfflineCacheService.VerifyStudentOffline(uid, transactionType.ToString());
 
             if (offlineResult.Student != null)
             {
                 student = new StudentRecord
                 {
-                    StudentId = offlineResult.Student.StudentId,
+                    StudentId = offlineResult.Student.StudentId, // or cached.StudentId depending on the method
                     FullName = offlineResult.Student.FullName,
                     NfcUid = offlineResult.Student.NfcUid,
                     PinHash = offlineResult.Student.PinHash,
                     PinSalt = offlineResult.Student.PinSalt,
                     Status = offlineResult.Student.Status,
-                    PinLocked = offlineResult.Student.PinLocked
+                    PinLocked = offlineResult.Student.PinLocked,
+                    EntryState = offlineResult.Student.EntryState,
+                    // ADD THESE TWO LINES:
+                    FailedPinAttempts = offlineResult.Student.FailedPinAttempts,
+                    QrCredential = offlineResult.Student.QrCredential
                 };
             }
 
@@ -181,9 +191,6 @@ public sealed class VerificationEngine
             TotalDbQueryMs = dbQueryMs
         };
 
-        // ==============================================================================
-        // THE FIX: Check for PIN_LOCKED *BEFORE* allowing QR Fallback or Fast Mode
-        // ==============================================================================
         if (student!.PinLocked)
         {
             string error = "PIN_LOCKED";
@@ -241,41 +248,50 @@ public sealed class VerificationEngine
 
             string error = locked ? "PIN_LOCKED" : "PIN_FAILURE";
 
-            try
+            if (DatabaseMonitor.IsOnline)
             {
-                dbTimer.Start();
-                await _database.UpdatePinFailureAsync(student.StudentId, failedAttempts, locked);
-                dbTimer.Stop();
-                dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
-
-                authTimer.Stop();
-
-                session.PinWorkflowMs = uiPinTimeMs;
-                session.PinSystemMs = authTimer.Elapsed.TotalMilliseconds;
-                session.TotalDbQueryMs += dbQueryMs;
-
-                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
-                await _database.AddAlertAsync(student.StudentId, error, locked ? $"{student.FullName} reached three failed PIN attempts and has been locked." : $"{student.FullName} entered an incorrect PIN ({failedAttempts}/3).");
+                try
+                {
+                    dbTimer.Start();
+                    await _database.UpdatePinFailureAsync(student.StudentId, failedAttempts, locked);
+                    dbTimer.Stop();
+                    dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
+                    if (locked) await _database.AddAlertAsync(student.StudentId, error, $"{student.FullName} reached three failed PIN attempts and has been locked.");
+                }
+                catch { }
             }
-            catch
+            else
             {
-                authTimer.Stop();
-                session.PinWorkflowMs = uiPinTimeMs;
-                session.PinSystemMs = authTimer.Elapsed.TotalMilliseconds;
-                OfflineCacheService.SaveOfflineGateLog(student.StudentId, session.Uid, session.TransactionType.ToString(), session.Mode.ToString(), false, error, $"[OFFLINE] Failed PIN attempt {failedAttempts}/3.");
+                // THE FIX: Persist the offline failure locally so they actually get locked out!
+                OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, failedAttempts, locked);
             }
+
+            authTimer.Stop();
+            session.PinWorkflowMs = uiPinTimeMs;
+            session.PinSystemMs = authTimer.Elapsed.TotalMilliseconds;
+            session.TotalDbQueryMs += dbQueryMs;
+
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
 
             return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}");
         }
 
-        try
+        if (DatabaseMonitor.IsOnline)
         {
-            dbTimer.Restart();
-            await _database.UpdatePinFailureAsync(student.StudentId, 0, false);
-            dbTimer.Stop();
-            dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
+            try
+            {
+                dbTimer.Restart();
+                await _database.UpdatePinFailureAsync(student.StudentId, 0, false);
+                dbTimer.Stop();
+                dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
+            }
+            catch { }
         }
-        catch { }
+        else if (student.FailedPinAttempts > 0)
+        {
+            // THE FIX: Clear offline progress if they get it right
+            OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, 0, false);
+        }
 
         student.FailedPinAttempts = 0;
         student.PinLocked = false;
@@ -308,7 +324,8 @@ public sealed class VerificationEngine
 
         StudentRecord student = session.Student;
         string normalizedInput = qrCredential.Trim();
-        string normalizedStored = student.QrCredential.Trim();
+        // Safely handles null QR strings from offline cache
+        string normalizedStored = student.QrCredential?.Trim() ?? "";
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         authTimer.Stop();
@@ -338,9 +355,15 @@ public sealed class VerificationEngine
 
         try
         {
-            student = await _database.GetStudentByIdAsync(extractedStudentId);
+            if (DatabaseMonitor.IsOnline)
+            {
+                student = await _database.GetStudentByIdAsync(extractedStudentId);
+            }
         }
-        catch
+        catch { }
+
+        // Fallback to offline immediately
+        if (student == null)
         {
             string cacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NFC_System", "Cache", "local_students.json");
             if (File.Exists(cacheFile))
@@ -359,7 +382,11 @@ public sealed class VerificationEngine
                             PinHash = cached.PinHash,
                             PinSalt = cached.PinSalt,
                             Status = cached.Status,
-                            PinLocked = cached.PinLocked
+                            PinLocked = cached.PinLocked,
+                            EntryState = cached.EntryState,
+                            // ADD THESE TWO LINES:
+                            FailedPinAttempts = cached.FailedPinAttempts,
+                            QrCredential = cached.QrCredential
                         };
                     }
                 }
@@ -388,42 +415,50 @@ public sealed class VerificationEngine
     {
         StudentRecord student = session.Student;
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
-        bool isOffline = false;
 
-        Stopwatch updateTimer = Stopwatch.StartNew();
+        bool isOffline = !DatabaseMonitor.IsOnline;
+        Stopwatch updateTimer = new Stopwatch();
 
-        try
+        if (!isOffline)
         {
-            if (session.TransactionType == TransactionType.Entry)
+            try
             {
-                await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
-                student.EntryState = "INSIDE";
-            }
-            else if (session.TransactionType == TransactionType.Exit)
-            {
-                if (!string.IsNullOrWhiteSpace(session.EventId))
-                    await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
-                else
+                updateTimer.Start();
+                if (session.TransactionType == TransactionType.Entry)
                 {
-                    await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
-                    student.EntryState = "OUTSIDE";
+                    await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
+                    student.EntryState = "INSIDE";
                 }
+                else if (session.TransactionType == TransactionType.Exit)
+                {
+                    if (!string.IsNullOrWhiteSpace(session.EventId))
+                        await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
+                    else
+                    {
+                        await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
+                        student.EntryState = "OUTSIDE";
+                    }
+                }
+                else if (session.TransactionType == TransactionType.EventAttendance)
+                {
+                    await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
+                    await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
+                    student.EntryState = "INSIDE";
+                }
+                updateTimer.Stop();
+                session.TotalDbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
+
+                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
             }
-            else if (session.TransactionType == TransactionType.EventAttendance)
+            catch
             {
-                await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
-                await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
-                student.EntryState = "INSIDE";
+                isOffline = true;
             }
-
-            updateTimer.Stop();
-            session.TotalDbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
-
-            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
         }
-        catch
+
+        // Catch the fallthrough gracefully
+        if (isOffline)
         {
-            isOffline = true;
             if (session.TransactionType == TransactionType.EventAttendance && !string.IsNullOrWhiteSpace(session.EventId))
                 OfflineCacheService.SaveOfflineEventLog(session.EventId, student.StudentId, session.Mode.ToString(), "PRESENT", remarks);
             else
@@ -451,33 +486,35 @@ public sealed class VerificationEngine
             LogPerformanceMetric("Database Query Performance Monitor", dbQuerySpeedMs, "Total Aggregated Transaction Queries");
         }
 
-        try
-        {
-            string? loggedName = student?.FullName;
-            if (student != null && student.IsTemporary)
-            {
-                loggedName = $"[TEMP] {loggedName}";
-            }
+        string? loggedName = student?.FullName;
+        if (student != null && student.IsTemporary) loggedName = $"[TEMP] {loggedName}";
 
-            await _database.LogVerificationAsync(student, loggedName, uid, type, mode, granted, errorCategory, errorCategory, remarks, nfcSystemMs, pinWorkflowMs, pinSystemMs, qrWorkflowMs, qrSystemMs, dbQuerySpeedMs);
-            if (!granted && student != null) await _database.AddAlertAsync(student.StudentId, errorCategory, remarks);
-        }
-        catch
+        if (DatabaseMonitor.IsOnline)
         {
-            OfflineCacheService.SaveOfflineGateLog(student?.StudentId ?? "", uid, DatabaseService.ToStorageValue(type), DatabaseService.ToStorageValue(mode), granted, errorCategory, remarks);
+            try
+            {
+                await _database.LogVerificationAsync(student, loggedName, uid, type, mode, granted, errorCategory, errorCategory, remarks, nfcSystemMs, pinWorkflowMs, pinSystemMs, qrWorkflowMs, qrSystemMs, dbQuerySpeedMs);
+                if (!granted && student != null) await _database.AddAlertAsync(student.StudentId, errorCategory, remarks);
+                return;
+            }
+            catch { }
         }
+
+        OfflineCacheService.SaveOfflineGateLog(student?.StudentId ?? "", uid, DatabaseService.ToStorageValue(type), DatabaseService.ToStorageValue(mode), granted, errorCategory, remarks);
     }
 
     private async Task SafeLogEventAsync(string eventId, string studentId, VerificationMode mode, string status, string remarks)
     {
-        try
+        if (DatabaseMonitor.IsOnline)
         {
-            await _database.RecordAttendanceAsync(eventId, studentId, mode, status, remarks);
+            try
+            {
+                await _database.RecordAttendanceAsync(eventId, studentId, mode, status, remarks);
+                return;
+            }
+            catch { }
         }
-        catch
-        {
-            OfflineCacheService.SaveOfflineEventLog(eventId, studentId, DatabaseService.ToStorageValue(mode), status, remarks);
-        }
+        OfflineCacheService.SaveOfflineEventLog(eventId, studentId, DatabaseService.ToStorageValue(mode), status, remarks);
     }
 
     private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)
@@ -491,4 +528,4 @@ public sealed class VerificationEngine
 
         return new VerificationOutcome { Step = VerificationStep.Completed, IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory, Student = student, LogLine = finalLogLine };
     }
-}   
+}

@@ -142,10 +142,16 @@ namespace NFC_System
             {
                 if (OfflineCacheService.HasPendingLogs())
                 {
+                    // THE FIX: Pause the timer so it doesn't trigger a second sync while the first is uploading!
+                    _syncRecoveryTimer.Stop();
+
                     if (await _database.TestConnectionAsync())
                     {
                         await _database.SyncOfflineLogsToServerAsync();
                     }
+
+                    // Resume checking after the sync is safely finished
+                    _syncRecoveryTimer.Start();
                 }
             };
             _syncRecoveryTimer.Start();
@@ -616,7 +622,8 @@ namespace NFC_System
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
-                    string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
+                    // THE FIX: Added "ACCOUNT_LOCKED" and "IRREGULAR_EXIT_SEQUENCE" so the hardware siren triggers during offline violations
+                    string[] severeErrors = { "PIN_LOCKED", "ACCOUNT_LOCKED", "ANTI_TAILGATING_VIOLATION", "IRREGULAR_EXIT_SEQUENCE", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
                     if (severeErrors.Contains(outcome.ErrorCategory))
                         PlaySecurityAlert();
 

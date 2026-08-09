@@ -486,7 +486,8 @@ namespace NFC_System
                 VerificationLogListView.Items.Insert(0, outcome.LogLine);
             }
 
-            string[] severeErrors = { "PIN_LOCKED", "ANTI_TAILGATING_VIOLATION", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
+            // THE FIX: Added "ACCOUNT_LOCKED" and "IRREGULAR_EXIT_SEQUENCE" so the hardware siren triggers during offline violations
+            string[] severeErrors = { "PIN_LOCKED", "ACCOUNT_LOCKED", "ANTI_TAILGATING_VIOLATION", "IRREGULAR_EXIT_SEQUENCE", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
             if (severeErrors.Contains(outcome.ErrorCategory))
             {
                 PlaySecurityAlert();

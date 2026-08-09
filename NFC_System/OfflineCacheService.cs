@@ -17,6 +17,10 @@ public class CachedStudent
     public string PinSalt { get; set; } = "";
     public string Status { get; set; } = "";
     public bool PinLocked { get; set; }
+    public string EntryState { get; set; } = "OUTSIDE";
+    // THE FIX: Added missing properties required for offline PIN and QR logic
+    public int FailedPinAttempts { get; set; }
+    public string QrCredential { get; set; } = "";
 }
 
 public class CachedEvent
@@ -57,6 +61,8 @@ public class PendingEventAttendance
     public string Remarks { get; set; } = "";
 }
 
+
+
 public static class OfflineCacheService
 {
     private static readonly string CacheDirectory = Path.Combine(
@@ -78,6 +84,27 @@ public static class OfflineCacheService
     static OfflineCacheService()
     {
         EnsureDirectoryExists();
+    }
+
+    // THE FIX: Tracks failed PIN attempts in the local JSON so students actually get locked out offline
+    public static void UpdateCachedStudentPinProgress(string studentId, int failedAttempts, bool isLocked)
+    {
+        lock (FileLock)
+        {
+            if (!File.Exists(StudentsCacheFile)) return;
+            try
+            {
+                var students = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new();
+                var student = students.FirstOrDefault(s => s.StudentId == studentId);
+                if (student != null)
+                {
+                    student.FailedPinAttempts = failedAttempts;
+                    student.PinLocked = isLocked;
+                    File.WriteAllText(StudentsCacheFile, JsonSerializer.Serialize(students, JsonOptions));
+                }
+            }
+            catch { }
+        }
     }
 
     private static void EnsureDirectoryExists()
@@ -148,7 +175,8 @@ public static class OfflineCacheService
     // 3. OFFLINE VERIFICATION ENGINE
     // =========================================================================
 
-    public static (bool IsGranted, CachedStudent? Student, string ErrorCode, string Remarks) VerifyStudentOffline(string uid, string? enteredPin = null)
+    // THE FIX: Added transactionType to strictly enforce entry/exit states while offline
+    public static (bool IsGranted, CachedStudent? Student, string ErrorCode, string Remarks) VerifyStudentOffline(string uid, string transactionType, string? enteredPin = null)
     {
         lock (FileLock)
         {
@@ -166,6 +194,13 @@ public static class OfflineCacheService
 
             if (student.PinLocked)
                 return (false, student, "ACCOUNT_LOCKED", "Student account is locked due to PIN failures.");
+
+            // THE FIX: Strict offline anti-tailgating and sequence tracking
+            if (transactionType == "Entry" && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
+                return (false, student, "ANTI_TAILGATING_VIOLATION", "Consecutive entry attempt detected in offline mode.");
+
+            if (transactionType == "Exit" && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
+                return (false, student, "IRREGULAR_EXIT_SEQUENCE", "Exit attempted while student is already marked OUTSIDE.");
 
             // Verify PIN if required
             if (!string.IsNullOrEmpty(student.PinHash) && !string.IsNullOrEmpty(enteredPin))
@@ -205,7 +240,7 @@ public static class OfflineCacheService
     }
 
     // =========================================================================
-    // 4. EMERGENCY LOG WRITING (WHEN XAMPP IS DOWN)
+    // 4. EMERGENCY LOG WRITING (WHEN MYSQL IS DOWN)
     // =========================================================================
 
     public static void SaveOfflineGateLog(string studentId, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks)
@@ -228,6 +263,12 @@ public static class OfflineCacheService
             });
 
             File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
+
+            // THE FIX: Automatically toggle the cached Entry State to simulate a successful check-in
+            if (isGranted && !string.IsNullOrEmpty(studentId))
+            {
+                UpdateCachedStudentStateLocally(studentId, transactionType == "Entry" ? "INSIDE" : "OUTSIDE");
+            }
         }
     }
 
@@ -252,11 +293,27 @@ public static class OfflineCacheService
         }
     }
 
+    private static void UpdateCachedStudentStateLocally(string studentId, string newState)
+    {
+        if (!File.Exists(StudentsCacheFile)) return;
+        try
+        {
+            var students = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new();
+            var student = students.FirstOrDefault(s => s.StudentId == studentId);
+            if (student != null)
+            {
+                student.EntryState = newState;
+                File.WriteAllText(StudentsCacheFile, JsonSerializer.Serialize(students, JsonOptions));
+            }
+        }
+        catch { }
+    }
+
     // =========================================================================
-    // 5. LOG RECOVERY & CLEANUP
+    // 5. ATOMIC LOG EXTRACTION (PREVENTS CONCURRENCY DELETION BUGS)
     // =========================================================================
 
-    public static List<PendingGateLog> GetPendingGateLogs()
+    private static List<PendingGateLog> GetPendingGateLogs()
     {
         if (!File.Exists(GateLogsFile)) return new();
         try
@@ -267,7 +324,7 @@ public static class OfflineCacheService
         catch { return new(); }
     }
 
-    public static List<PendingEventAttendance> GetPendingEventLogs()
+    private static List<PendingEventAttendance> GetPendingEventLogs()
     {
         if (!File.Exists(EventLogsFile)) return new();
         try
@@ -284,12 +341,56 @@ public static class OfflineCacheService
                (File.Exists(EventLogsFile) && new FileInfo(EventLogsFile).Length > 10);
     }
 
-    public static void ClearPendingLogs()
+    // THE FIX: We no longer randomly clear files. We atomic-extract them, wiping the file at the exact millisecond we read it.
+    public static List<PendingGateLog> ExtractPendingGateLogs()
     {
         lock (FileLock)
         {
-            if (File.Exists(GateLogsFile)) File.Delete(GateLogsFile);
-            if (File.Exists(EventLogsFile)) File.Delete(EventLogsFile);
+            if (!File.Exists(GateLogsFile)) return new();
+            try
+            {
+                string json = File.ReadAllText(GateLogsFile);
+                File.Delete(GateLogsFile); // Instantly delete so new offline taps aren't lost
+                return JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
+            }
+            catch { return new(); }
+        }
+    }
+
+    public static List<PendingEventAttendance> ExtractPendingEventLogs()
+    {
+        lock (FileLock)
+        {
+            if (!File.Exists(EventLogsFile)) return new();
+            try
+            {
+                string json = File.ReadAllText(EventLogsFile);
+                File.Delete(EventLogsFile);
+                return JsonSerializer.Deserialize<List<PendingEventAttendance>>(json) ?? new();
+            }
+            catch { return new(); }
+        }
+    }
+
+    public static void RestoreFailedGateLogs(List<PendingGateLog> failedLogs)
+    {
+        if (failedLogs.Count == 0) return;
+        lock (FileLock)
+        {
+            var existing = GetPendingGateLogs();
+            existing.InsertRange(0, failedLogs);
+            File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(existing, JsonOptions));
+        }
+    }
+
+    public static void RestoreFailedEventLogs(List<PendingEventAttendance> failedLogs)
+    {
+        if (failedLogs.Count == 0) return;
+        lock (FileLock)
+        {
+            var existing = GetPendingEventLogs();
+            existing.InsertRange(0, failedLogs);
+            File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(existing, JsonOptions));
         }
     }
 }
