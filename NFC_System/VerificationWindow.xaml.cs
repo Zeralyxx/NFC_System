@@ -296,23 +296,33 @@ namespace NFC_System
 
             try
             {
-                // Retrieve COM port to establish background serial monitor for Admin Overrides
-                string nfcPort = "COM3";
-                if (DatabaseMonitor.IsOnline)
-                {
-                    try { nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
-                }
-                _currentPort = nfcPort;
-                TryConnectSerial(_currentPort);
-
                 var cameras = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
                 CameraComboBox.ItemsSource = cameras;
 
                 string savedCamId = "";
+                string savedReaderType = "Wired";
+                string savedBtPort = "COM3";
+
                 if (DatabaseMonitor.IsOnline)
                 {
-                    try { savedCamId = await _database.GetSettingAsync("selected_camera", ""); } catch { }
+                    try
+                    {
+                        savedCamId = await _database.GetSettingAsync("selected_camera", "");
+                        savedReaderType = await _database.GetSettingAsync("reader_connection_type", "Wired");
+                        savedBtPort = await _database.GetSettingAsync("bluetooth_nfc_port", "COM3");
+                    }
+                    catch { }
                 }
+
+                // Set Reader Type UI
+                ReaderTypeComboBox.SelectedIndex = savedReaderType == "Wireless" ? 1 : 0;
+
+                // Populate available system COM ports for the Bluetooth dropdown
+                PopulateAvailableComPorts(savedBtPort);
+
+                // Determine active port based on selection
+                _currentPort = savedReaderType == "Wireless" ? savedBtPort : "COM3"; // or read wired default from settings
+                TryConnectSerial(_currentPort);
 
                 if (!string.IsNullOrEmpty(savedCamId))
                     CameraComboBox.SelectedItem = cameras.FirstOrDefault(c => c.Id == savedCamId) ?? cameras.FirstOrDefault();
@@ -346,6 +356,69 @@ namespace NFC_System
             }
         }
 
+
+        private void PopulateAvailableComPorts(string selectedPort)
+        {
+            var ports = SerialPort.GetPortNames().Distinct().ToList();
+            if (!ports.Contains(selectedPort) && !string.IsNullOrEmpty(selectedPort))
+            {
+                ports.Add(selectedPort);
+            }
+            BluetoothPortComboBox.ItemsSource = ports;
+            BluetoothPortComboBox.SelectedItem = selectedPort;
+        }
+
+        private async void ReaderTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isInitializing) return;
+
+            bool isWireless = ReaderTypeComboBox.SelectedIndex == 1;
+            BluetoothPortComboBox.Visibility = isWireless ? Visibility.Visible : Visibility.Collapsed;
+
+            string readerTypeName = isWireless ? "Wireless" : "Wired";
+
+            // Hot-swap the active port immediately
+            CloseSerialPort();
+            if (isWireless)
+            {
+                if (BluetoothPortComboBox.SelectedItem is string port)
+                {
+                    _currentPort = port;
+                }
+            }
+            else
+            {
+                _currentPort = "COM3"; // Default desk wired port
+            }
+            TryConnectSerial(_currentPort);
+
+            VerificationLogListView.Items.Insert(0, $"[INFO] Switched reader mode to: {readerTypeName} ({_currentPort})");
+
+            try
+            {
+                await _database.SetSettingAsync("reader_connection_type", readerTypeName);
+            }
+            catch { }
+        }
+
+        private async void BluetoothPortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isInitializing || BluetoothPortComboBox.SelectedItem == null) return;
+
+            string selectedPort = BluetoothPortComboBox.SelectedItem.ToString() ?? "COM3";
+
+            CloseSerialPort();
+            _currentPort = selectedPort;
+            TryConnectSerial(_currentPort);
+
+            VerificationLogListView.Items.Insert(0, $"[INFO] Bluetooth COM port updated to: {selectedPort}");
+
+            try
+            {
+                await _database.SetSettingAsync("bluetooth_nfc_port", selectedPort);
+            }
+            catch { }
+        }
         private async void CameraComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (CameraComboBox.SelectedItem is DeviceInformation selectedCam)

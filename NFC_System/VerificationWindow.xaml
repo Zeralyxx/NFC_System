@@ -96,12 +96,22 @@
 
                 <Border x:Name="HeaderRightBorder" Grid.Row="1" Grid.Column="2" CornerRadius="12" Background="#0AFFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="16,8" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                        <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="180" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
-                        <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="140" SelectionChanged="DirectionComboBox_SelectionChanged">
+                        <ComboBox x:Name="CameraComboBox" Header="QR Camera" Width="140" SelectionChanged="CameraComboBox_SelectionChanged" DisplayMemberPath="Name" PlaceholderText="Detecting..."/>
+
+                        <!-- NEW: Reader Type Selector (Wired vs Bluetooth) -->
+                        <ComboBox x:Name="ReaderTypeComboBox" Header="Reader Connection" Width="130" SelectionChanged="ReaderTypeComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Wired (USB)"/>
+                            <ComboBoxItem Content="Wireless (Bluetooth)"/>
+                        </ComboBox>
+
+                        <!-- NEW: Dynamic Bluetooth COM Port Selector (Visible only when Bluetooth is chosen) -->
+                        <ComboBox x:Name="BluetoothPortComboBox" Header="Bluetooth Port" Width="120" SelectionChanged="BluetoothPortComboBox_SelectionChanged" PlaceholderText="Select COM..." Visibility="Collapsed"/>
+
+                        <ComboBox x:Name="DirectionComboBox" Header="Transaction Type" Width="110" SelectionChanged="DirectionComboBox_SelectionChanged">
                             <ComboBoxItem Content="Entry"/>
                             <ComboBoxItem Content="Exit"/>
                         </ComboBox>
-                        <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="220" SelectionChanged="SecurityModeComboBox_SelectionChanged">
+                        <ComboBox x:Name="SecurityModeComboBox" Header="Current Security Mode" Width="180" SelectionChanged="SecurityModeComboBox_SelectionChanged">
                             <ComboBoxItem Content="Fast (NFC Only)"/>
                             <ComboBoxItem Content="Standard (NFC + PIN)"/>
                             <ComboBoxItem Content="High-Security (NFC+PIN+QR)"/>
