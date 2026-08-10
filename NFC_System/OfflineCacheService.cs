@@ -343,8 +343,11 @@ public static class OfflineCacheService
             try
             {
                 string json = File.ReadAllText(GateLogsFile);
+
+                // THE FIX: Parse the file BEFORE deleting it to prevent invisible data loss!
+                var logs = JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
                 File.Delete(GateLogsFile);
-                return JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
+                return logs;
             }
             catch { return new(); }
         }
@@ -358,12 +361,17 @@ public static class OfflineCacheService
             try
             {
                 string json = File.ReadAllText(EventLogsFile);
+
+                // THE FIX: Parse the file BEFORE deleting it!
+                var logs = JsonSerializer.Deserialize<List<PendingEventAttendance>>(json) ?? new();
                 File.Delete(EventLogsFile);
-                return JsonSerializer.Deserialize<List<PendingEventAttendance>>(json) ?? new();
+                return logs;
             }
             catch { return new(); }
         }
     }
+
+    
 
     public static void RestoreFailedGateLogs(List<PendingGateLog> failedLogs)
     {

@@ -1374,18 +1374,30 @@ public sealed class DatabaseService
     {
         if (!OfflineCacheService.HasPendingLogs()) return;
 
-        // THE FIX: Atomic extraction. Pulls logs and deletes file safely in one millisecond to prevent wiping out concurrent taps.
         var gateLogs = OfflineCacheService.ExtractPendingGateLogs();
         var eventLogs = OfflineCacheService.ExtractPendingEventLogs();
 
         if (gateLogs.Count == 0 && eventLogs.Count == 0) return;
 
+        var failedGateLogs = new List<PendingGateLog>();
+        var failedEventLogs = new List<PendingEventAttendance>();
+
+        using var connection = new MySqlConnection(ConnectionString);
         try
         {
-            using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
+        }
+        catch
+        {
+            // If the database connection drops right as we try to sync, put everything back
+            OfflineCacheService.RestoreFailedGateLogs(gateLogs);
+            OfflineCacheService.RestoreFailedEventLogs(eventLogs);
+            return;
+        }
 
-            foreach (var log in gateLogs)
+        foreach (var log in gateLogs)
+        {
+            try
             {
                 string targetTable = log.VerificationMode switch
                 {
@@ -1398,7 +1410,8 @@ public sealed class DatabaseService
                     INSERT INTO {targetTable} (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
                     VALUES (@ts, @sid, @nfc, @ttype, @vmode, @granted, @err, @rem)", connection);
 
-                cmd.Parameters.AddWithValue("@ts", DateTime.Parse(log.Timestamp));
+                // THE FIX: Pass the string directly. MySQL naturally accepts "yyyy-MM-dd HH:mm:ss" without needing C# to parse it!
+                cmd.Parameters.AddWithValue("@ts", log.Timestamp);
                 cmd.Parameters.AddWithValue("@sid", NullIfEmpty(log.StudentId));
                 cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(log.NfcUid));
                 cmd.Parameters.AddWithValue("@ttype", log.TransactionType);
@@ -1409,14 +1422,22 @@ public sealed class DatabaseService
 
                 await cmd.ExecuteNonQueryAsync();
             }
+            catch
+            {
+                // THE FIX: If this specific log fails, isolate it. Don't block the rest!
+                failedGateLogs.Add(log);
+            }
+        }
 
-            foreach (var log in eventLogs)
+        foreach (var log in eventLogs)
+        {
+            try
             {
                 using var cmd = new MySqlCommand(@"
                     INSERT INTO event_attendance (timestamp, event_id, student_id, verification_mode, status, remarks) 
                     VALUES (@ts, @eid, @sid, @vmode, @status, @rem)", connection);
 
-                cmd.Parameters.AddWithValue("@ts", DateTime.Parse(log.Timestamp));
+                cmd.Parameters.AddWithValue("@ts", log.Timestamp);
                 cmd.Parameters.AddWithValue("@eid", log.EventId);
                 cmd.Parameters.AddWithValue("@sid", log.StudentId);
                 cmd.Parameters.AddWithValue("@vmode", log.VerificationMode);
@@ -1425,13 +1446,15 @@ public sealed class DatabaseService
 
                 await cmd.ExecuteNonQueryAsync();
             }
+            catch
+            {
+                failedEventLogs.Add(log);
+            }
         }
-        catch
-        {
-            // THE FIX: If the database connection drops halfway through the sync, push all the logs back to the local file!
-            OfflineCacheService.RestoreFailedGateLogs(gateLogs);
-            OfflineCacheService.RestoreFailedEventLogs(eventLogs);
-        }
+
+        // Put ONLY the bad logs back into the queue to try again later
+        if (failedGateLogs.Count > 0) OfflineCacheService.RestoreFailedGateLogs(failedGateLogs);
+        if (failedEventLogs.Count > 0) OfflineCacheService.RestoreFailedEventLogs(failedEventLogs);
     }
 
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(
@@ -1554,72 +1577,86 @@ public sealed class DatabaseService
 
     public async Task ExportCleanLogsToCsvAsync(string folderPath)
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        string[] tables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs" };
-
-        foreach (var table in tables)
+        // THE FIX: Instantly block the export if the database is offline instead of crashing
+        if (!await TestConnectionAsync())
         {
-            string sql = $@"
-                SELECT timestamp, student_name, transaction_type, verification_mode, is_granted, error_code, 
-                       nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms 
-                FROM {table} 
-                ORDER BY timestamp DESC";
+            throw new InvalidOperationException("Cannot export logs while the system is offline. Please wait for the server connection to be restored to generate a complete historical report.");
+        }
 
-            using var cmd = new MySqlCommand(sql, connection);
-            using var reader = await cmd.ExecuteReaderAsync();
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
 
-            string filePath = Path.Combine(folderPath, $"{table}.csv");
-            using var writer = new StreamWriter(filePath);
+            string[] tables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs" };
 
-            await writer.WriteLineAsync("Date & Time,Student Name,Action,Verification Flow,Verdict,NFC System Latency,PIN User Workflow,PIN System Latency,QR User Workflow,QR System Latency,Total User Workflow Time,Total System Latency,Total DB Query Time");
-
-            while (await reader.ReadAsync())
+            foreach (var table in tables)
             {
-                string ts = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd HH:mm:ss.fff");
-                string tsEscaped = $"=\"{ts}\"";
+                string sql = $@"
+                    SELECT timestamp, student_name, transaction_type, verification_mode, is_granted, error_code, 
+                           nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms 
+                    FROM {table} 
+                    ORDER BY timestamp DESC";
 
-                string name = Value(reader["student_name"]).Replace(",", " ");
-                if (string.IsNullOrWhiteSpace(name)) name = "Unknown";
+                using var cmd = new MySqlCommand(sql, connection);
+                using var reader = await cmd.ExecuteReaderAsync();
 
-                string mode = Value(reader["verification_mode"]);
-                string action = Value(reader["transaction_type"]);
+                string filePath = Path.Combine(folderPath, $"{table}.csv");
+                using var writer = new StreamWriter(filePath);
 
-                bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
-                string errorCode = Value(reader["error_code"]);
-                string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
+                await writer.WriteLineAsync("Date & Time,Student Name,Action,Verification Flow,Verdict,NFC System Latency,PIN User Workflow,PIN System Latency,QR User Workflow,QR System Latency,Total User Workflow Time,Total System Latency,Total DB Query Time");
 
-                bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
-                               (mode.Equals("Standard", StringComparison.OrdinalIgnoreCase) || mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase));
-
-                bool usedQr = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
-                              mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase);
-
-                if (!isGranted && (errorCode == "NOT_REGISTERED" || errorCode == "INACTIVE_STUDENT" || errorCode == "ANTI_TAILGATING_VIOLATION" || errorCode == "IRREGULAR_EXIT_SEQUENCE" || errorCode == "IRREGULAR_EVENT_EXIT" || errorCode == "UNAUTHORIZED_EVENT_ACCESS" || errorCode == "BAD_READ" || errorCode == "DOUBLE_ENTRY" || errorCode == "ANTI_PROXY_VIOLATION" || errorCode == "PIN_LOCKED"))
+                while (await reader.ReadAsync())
                 {
-                    usedPin = false;
-                    usedQr = false;
+                    string ts = Convert.ToDateTime(reader["timestamp"]).ToString("yyyy-MM-dd HH:mm:ss.fff");
+                    string tsEscaped = $"=\"{ts}\"";
+
+                    string name = Value(reader["student_name"]).Replace(",", " ");
+                    if (string.IsNullOrWhiteSpace(name)) name = "Unknown";
+
+                    string mode = Value(reader["verification_mode"]);
+                    string action = Value(reader["transaction_type"]);
+
+                    bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
+                    string errorCode = Value(reader["error_code"]);
+                    string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
+
+                    bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
+                                   (mode.Equals("Standard", StringComparison.OrdinalIgnoreCase) || mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase));
+
+                    bool usedQr = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
+                                  mode.Equals("HighSecurity", StringComparison.OrdinalIgnoreCase);
+
+                    if (!isGranted && (errorCode == "NOT_REGISTERED" || errorCode == "INACTIVE_STUDENT" || errorCode == "ANTI_TAILGATING_VIOLATION" || errorCode == "IRREGULAR_EXIT_SEQUENCE" || errorCode == "IRREGULAR_EVENT_EXIT" || errorCode == "UNAUTHORIZED_EVENT_ACCESS" || errorCode == "BAD_READ" || errorCode == "DOUBLE_ENTRY" || errorCode == "ANTI_PROXY_VIOLATION" || errorCode == "PIN_LOCKED"))
+                    {
+                        usedPin = false;
+                        usedQr = false;
+                    }
+                    if (!isGranted && errorCode == "PIN_FAILURE")
+                    {
+                        usedQr = false;
+                    }
+
+                    string nfcSysStr = FormatTimeSpan(reader["nfc_system_ms"]);
+                    string pinWfStr = usedPin ? FormatTimeSpan(reader["pin_workflow_ms"]) : "N/A (Bypassed)";
+                    string pinSysStr = usedPin ? FormatTimeSpan(reader["pin_system_ms"]) : "N/A (Bypassed)";
+                    string qrWfStr = usedQr ? FormatTimeSpan(reader["qr_workflow_ms"]) : "N/A (Bypassed)";
+                    string qrSysStr = usedQr ? FormatTimeSpan(reader["qr_system_ms"]) : "N/A (Bypassed)";
+
+                    double totWf = reader["total_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_workflow_ms"]) : 0;
+                    string totalWfStr = totWf > 0 ? FormatTimeSpan(totWf) : "N/A";
+
+                    string totalSysStr = FormatTimeSpan(reader["total_system_ms"]);
+                    string dbStr = FormatTimeSpan(reader["db_query_speed_ms"]);
+
+                    await writer.WriteLineAsync($"{tsEscaped},{name},{action},{mode},{verdict},{nfcSysStr},{pinWfStr},{pinSysStr},{qrWfStr},{qrSysStr},{totalWfStr},{totalSysStr},{dbStr}");
                 }
-                if (!isGranted && errorCode == "PIN_FAILURE")
-                {
-                    usedQr = false;
-                }
-
-                string nfcSysStr = FormatTimeSpan(reader["nfc_system_ms"]);
-                string pinWfStr = usedPin ? FormatTimeSpan(reader["pin_workflow_ms"]) : "N/A (Bypassed)";
-                string pinSysStr = usedPin ? FormatTimeSpan(reader["pin_system_ms"]) : "N/A (Bypassed)";
-                string qrWfStr = usedQr ? FormatTimeSpan(reader["qr_workflow_ms"]) : "N/A (Bypassed)";
-                string qrSysStr = usedQr ? FormatTimeSpan(reader["qr_system_ms"]) : "N/A (Bypassed)";
-
-                double totWf = reader["total_workflow_ms"] != DBNull.Value ? Convert.ToDouble(reader["total_workflow_ms"]) : 0;
-                string totalWfStr = totWf > 0 ? FormatTimeSpan(totWf) : "N/A";
-
-                string totalSysStr = FormatTimeSpan(reader["total_system_ms"]);
-                string dbStr = FormatTimeSpan(reader["db_query_speed_ms"]);
-
-                await writer.WriteLineAsync($"{tsEscaped},{name},{action},{mode},{verdict},{nfcSysStr},{pinWfStr},{pinSysStr},{qrWfStr},{qrSysStr},{totalWfStr},{totalSysStr},{dbStr}");
             }
+        }
+        catch (Exception ex)
+        {
+            // Catch any unexpected database drops during the export process
+            throw new InvalidOperationException($"Export failed. The database connection may have been lost. Details: {ex.Message}");
         }
     }
 
