@@ -131,6 +131,9 @@ namespace NFC_System
             // OFFLINE CACHE CONFIGURATION
             // --------------------------------------------------------
 
+            // THE FIX: Force an instant download right when the app opens!
+            _ = _database.UpdateShadowCacheAsync();
+
             // 1. Silent Background Pull (Every 5 Minutes)
             _shadowCacheTimer.Interval = TimeSpan.FromMinutes(5);
             _shadowCacheTimer.Tick += async (s, e) => await _database.UpdateShadowCacheAsync();
