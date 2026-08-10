@@ -18,7 +18,6 @@ public class CachedStudent
     public string Status { get; set; } = "";
     public bool PinLocked { get; set; }
     public string EntryState { get; set; } = "OUTSIDE";
-    // THE FIX: Added missing properties required for offline PIN and QR logic
     public int FailedPinAttempts { get; set; }
     public string QrCredential { get; set; } = "";
 }
@@ -61,8 +60,6 @@ public class PendingEventAttendance
     public string Remarks { get; set; } = "";
 }
 
-
-
 public static class OfflineCacheService
 {
     private static readonly string CacheDirectory = Path.Combine(
@@ -81,30 +78,19 @@ public static class OfflineCacheService
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly object FileLock = new();
 
+    // =========================================================================
+    // IN-MEMORY RAM CACHE (TO PREVENT UI FREEZING)
+    // =========================================================================
+    private static List<CachedStudent> _inMemoryStudents = new();
+    private static List<CachedEvent> _inMemoryEvents = new();
+    private static List<CachedEventRoster> _inMemoryRosters = new();
+
+    private static bool _isStudentMemoryLoaded = false;
+    private static bool _isEventMemoryLoaded = false;
+
     static OfflineCacheService()
     {
         EnsureDirectoryExists();
-    }
-
-    // THE FIX: Tracks failed PIN attempts in the local JSON so students actually get locked out offline
-    public static void UpdateCachedStudentPinProgress(string studentId, int failedAttempts, bool isLocked)
-    {
-        lock (FileLock)
-        {
-            if (!File.Exists(StudentsCacheFile)) return;
-            try
-            {
-                var students = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new();
-                var student = students.FirstOrDefault(s => s.StudentId == studentId);
-                if (student != null)
-                {
-                    student.FailedPinAttempts = failedAttempts;
-                    student.PinLocked = isLocked;
-                    File.WriteAllText(StudentsCacheFile, JsonSerializer.Serialize(students, JsonOptions));
-                }
-            }
-            catch { }
-        }
     }
 
     private static void EnsureDirectoryExists()
@@ -112,6 +98,39 @@ public static class OfflineCacheService
         if (!Directory.Exists(CacheDirectory))
         {
             Directory.CreateDirectory(CacheDirectory);
+        }
+    }
+
+    private static void LoadStudentMemoryCache()
+    {
+        if (_isStudentMemoryLoaded) return;
+        lock (FileLock)
+        {
+            if (_isStudentMemoryLoaded) return;
+            if (File.Exists(StudentsCacheFile))
+            {
+                try { _inMemoryStudents = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new(); }
+                catch { }
+            }
+            _isStudentMemoryLoaded = true;
+        }
+    }
+
+    private static void LoadEventMemoryCache()
+    {
+        if (_isEventMemoryLoaded) return;
+        lock (FileLock)
+        {
+            if (_isEventMemoryLoaded) return;
+            try
+            {
+                if (File.Exists(EventsCacheFile))
+                    _inMemoryEvents = JsonSerializer.Deserialize<List<CachedEvent>>(File.ReadAllText(EventsCacheFile)) ?? new();
+                if (File.Exists(RostersCacheFile))
+                    _inMemoryRosters = JsonSerializer.Deserialize<List<CachedEventRoster>>(File.ReadAllText(RostersCacheFile)) ?? new();
+            }
+            catch { }
+            _isEventMemoryLoaded = true;
         }
     }
 
@@ -124,6 +143,8 @@ public static class OfflineCacheService
         lock (FileLock)
         {
             EnsureDirectoryExists();
+            _inMemoryStudents = students;
+            _isStudentMemoryLoaded = true;
             string json = JsonSerializer.Serialize(students, JsonOptions);
             File.WriteAllText(StudentsCacheFile, json);
         }
@@ -134,113 +155,119 @@ public static class OfflineCacheService
         lock (FileLock)
         {
             EnsureDirectoryExists();
+            _inMemoryEvents = events;
+            _inMemoryRosters = rosters;
+            _isEventMemoryLoaded = true;
             File.WriteAllText(EventsCacheFile, JsonSerializer.Serialize(events, JsonOptions));
             File.WriteAllText(RostersCacheFile, JsonSerializer.Serialize(rosters, JsonOptions));
         }
     }
 
     // =========================================================================
-    // 2. READ SHADOW CACHE (FOR UI OFFLINE FALLBACK)
+    // 2. READ SHADOW CACHE (FOR UI DROPDOWNS)
     // =========================================================================
 
     public static List<CachedStudent> GetCachedStudents()
     {
-        lock (FileLock)
-        {
-            if (!File.Exists(StudentsCacheFile)) return new List<CachedStudent>();
-            try
-            {
-                string json = File.ReadAllText(StudentsCacheFile);
-                return JsonSerializer.Deserialize<List<CachedStudent>>(json) ?? new List<CachedStudent>();
-            }
-            catch { return new List<CachedStudent>(); }
-        }
+        LoadStudentMemoryCache();
+        return _inMemoryStudents;
     }
 
     public static List<CachedEvent> GetCachedEvents()
     {
-        lock (FileLock)
-        {
-            if (!File.Exists(EventsCacheFile)) return new List<CachedEvent>();
-            try
-            {
-                string json = File.ReadAllText(EventsCacheFile);
-                return JsonSerializer.Deserialize<List<CachedEvent>>(json) ?? new List<CachedEvent>();
-            }
-            catch { return new List<CachedEvent>(); }
-        }
+        LoadEventMemoryCache();
+        return _inMemoryEvents;
     }
 
     // =========================================================================
-    // 3. OFFLINE VERIFICATION ENGINE
+    // 3. OFFLINE VERIFICATION ENGINE (LIGHTNING FAST)
     // =========================================================================
 
-    // THE FIX: Added transactionType to strictly enforce entry/exit states while offline
     public static (bool IsGranted, CachedStudent? Student, string ErrorCode, string Remarks) VerifyStudentOffline(string uid, string transactionType, string? enteredPin = null)
     {
-        lock (FileLock)
+        LoadStudentMemoryCache();
+        var student = _inMemoryStudents.FirstOrDefault(s => s.NfcUid.Equals(uid, StringComparison.OrdinalIgnoreCase));
+
+        if (student == null)
+            return (false, null, "UNREGISTERED", "Card UID not found in offline shadow cache.");
+
+        if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            return (false, student, "INACTIVE_STATUS", $"Student status is currently '{student.Status}'.");
+
+        if (student.PinLocked)
+            return (false, student, "ACCOUNT_LOCKED", "Student account is locked due to PIN failures.");
+
+        if (transactionType == "Entry" && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
+            return (false, student, "ANTI_TAILGATING_VIOLATION", "Consecutive entry attempt detected in offline mode.");
+
+        if (transactionType == "Exit" && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
+            return (false, student, "IRREGULAR_EXIT_SEQUENCE", "Exit attempted while student is already marked OUTSIDE.");
+
+        if (!string.IsNullOrEmpty(student.PinHash) && !string.IsNullOrEmpty(enteredPin))
         {
-            if (!File.Exists(StudentsCacheFile))
-                return (false, null, "NO_CACHE", "Offline roster not initialized on terminal.");
-
-            var students = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new();
-            var student = students.FirstOrDefault(s => s.NfcUid.Equals(uid, StringComparison.OrdinalIgnoreCase));
-
-            if (student == null)
-                return (false, null, "UNREGISTERED", "Card UID not found in offline shadow cache.");
-
-            if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
-                return (false, student, "INACTIVE_STATUS", $"Student status is currently '{student.Status}'.");
-
-            if (student.PinLocked)
-                return (false, student, "ACCOUNT_LOCKED", "Student account is locked due to PIN failures.");
-
-            // THE FIX: Strict offline anti-tailgating and sequence tracking
-            if (transactionType == "Entry" && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
-                return (false, student, "ANTI_TAILGATING_VIOLATION", "Consecutive entry attempt detected in offline mode.");
-
-            if (transactionType == "Exit" && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
-                return (false, student, "IRREGULAR_EXIT_SEQUENCE", "Exit attempted while student is already marked OUTSIDE.");
-
-            // Verify PIN if required
-            if (!string.IsNullOrEmpty(student.PinHash) && !string.IsNullOrEmpty(enteredPin))
-            {
-                bool isPinValid = PinHasher.VerifyPin(enteredPin, student.PinSalt, student.PinHash);
-                if (!isPinValid)
-                    return (false, student, "INVALID_PIN", "Incorrect PIN entered in offline mode.");
-            }
-
-            return (true, student, "VERIFIED", "Verified via Offline Shadow Cache.");
+            bool isPinValid = PinHasher.VerifyPin(enteredPin, student.PinSalt, student.PinHash);
+            if (!isPinValid)
+                return (false, student, "INVALID_PIN", "Incorrect PIN entered in offline mode.");
         }
+
+        return (true, student, "VERIFIED", "Verified via Offline Shadow Cache.");
     }
 
     public static (bool IsAllowed, string Status, string Remarks) VerifyEventAttendeeOffline(string eventId, string studentId)
     {
-        lock (FileLock)
-        {
-            if (!File.Exists(EventsCacheFile) || !File.Exists(RostersCacheFile))
-                return (true, "GRANTED", "Event roster cache missing; allowing entry.");
+        LoadEventMemoryCache();
 
-            var events = JsonSerializer.Deserialize<List<CachedEvent>>(File.ReadAllText(EventsCacheFile)) ?? new();
-            var evt = events.FirstOrDefault(e => e.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase));
+        var evt = _inMemoryEvents.FirstOrDefault(e => e.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase));
+        if (evt == null || !evt.IsRestricted)
+            return (true, "GRANTED", "Unrestricted event in offline mode.");
 
-            if (evt == null || !evt.IsRestricted)
-                return (true, "GRANTED", "Unrestricted event in offline mode.");
+        var roster = _inMemoryRosters.FirstOrDefault(r => r.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase));
+        if (roster != null && roster.ApprovedStudentIds.Contains(studentId, StringComparer.OrdinalIgnoreCase))
+            return (true, "GRANTED", "Verified against offline event roster.");
 
-            var rosters = JsonSerializer.Deserialize<List<CachedEventRoster>>(File.ReadAllText(RostersCacheFile)) ?? new();
-            var roster = rosters.FirstOrDefault(r => r.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase));
-
-            if (roster != null && roster.ApprovedStudentIds.Contains(studentId, StringComparer.OrdinalIgnoreCase))
-            {
-                return (true, "GRANTED", "Verified against offline event roster.");
-            }
-
-            return (false, "DENIED", "Student ID is not on the approved offline roster for this event.");
-        }
+        return (false, "DENIED", "Student ID is not on the approved offline roster for this event.");
     }
 
     // =========================================================================
-    // 4. EMERGENCY LOG WRITING (WHEN MYSQL IS DOWN)
+    // 4. FAST BACKGROUND FILE WRITERS (NO UI FREEZES)
+    // =========================================================================
+
+    public static void UpdateCachedStudentPinProgress(string studentId, int failedAttempts, bool isLocked)
+    {
+        LoadStudentMemoryCache();
+        var student = _inMemoryStudents.FirstOrDefault(s => s.StudentId == studentId);
+        if (student != null)
+        {
+            student.FailedPinAttempts = failedAttempts;
+            student.PinLocked = isLocked;
+            SaveStudentsToDiskBackground();
+        }
+    }
+
+    private static void UpdateCachedStudentStateLocally(string studentId, string newState)
+    {
+        LoadStudentMemoryCache();
+        var student = _inMemoryStudents.FirstOrDefault(s => s.StudentId == studentId);
+        if (student != null)
+        {
+            student.EntryState = newState;
+            SaveStudentsToDiskBackground();
+        }
+    }
+
+    private static void SaveStudentsToDiskBackground()
+    {
+        Task.Run(() =>
+        {
+            string json;
+            lock (FileLock) { json = JsonSerializer.Serialize(_inMemoryStudents, JsonOptions); }
+            // Write happens completely off the main UI thread
+            try { File.WriteAllText(StudentsCacheFile, json); } catch { }
+        });
+    }
+
+    // =========================================================================
+    // 5. EMERGENCY LOG WRITING & ATOMIC EXTRACTION
     // =========================================================================
 
     public static void SaveOfflineGateLog(string studentId, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks)
@@ -249,7 +276,6 @@ public static class OfflineCacheService
         {
             EnsureDirectoryExists();
             var logs = GetPendingGateLogs();
-
             logs.Add(new PendingGateLog
             {
                 Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
@@ -261,10 +287,8 @@ public static class OfflineCacheService
                 ErrorCode = errorCode,
                 Remarks = $"[OFFLINE MODE] {remarks}"
             });
-
             File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
 
-            // THE FIX: Automatically toggle the cached Entry State to simulate a successful check-in
             if (isGranted && !string.IsNullOrEmpty(studentId))
             {
                 UpdateCachedStudentStateLocally(studentId, transactionType == "Entry" ? "INSIDE" : "OUTSIDE");
@@ -278,7 +302,6 @@ public static class OfflineCacheService
         {
             EnsureDirectoryExists();
             var logs = GetPendingEventLogs();
-
             logs.Add(new PendingEventAttendance
             {
                 Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
@@ -288,50 +311,21 @@ public static class OfflineCacheService
                 Status = status,
                 Remarks = $"[OFFLINE MODE] {remarks}"
             });
-
             File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
         }
     }
 
-    private static void UpdateCachedStudentStateLocally(string studentId, string newState)
-    {
-        if (!File.Exists(StudentsCacheFile)) return;
-        try
-        {
-            var students = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new();
-            var student = students.FirstOrDefault(s => s.StudentId == studentId);
-            if (student != null)
-            {
-                student.EntryState = newState;
-                File.WriteAllText(StudentsCacheFile, JsonSerializer.Serialize(students, JsonOptions));
-            }
-        }
-        catch { }
-    }
-
-    // =========================================================================
-    // 5. ATOMIC LOG EXTRACTION (PREVENTS CONCURRENCY DELETION BUGS)
-    // =========================================================================
-
     private static List<PendingGateLog> GetPendingGateLogs()
     {
         if (!File.Exists(GateLogsFile)) return new();
-        try
-        {
-            string json = File.ReadAllText(GateLogsFile);
-            return JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
-        }
+        try { return JsonSerializer.Deserialize<List<PendingGateLog>>(File.ReadAllText(GateLogsFile)) ?? new(); }
         catch { return new(); }
     }
 
     private static List<PendingEventAttendance> GetPendingEventLogs()
     {
         if (!File.Exists(EventLogsFile)) return new();
-        try
-        {
-            string json = File.ReadAllText(EventLogsFile);
-            return JsonSerializer.Deserialize<List<PendingEventAttendance>>(json) ?? new();
-        }
+        try { return JsonSerializer.Deserialize<List<PendingEventAttendance>>(File.ReadAllText(EventLogsFile)) ?? new(); }
         catch { return new(); }
     }
 
@@ -341,7 +335,6 @@ public static class OfflineCacheService
                (File.Exists(EventLogsFile) && new FileInfo(EventLogsFile).Length > 10);
     }
 
-    // THE FIX: We no longer randomly clear files. We atomic-extract them, wiping the file at the exact millisecond we read it.
     public static List<PendingGateLog> ExtractPendingGateLogs()
     {
         lock (FileLock)
@@ -350,7 +343,7 @@ public static class OfflineCacheService
             try
             {
                 string json = File.ReadAllText(GateLogsFile);
-                File.Delete(GateLogsFile); // Instantly delete so new offline taps aren't lost
+                File.Delete(GateLogsFile);
                 return JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
             }
             catch { return new(); }
