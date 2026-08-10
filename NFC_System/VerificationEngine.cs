@@ -87,7 +87,7 @@ public sealed class VerificationEngine
             {
                 student = new StudentRecord
                 {
-                    StudentId = offlineResult.Student.StudentId, // or cached.StudentId depending on the method
+                    StudentId = offlineResult.Student.StudentId,
                     FullName = offlineResult.Student.FullName,
                     NfcUid = offlineResult.Student.NfcUid,
                     PinHash = offlineResult.Student.PinHash,
@@ -95,7 +95,8 @@ public sealed class VerificationEngine
                     Status = offlineResult.Student.Status,
                     PinLocked = offlineResult.Student.PinLocked,
                     EntryState = offlineResult.Student.EntryState,
-                    // ADD THESE TWO LINES:
+
+                    // THE FIX: You missed these two mappings!
                     FailedPinAttempts = offlineResult.Student.FailedPinAttempts,
                     QrCredential = offlineResult.Student.QrCredential
                 };
@@ -384,7 +385,8 @@ public sealed class VerificationEngine
                             Status = cached.Status,
                             PinLocked = cached.PinLocked,
                             EntryState = cached.EntryState,
-                            // ADD THESE TWO LINES:
+                            
+                            // THE FIX: You missed these two mappings here too!
                             FailedPinAttempts = cached.FailedPinAttempts,
                             QrCredential = cached.QrCredential
                         };

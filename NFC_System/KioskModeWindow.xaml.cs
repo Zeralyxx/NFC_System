@@ -363,7 +363,9 @@ namespace NFC_System
             }
             catch
             {
-                _currentMode = VerificationMode.Standard;
+                // THE FIX: Stop defaulting to Standard mode when offline! 
+                // Rely on the global state controller instead.
+                _currentMode = KioskStateController.CurrentMode;
                 TryConnectSerial("COM3");
             }
             SetState(AuthenticationStage.Idle);
