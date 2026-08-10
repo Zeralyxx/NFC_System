@@ -128,33 +128,49 @@ namespace NFC_System
             _ = SyncOperationalModeAsync();
 
             // --------------------------------------------------------
-            // OFFLINE CACHE CONFIGURATION
+            // OFFLINE CACHE CONFIGURATION (100% BACKGROUNDED)
             // --------------------------------------------------------
 
-            // THE FIX: Force an instant download right when the app opens!
-            _ = _database.UpdateShadowCacheAsync();
+            // Force an instant download right when the app opens!
+            Task.Run(async () => {
+                if (DatabaseMonitor.IsOnline)
+                {
+                    await _database.SyncServerTimeOffsetAsync(); // <--- SYNCS CLOCK SKEW
+                    await _database.UpdateShadowCacheAsync();
+                }
+            });
 
             // 1. Silent Background Pull (Every 5 Minutes)
             _shadowCacheTimer.Interval = TimeSpan.FromMinutes(5);
-            _shadowCacheTimer.Tick += async (s, e) => await _database.UpdateShadowCacheAsync();
+            _shadowCacheTimer.Tick += (s, e) =>
+            {
+                Task.Run(async () => {
+                    if (DatabaseMonitor.IsOnline)
+                    {
+                        await _database.SyncServerTimeOffsetAsync(); // <--- RECALCULATES CLOCK SKEW
+                        await _database.UpdateShadowCacheAsync();
+                    }
+                });
+            };
             _shadowCacheTimer.Start();
 
             // 2. Silent Recovery Push (Checks Every 5 Seconds)
             _syncRecoveryTimer.Interval = TimeSpan.FromSeconds(5);
-            _syncRecoveryTimer.Tick += async (s, e) =>
+            _syncRecoveryTimer.Tick += (s, e) =>
             {
                 if (OfflineCacheService.HasPendingLogs())
                 {
-                    // THE FIX: Pause the timer so it doesn't trigger a second sync while the first is uploading!
                     _syncRecoveryTimer.Stop();
 
-                    if (await _database.TestConnectionAsync())
+                    Task.Run(async () =>
                     {
-                        await _database.SyncOfflineLogsToServerAsync();
-                    }
+                        if (DatabaseMonitor.IsOnline && await _database.TestConnectionAsync())
+                        {
+                            await _database.SyncOfflineLogsToServerAsync();
+                        }
 
-                    // Resume checking after the sync is safely finished
-                    _syncRecoveryTimer.Start();
+                        DispatcherQueue.TryEnqueue(() => _syncRecoveryTimer.Start());
+                    });
                 }
             };
             _syncRecoveryTimer.Start();
@@ -551,7 +567,7 @@ namespace NFC_System
                 _outcomeMessage = "This credential has already checked into this event.";
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | DOUBLE ENTRY");
 
                 nfcTimer.Stop();
@@ -577,7 +593,7 @@ namespace NFC_System
                             LoadProfileData(student.FullName, student.StudentId, student.PhotoData, student.IsTemporary);
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                            string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                            string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                             OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | UNINVITED");
 
                             nfcTimer.Stop();
@@ -597,7 +613,7 @@ namespace NFC_System
                 _outcomeMessage = "Card couldn't be read properly. Please tap again.";
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | BAD READ: Please tap again");
 
                 nfcTimer.Stop();
@@ -798,7 +814,7 @@ namespace NFC_System
                 LoadProfileData("UNKNOWN USER", payload.Trim(), null, false);
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
 
                 // THE FIX: Added 15th param (machineProcessingMs)
@@ -826,7 +842,7 @@ namespace NFC_System
                             LoadProfileData(student.FullName, student.StudentId, student.PhotoData, student.IsTemporary);
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
-                            string logTime = DateTime.Now.ToString("MMM dd, yyyy - hh:mm:ss tt");
+                            string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                             OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | UNINVITED");
 
                             // THE FIX: Added 15th param (machineProcessingMs)

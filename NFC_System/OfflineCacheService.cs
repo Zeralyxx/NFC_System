@@ -278,7 +278,8 @@ public static class OfflineCacheService
             var logs = GetPendingGateLogs();
             logs.Add(new PendingGateLog
             {
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                // THE FIX: Use the mathematically adjusted time instead of local PC time!
+                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss"),
                 StudentId = studentId,
                 NfcUid = nfcUid,
                 TransactionType = transactionType,
@@ -304,7 +305,8 @@ public static class OfflineCacheService
             var logs = GetPendingEventLogs();
             logs.Add(new PendingEventAttendance
             {
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                // THE FIX: Use the mathematically adjusted time!
+                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss"),
                 EventId = eventId,
                 StudentId = studentId,
                 VerificationMode = mode,

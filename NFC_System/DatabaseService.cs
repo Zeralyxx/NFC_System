@@ -66,6 +66,35 @@ public sealed class DatabaseService
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
+    // THE FIX: Clock Skew variables and methods
+    public static TimeSpan ServerTimeOffset { get; private set; } = TimeSpan.Zero;
+
+    public async Task SyncServerTimeOffsetAsync()
+    {
+        try
+        {
+            using var connection = new MySqlConnection(ConnectionString);
+            await connection.OpenAsync();
+
+            // Ask MySQL for its exact atomic time down to the millisecond
+            using var cmd = new MySqlCommand("SELECT CURRENT_TIMESTAMP(3)", connection);
+            var serverTime = Convert.ToDateTime(await cmd.ExecuteScalarAsync());
+
+            // Calculate the difference between the PC clock and the Server clock
+            ServerTimeOffset = serverTime - DateTime.Now;
+        }
+        catch
+        {
+            // If offline, just keep using the last known offset!
+        }
+    }
+
+    public static DateTime GetNetworkAdjustedTime()
+    {
+        // Universally apply the delta offset to the current PC clock
+        return DateTime.Now.Add(ServerTimeOffset);
+    }
+
     private const string CombinedLogsQuery = @"
         SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
         UNION ALL 

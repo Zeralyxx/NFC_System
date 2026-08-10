@@ -30,7 +30,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             background-image: radial-gradient(circle at top right, #1a233a 0%, transparent 40%), radial-gradient(circle at bottom left, #120a1f 0%, transparent 40%);
         }
@@ -41,7 +41,7 @@
             border-radius: 16px;
             border: 1px solid var(--border-light);
             width: 100%;
-            max-width: 400px;
+            max-width: 400px; 
             margin: 20px;
             box-shadow: 0 24px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
             position: relative;
@@ -197,7 +197,6 @@
                 opacity: 0;
                 transform: translateY(20px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -205,13 +204,8 @@
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
         /* CSS Loading Spinner */
@@ -231,23 +225,13 @@
         }
 
         @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+            to { transform: rotate(360deg); }
         }
 
         @media (max-width: 480px) {
-            .container {
-                padding: 30px 20px;
-            }
-
-            h2 {
-                font-size: 20px;
-            }
-
-            .security-input {
-                letter-spacing: 8px;
-            }
+            .container { padding: 30px 20px; }
+            h2 { font-size: 20px; }
+            .security-input { letter-spacing: 8px; }
         }
     </style>
 </head>
@@ -258,11 +242,19 @@
 
         <!-- STAGE 1: Request OTP -->
         <div id="stage-1" class="stage">
-            <p>Enter your Student ID. A 6-digit verification code will be sent to your institutional email.</p>
+            <p>Verify your identity. A 6-digit code will be sent to your institutional email.</p>
+            
             <div class="input-group">
                 <label>Student ID</label>
                 <input type="text" id="studentId" placeholder="e.g. 26-00001" autocomplete="off">
             </div>
+
+            <!-- IDEA 1: Secondary Information Requirement -->
+            <div class="input-group">
+                <label>Institutional Email</label>
+                <input type="email" id="studentEmail" placeholder="student@university.edu" autocomplete="off">
+            </div>
+
             <button id="btnRequestOtp">
                 <span class="spinner"></span>
                 <span class="btn-text">Send Verification Code</span>
@@ -345,7 +337,6 @@
             statusMsg.className = isError ? "status error" : "status success";
         }
 
-        // Helper function for button loading states
         function setButtonState(btnId, isLoading, loadingText, originalText) {
             const btn = document.getElementById(btnId);
             const textSpan = btn.querySelector('.btn-text');
@@ -353,7 +344,6 @@
             textSpan.textContent = isLoading ? loadingText : originalText;
         }
 
-        // Secure OTP generation
         function generateSecureOtp() {
             const array = new Uint32Array(1);
             window.crypto.getRandomValues(array);
@@ -371,10 +361,15 @@
 
         // --- STAGE 1: Request OTP ---
         document.getElementById('btnRequestOtp').addEventListener('click', async () => {
+            
             const studentId = document.getElementById('studentId').value.trim();
-            if (!studentId) return showMessage("Please enter your Student ID.");
+            const emailInput = document.getElementById('studentEmail').value.trim().toLowerCase();
+            
+            if (!studentId || !emailInput) {
+                return showMessage("Please enter both your Student ID and Email.");
+            }
 
-            setButtonState('btnRequestOtp', true, "Checking...", "Send Verification Code");
+            setButtonState('btnRequestOtp', true, "Verifying...", "Send Verification Code");
             statusMsg.className = "hidden";
 
             try {
@@ -382,27 +377,48 @@
                 const docRef = doc(db, "students", encodedId);
                 const docSnap = await getDoc(docRef);
 
+                // IDEA 3: The Generic Rejection Phrase (Prevents data harvesting)
+                const genericRejectionMsg = "Invalid Student ID or Email combination.";
+
                 if (!docSnap.exists()) {
                     setButtonState('btnRequestOtp', false, "", "Send Verification Code");
-                    return showMessage("Student ID not found.");
+                    return showMessage(genericRejectionMsg);
                 }
 
                 const data = docSnap.data();
+                const dbEmail = data.email ? data.email.toLowerCase() : "";
+
+                // IDEA 1: Second Piece of Info validation
+                if (dbEmail !== emailInput) {
+                    setButtonState('btnRequestOtp', false, "", "Send Verification Code");
+                    return showMessage(genericRejectionMsg);
+                }
+
                 currentStudentEmail = data.email;
                 currentStudentName = data.full_name;
 
-                if (!currentStudentEmail) {
+                // IDEA 2: Database-level Cooldown Check (3 minutes)
+                const now = Date.now();
+                const lastReq = data.last_otp_request || 0;
+                const cooldownMs = 60 * 1000; 
+
+                if (now - lastReq < cooldownMs) {
+                    const remainingMins = Math.ceil((cooldownMs - (now - lastReq)) / 60000);
                     setButtonState('btnRequestOtp', false, "", "Send Verification Code");
-                    return showMessage("No email is associated with this ID. Please visit the admin office.");
+                    return showMessage(`An OTP was recently requested. Please check your email or wait ${remainingMins} minute(s).`);
                 }
 
+                // If we pass all security checks: Update DB timer and Send Email
+                await updateDoc(docRef, {
+                    last_otp_request: now
+                });
+                
                 await triggerOtpEmail();
 
                 currentStudentId = encodedId;
                 stage1.classList.add('hidden');
                 stage2.classList.remove('hidden');
 
-                // Set focus to the next input automatically
                 setTimeout(() => document.getElementById('otpCode').focus(), 100);
                 showMessage("Code sent successfully!", false);
 
@@ -420,14 +436,32 @@
             resendBtn.textContent = "Sending...";
 
             try {
+                // THE FIX: Actually check the database again so hackers can't bypass the UI timer!
+                const docRef = doc(db, "students", currentStudentId);
+                const docSnap = await getDoc(docRef);
+                const lastReq = docSnap.data().last_otp_request || 0;
+                const now = Date.now();
+                const cooldownMs = 60 * 1000; // 60 Seconds
+
+                if (now - lastReq < cooldownMs) {
+                    const remainingSecs = Math.ceil((cooldownMs - (now - lastReq)) / 1000);
+                    showMessage(`Please wait ${remainingSecs} more seconds before resending.`);
+                    resendBtn.textContent = "Resend Code";
+                    resendBtn.disabled = false;
+                    return;
+                }
+
+                // If 60 seconds have passed, update DB and send!
+                await updateDoc(docRef, { last_otp_request: now });
                 await triggerOtpEmail();
+                
                 showMessage("A new code was sent to your email.", false);
 
-                let cooldown = 30;
+                let uiCooldown = 60; 
                 const timer = setInterval(() => {
-                    resendBtn.textContent = `Resend available in ${cooldown}s`;
-                    cooldown--;
-                    if (cooldown < 0) {
+                    resendBtn.textContent = `Resend available in ${uiCooldown}s`;
+                    uiCooldown--;
+                    if (uiCooldown < 0) {
                         clearInterval(timer);
                         resendBtn.textContent = "Resend Code";
                         resendBtn.disabled = false;
@@ -489,7 +523,6 @@
 
                 showMessage("PIN reset successfully! You need to wait for 1 day (or until the next Admin Sync) before changes are applied.", false);
 
-                // Clear out the text span, keep the spinner hidden by overriding disabled styles via JS
                 const btn = document.getElementById('btnResetPin');
                 btn.innerHTML = "Reset Complete";
 
@@ -505,6 +538,9 @@
 
         // Enter Key triggers
         document.getElementById('studentId').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') document.getElementById('studentEmail').focus();
+        });
+        document.getElementById('studentEmail').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') document.getElementById('btnRequestOtp').click();
         });
         document.getElementById('otpCode').addEventListener('keypress', function (e) {
