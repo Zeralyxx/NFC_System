@@ -2906,6 +2906,38 @@ public sealed class DatabaseService
         return new StaffDetails();
     }
 
+    public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        using var command = new MySqlCommand(@"
+            SELECT ea.timestamp, ea.student_id, s.full_name, s.course, s.section_name, ea.verification_mode, ea.status
+            FROM event_attendance ea
+            LEFT JOIN students s ON ea.student_id = s.student_id
+            WHERE ea.event_id = @event_id
+            ORDER BY ea.timestamp DESC", connection);
+
+        command.Parameters.AddWithValue("@event_id", eventId);
+
+        var list = new List<AttendanceLog>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new AttendanceLog
+            {
+                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
+                StudentId = Value(reader["student_id"]),
+                FullName = Value(reader["full_name"]),
+                Course = Value(reader["course"]),
+                Section = Value(reader["section_name"]),
+                Mode = Value(reader["verification_mode"]),
+                Status = Value(reader["status"])
+            });
+        }
+        return list;
+    }
+
     private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
     private static string Value(object? value) => value == null || value == DBNull.Value ? "" : value.ToString() ?? "";
     public static string ToStorageValue(VerificationMode mode) => mode switch { VerificationMode.Fast => "Fast", VerificationMode.Standard => "Standard", VerificationMode.HighSecurity => "HighSecurity", _ => "Standard" };
