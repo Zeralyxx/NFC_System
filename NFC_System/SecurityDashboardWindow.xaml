@@ -27,24 +27,33 @@
                         <AdaptiveTrigger MinWindowWidth="0" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
+                        <!-- Reduce padding for small screens -->
                         <Setter Target="ContentRoot.Padding" Value="16,24" />
+
+                        <!-- Reorganize Header to Stack Vertically -->
                         <Setter Target="HeaderCol1.Width" Value="*" />
                         <Setter Target="HeaderCol2.Width" Value="0" />
                         <Setter Target="HeaderCol3.Width" Value="0" />
                         <Setter Target="HeaderRow2.Height" Value="Auto" />
                         <Setter Target="HeaderRow3.Height" Value="Auto" />
+
                         <Setter Target="HeaderTitleStack.(Grid.Row)" Value="1" />
                         <Setter Target="HeaderTitleStack.(Grid.Column)" Value="0" />
                         <Setter Target="HeaderTitleStack.Margin" Value="0,16,0,16" />
                         <Setter Target="HeaderTitleStack.HorizontalAlignment" Value="Left" />
+
                         <Setter Target="RefreshButton.(Grid.Row)" Value="2" />
                         <Setter Target="RefreshButton.(Grid.Column)" Value="0" />
                         <Setter Target="RefreshButton.HorizontalAlignment" Value="Stretch" />
+
+                        <!-- Reorganize Main Content to Stack Vertically -->
                         <Setter Target="MainCol1.Width" Value="*" />
                         <Setter Target="MainCol2.Width" Value="0" />
                         <Setter Target="MainRow2.Height" Value="Auto" />
                         <Setter Target="MainContentGrid.ColumnSpacing" Value="0" />
                         <Setter Target="MainContentGrid.RowSpacing" Value="24" />
+
+                        <!-- Push the Right Panel under the Left Panel -->
                         <Setter Target="RightPanel.(Grid.Row)" Value="1" />
                         <Setter Target="RightPanel.(Grid.Column)" Value="0" />
                     </VisualState.Setters>
@@ -493,8 +502,18 @@
         <ContentDialog x:Name="StaffDirectoryDialog" Title="Staff Directory" CloseButtonText="Close" CornerRadius="8">
             <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
                 <TextBlock Text="Double-click a staff member to edit their permissions or replace their NFC card." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+
+                <!-- THE FIX: Added Staff Category Filter -->
+                <ComboBox x:Name="StaffDirectoryFilter" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="StaffDirectoryFilter_SelectionChanged">
+                    <ComboBoxItem Content="All Roles"/>
+                    <ComboBoxItem Content="Security Personnel"/>
+                    <ComboBoxItem Content="Event Organizer"/>
+                    <ComboBoxItem Content="Administrator"/>
+                    <ComboBoxItem Content="Master Administrator"/>
+                </ComboBox>
+
                 <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">
-                    <ListView x:Name="StaffListView" Height="350" SelectionMode="Single" DoubleTapped="StaffListView_DoubleTapped">
+                    <ListView x:Name="StaffListView" Height="300" SelectionMode="Single" DoubleTapped="StaffListView_DoubleTapped">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:StaffRecord">
                                 <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">

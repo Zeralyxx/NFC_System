@@ -66,7 +66,6 @@ public sealed class DatabaseService
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
-    // THE FIX: Clock Skew variables and methods
     public static TimeSpan ServerTimeOffset { get; private set; } = TimeSpan.Zero;
 
     public async Task SyncServerTimeOffsetAsync()
@@ -76,22 +75,19 @@ public sealed class DatabaseService
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
 
-            // Ask MySQL for its exact atomic time down to the millisecond
             using var cmd = new MySqlCommand("SELECT CURRENT_TIMESTAMP(3)", connection);
             var serverTime = Convert.ToDateTime(await cmd.ExecuteScalarAsync());
 
-            // Calculate the difference between the PC clock and the Server clock
             ServerTimeOffset = serverTime - DateTime.Now;
         }
         catch
         {
-            // If offline, just keep using the last known offset!
+            // Keep last offset if offline
         }
     }
 
     public static DateTime GetNetworkAdjustedTime()
     {
-        // Universally apply the delta offset to the current PC clock
         return DateTime.Now.Add(ServerTimeOffset);
     }
 
@@ -138,7 +134,6 @@ public sealed class DatabaseService
 
         await connection.ChangeDatabaseAsync("nfc_system");
 
-        // THE FIX: Added pin_hash and pin_salt natively to the CREATE TABLE staff command
         string schemaSql = @"
             CREATE TABLE IF NOT EXISTS students (
                 student_id VARCHAR(50) PRIMARY KEY,
@@ -282,13 +277,11 @@ public sealed class DatabaseService
             );
         ";
 
-        // THE FIX: Execute CREATE TABLE commands FIRST
         using (var schemaCmd = new MySqlCommand(schemaSql, connection))
         {
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
-        // THEN execute ALTER TABLE patches (for backwards compatibility with older installs)
         try
         {
             using var alterStaffCmd = new MySqlCommand(@"
@@ -391,7 +384,6 @@ public sealed class DatabaseService
                 byte[]? photoData = ExtractBlob(fields, "photo_data");
                 bool isTemporary = ExtractBool(fields, "is_temporary");
 
-                // THE FIX: Download the state from Firebase
                 string entryState = ExtractString(fields, "entry_state");
                 if (string.IsNullOrWhiteSpace(entryState)) entryState = "OUTSIDE";
 
@@ -420,7 +412,7 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@failed", failedAttempts);
                 cmd.Parameters.AddWithValue("@photo", photoData != null ? photoData : DBNull.Value);
                 cmd.Parameters.AddWithValue("@temp", isTemporary);
-                cmd.Parameters.AddWithValue("@state", entryState); // Inject the parameter
+                cmd.Parameters.AddWithValue("@state", entryState);
 
                 int affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) updatedCount++;
@@ -467,8 +459,6 @@ public sealed class DatabaseService
                     { "pin_locked", new { booleanValue = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true" } },
                     { "failed_pin_attempts", new { integerValue = Value(reader["failed_pin_attempts"]) } },
                     { "is_temporary", new { booleanValue = reader["is_temporary"].ToString() == "1" || reader["is_temporary"].ToString()?.ToLower() == "true" } },
-                    
-                    // THE FIX: Upload the state to Firebase
                     { "entry_state", new { stringValue = Value(reader["entry_state"]) } }
                 };
 
@@ -580,7 +570,6 @@ public sealed class DatabaseService
                     await cmd.ExecuteNonQueryAsync();
                     updatedCount++;
 
-                    // THE FIX: Actively update the student's local Entry State when a log is downloaded!
                     if (isGranted && !string.IsNullOrWhiteSpace(transactionType) && transactionType != "EventAttendance")
                     {
                         string stateToSet = transactionType.Equals("Entry", StringComparison.OrdinalIgnoreCase) ? "INSIDE" : "OUTSIDE";
@@ -1351,7 +1340,6 @@ public sealed class DatabaseService
             await connection.OpenAsync();
 
             var students = new List<CachedStudent>();
-            // THE FIX: Added entry_state, failed_pin_attempts, and qr_credential to the offline sync query
             using (var cmd = new MySqlCommand("SELECT student_id, full_name, nfc_uid, pin_hash, pin_salt, status, pin_locked, entry_state, failed_pin_attempts, qr_credential FROM students WHERE nfc_uid IS NOT NULL AND nfc_uid != ''", connection))
             using (var reader = await cmd.ExecuteReaderAsync())
             {
@@ -1453,7 +1441,6 @@ public sealed class DatabaseService
                     _ => "standard_mode_logs"
                 };
 
-                // THE FIX: Insert all telemetry metrics and the student name
                 using var cmd = new MySqlCommand($@"
                     INSERT INTO {targetTable} 
                     (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms) 
@@ -1555,7 +1542,6 @@ public sealed class DatabaseService
 
         string whereSql = whereClauses.Count > 0 ? " AND " + string.Join(" AND ", whereClauses) : "";
 
-        // THE FIX: Added the LEFT JOIN to dynamically heal missing student names (just like the CSV export does)
         string sql = $@"
             SELECT * FROM (
                 SELECT cl.timestamp, 
@@ -1592,6 +1578,13 @@ public sealed class DatabaseService
         {
             string error = Value(reader["error_code"]);
             string details = Value(reader["details"]);
+            string currentStatus = Value(reader["status"]);
+
+            // THE FIX: Intercept false-positive historical OFFLINE flags and scrub them before display.
+            if (error.ToUpper().Contains("OFFLINE") && currentStatus == "GRANTED")
+            {
+                error = "VERIFIED";
+            }
 
             if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
                 details = $"[{error}] {details}";
@@ -1618,7 +1611,7 @@ public sealed class DatabaseService
                 LogType = Value(reader["log_type"]),
                 Subject = subject,
                 Action = Value(reader["action"]),
-                Status = Value(reader["status"]),
+                Status = currentStatus,
                 Details = details,
                 DisplayTime = Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss.fff tt")
             };
@@ -1652,7 +1645,6 @@ public sealed class DatabaseService
 
             foreach (var table in tables)
             {
-                // THE FIX: Use LEFT JOIN to dynamically heal missing Student Names just like the Ledger does!
                 string sql = $@"
                     SELECT vl.timestamp, 
                            COALESCE(NULLIF(vl.student_name, ''), s.full_name) as student_name, 
@@ -1683,6 +1675,10 @@ public sealed class DatabaseService
 
                     bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
                     string errorCode = Value(reader["error_code"]);
+
+                    // THE FIX: Scrub OFFLINE false positives from exported logs too!
+                    if (errorCode.ToUpper().Contains("OFFLINE") && isGranted) errorCode = "VERIFIED";
+
                     string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
                     bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
@@ -1751,7 +1747,6 @@ public sealed class DatabaseService
         int inside = 0;
         int denied = 0;
 
-        // THE FIX: Added "as inner_vl" to the subquery to prevent the MySQL syntax error!
         string countInsideSql = $@"
             SELECT COUNT(DISTINCT ident) 
             FROM (
@@ -1775,7 +1770,6 @@ public sealed class DatabaseService
         }
         catch
         {
-            // Failsafe fallback
             using var cmdFallback = new MySqlCommand("SELECT COUNT(*) FROM students WHERE entry_state = 'INSIDE'", connection);
             inside = Convert.ToInt32(await cmdFallback.ExecuteScalarAsync());
         }
@@ -1909,8 +1903,6 @@ public sealed class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // THE FIX: Added an OR condition to the LEFT JOIN. 
-        // If the student_id was lost during offline sync, it falls back to matching their NFC UID!
         using var command = new MySqlCommand($@"
         SELECT vl.timestamp, 
                COALESCE(NULLIF(vl.student_id, ''), s.student_id) as student_id, 
@@ -1933,7 +1925,6 @@ public sealed class DatabaseService
             {
                 Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
                 RawTimestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]) : DateTime.MinValue,
-                // The query now dynamically heals the Student ID if it was missing
                 StudentId = Value(reader["student_id"]),
                 FullName = string.IsNullOrWhiteSpace(Value(reader["full_name"])) ? "Unknown / Unregistered" : Value(reader["full_name"]),
                 Course = Value(reader["course"]),
@@ -2372,7 +2363,10 @@ public sealed class DatabaseService
 
             string result = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true" ? "GRANTED" : "DENIED";
 
-            logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {result} | {Value(reader["error_code"])} {Value(reader["remarks"])}".Trim());
+            string errorCode = Value(reader["error_code"]);
+            if (errorCode.ToUpper().Contains("OFFLINE") && result == "GRANTED") errorCode = "VERIFIED";
+
+            logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {result} | {errorCode} {Value(reader["remarks"])}".Trim());
         }
         return logs;
     }
@@ -2414,6 +2408,13 @@ public sealed class DatabaseService
 
     public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs)
     {
+        // THE FIX: If the verification engine incorrectly holds an "OFFLINE_MODE" error string from a previous fast-check, we scrub it here. 
+        // If it successfully hits this method, it means the database is online and working perfectly.
+        if (errorCategory != null && (errorCategory.ToUpper().Contains("OFFLINE") || errorCategory == "OFFLINE_MODE"))
+        {
+            errorCategory = granted ? "VERIFIED" : "";
+        }
+
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -2903,38 +2904,6 @@ public sealed class DatabaseService
         }
 
         return new StaffDetails();
-    }
-
-    public async Task<IReadOnlyList<AttendanceLog>> GetEventAttendanceLogsAsync(string eventId)
-    {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            SELECT ea.timestamp, ea.student_id, s.full_name, s.course, s.section_name, ea.verification_mode, ea.status
-            FROM event_attendance ea
-            LEFT JOIN students s ON ea.student_id = s.student_id
-            WHERE ea.event_id = @event_id
-            ORDER BY ea.timestamp DESC", connection);
-
-        command.Parameters.AddWithValue("@event_id", eventId);
-
-        var list = new List<AttendanceLog>();
-        using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            list.Add(new AttendanceLog
-            {
-                Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
-                StudentId = Value(reader["student_id"]),
-                FullName = Value(reader["full_name"]),
-                Course = Value(reader["course"]),
-                Section = Value(reader["section_name"]),
-                Mode = Value(reader["verification_mode"]),
-                Status = Value(reader["status"])
-            });
-        }
-        return list;
     }
 
     private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;

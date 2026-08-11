@@ -18,6 +18,7 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
         private List<SystemAuditLog> _masterLogsCache = new();
+        private IReadOnlyList<StaffRecord> _allStaffCache = new List<StaffRecord>();
         private SerialPort? _serialPort;
 
         private bool _isAwaitingAdminAuth = false;
@@ -28,7 +29,7 @@ namespace NFC_System
 
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
-        private string _pendingStaffAction = ""; // THE FIX: State tracker to prevent ContentDialog overlapping
+        private string _pendingStaffAction = "";
 
         private StaffRecord? _editingStaff = null;
         private string _origStaffUid = "";
@@ -371,6 +372,7 @@ namespace NFC_System
                         {
                             _isAwaitingAdminAuth = false;
                             AdminAuthDialog.Hide();
+                            await Task.Delay(250);
 
                             PlaySuccessPing();
 
@@ -391,12 +393,6 @@ namespace NFC_System
                                     break;
                                 case "EXIT_SYNC":
                                     await PerformCloudPushAndExit();
-                                    break;
-                                case "EDIT_STAFF":
-                                    await ExecuteStaffEditAsync(authorizedByName);
-                                    break;
-                                case "DELETE_STAFF":
-                                    await ExecuteStaffDeletionAsync(authorizedByName);
                                     break;
                                 case "HEAL_STATE":
                                     await ExecuteHealStateAsync(authorizedByName);
@@ -501,17 +497,18 @@ namespace NFC_System
                 _pendingHealState = state;
                 await ExecuteHealStateAsync(AppSession.CurrentStaffName);
             }
-            else // Personnel or Administrator
+            else
             {
                 _pendingHealStudentId = studentId;
                 _pendingHealState = state;
 
                 _pendingAdminAction = "HEAL_STATE";
-                _pendingAdminSeverity = "MODERATE"; // Allows any valid staff to correct states
+                _pendingAdminSeverity = "MODERATE";
 
                 AdminPinBox.Visibility = Visibility.Visible;
                 AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
+
                 AdminAuthDescriptionText.Text = "To manually override a student's state, please verify your identity.";
                 AdminAuthTapPromptText.Text = "Please tap your NFC identification card & enter PIN...";
 
@@ -765,15 +762,45 @@ namespace NFC_System
 
         private async void OpenStaffDirectoryButton_Click(object sender, RoutedEventArgs e)
         {
+            StaffDirectoryFilter.SelectedIndex = 0;
             await ReopenStaffDirectory();
+        }
+
+        private void StaffDirectoryFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyStaffFilter();
+        }
+
+        // THE FIX: Automatically categorize and group staff by Role, then Alphabetically
+        private void ApplyStaffFilter()
+        {
+            if (StaffListView == null || StaffDirectoryFilter == null) return;
+            string selectedRole = (StaffDirectoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Roles";
+
+            var sortedStaff = _allStaffCache
+                .OrderBy(s => s.Role)
+                .ThenBy(s => s.FullName)
+                .ToList();
+
+            if (selectedRole == "All Roles")
+            {
+                StaffListView.ItemsSource = sortedStaff;
+            }
+            else
+            {
+                StaffListView.ItemsSource = sortedStaff.Where(s => s.Role == selectedRole).ToList();
+            }
         }
 
         private async Task ReopenStaffDirectory()
         {
             try
             {
-                var staffList = await _database.GetAllStaffAsync();
-                StaffListView.ItemsSource = staffList;
+                _allStaffCache = (await _database.GetAllStaffAsync()).ToList();
+                ApplyStaffFilter();
+
+                await Task.Delay(250); // Ensure clear UI thread
+
                 StaffDirectoryDialog.XamlRoot = this.Content.XamlRoot;
                 await StaffDirectoryDialog.ShowAsync();
             }
@@ -1089,6 +1116,7 @@ namespace NFC_System
             }
 
             ManageCoursesDialog.Hide();
+            await Task.Delay(250);
 
             try
             {
@@ -1318,12 +1346,13 @@ namespace NFC_System
             if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
 
-        // THE FIX: Completely flattened the Staff Edit dialog flow to prevent overlaps
+        // THE FIX: Enforced Dialog Flattening sequence with await Task.Delay()
         private async void StaffListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StaffRecord staff)
             {
                 StaffDirectoryDialog.Hide();
+                await Task.Delay(250);
 
                 _editingStaff = staff;
                 _origStaffUid = staff.NfcUid;
@@ -1352,12 +1381,12 @@ namespace NFC_System
 
                 _isAwaitingStaffNfcReplacementScan = false;
                 EditStaffDialog.IsPrimaryButtonEnabled = false;
-                _pendingStaffAction = ""; // Reset tracker
+                _pendingStaffAction = "";
 
                 EditStaffDialog.XamlRoot = this.Content.XamlRoot;
                 var result = await EditStaffDialog.ShowAsync();
+                await Task.Delay(250); // FIX: Vital delay before evaluating action to prevent overlap crash
 
-                // Dialog has cleanly closed. Now process what they requested:
                 if (_pendingStaffAction == "DELETE")
                 {
                     ContentDialog confirmDialog = new ContentDialog
@@ -1513,7 +1542,6 @@ namespace NFC_System
             _pendingStaffRole = role;
             _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim();
 
-            // Set the execution state and let the dialog naturally close to unblock StaffListView_DoubleTapped
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 _pendingStaffAction = "EDIT_STAFF_EXECUTE";
@@ -1542,7 +1570,6 @@ namespace NFC_System
                 return;
             }
 
-            // Set state and hide to unblock StaffListView_DoubleTapped
             _pendingStaffAction = "DELETE";
             EditStaffDialog.Hide();
         }
