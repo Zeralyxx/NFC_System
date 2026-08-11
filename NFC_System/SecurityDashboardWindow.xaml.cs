@@ -20,18 +20,16 @@ namespace NFC_System
         private List<SystemAuditLog> _masterLogsCache = new();
         private SerialPort? _serialPort;
 
-        // State variables for RBAC authorization
         private bool _isAwaitingAdminAuth = false;
         private string _pendingStaffName = "";
         private string _pendingStaffUid = "";
         private string _pendingStaffRole = "";
         private string _pendingStaffPin = "";
 
-        // Severity Engine State Variables
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
+        private string _pendingStaffAction = ""; // THE FIX: State tracker to prevent ContentDialog overlapping
 
-        // Editing Staff tracking variables
         private StaffRecord? _editingStaff = null;
         private string _origStaffUid = "";
         private string _origStaffName = "";
@@ -39,14 +37,10 @@ namespace NFC_System
         private bool _isAwaitingStaffNfcReplacementScan = false;
         private string _pendingStaffNfcReason = "";
 
-        // Tracking variables for the Manual State Correction Healer
         private string _pendingHealStudentId = "";
         private string _pendingHealState = "";
 
-        // Exit Interceptor Flags
         private bool _isForceClosing = false;
-
-        // DEBOUNCE TIMER FOR SEARCH
         private readonly DispatcherTimer _searchDebounceTimer = new();
 
         public SecurityDashboardWindow()
@@ -70,9 +64,6 @@ namespace NFC_System
             _ = InitializeAsync();
         }
 
-        // ====================================================================
-        // RBAC SEVERITY-AWARE EXIT INTERCEPTOR
-        // ====================================================================
         private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
         {
             if (_isForceClosing) return;
@@ -115,7 +106,8 @@ namespace NFC_System
                     AdminPinBox.Visibility = Visibility.Visible;
                     AdminPinBox.Password = "";
                     AuthStatusText.Visibility = Visibility.Collapsed;
-                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
+                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+                    AdminAuthTapPromptText.Text = "Awaiting Administrator NFC tap & PIN...";
 
                     _isAwaitingAdminAuth = true;
                     AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -195,18 +187,15 @@ namespace NFC_System
 
         private async Task InitializeAsync()
         {
-            if (AppSession.CurrentStaffRoleLabel == "Personnel" || AppSession.CurrentStaffRoleLabel == "Security Admin")
+            if (AppSession.CurrentStaffRoleLabel == "Personnel")
             {
                 UploadDataButton.Visibility = Visibility.Collapsed;
                 UploadDataColumn.Width = new GridLength(0);
                 CourseManagementPanel.Visibility = Visibility.Collapsed;
                 StaffManagementPanel.Visibility = Visibility.Collapsed;
 
-                if (AppSession.CurrentStaffRoleLabel == "Personnel")
-                {
-                    PopupStatusFilter.SelectedIndex = 2;
-                    PopupStatusFilter.IsEnabled = false;
-                }
+                PopupStatusFilter.SelectedIndex = 2;
+                PopupStatusFilter.IsEnabled = false;
             }
 
             try
@@ -351,13 +340,30 @@ namespace NFC_System
                         }
                         else if (_pendingAdminSeverity == "MODERATE")
                         {
-                            if (details.Role == "Administrator" || details.Role == "Master Administrator" || details.Role == "Security Admin")
+                            if (details.Role == "Security Personnel" || details.Role == "Administrator" || details.Role == "Master Administrator")
                             {
-                                isAuthorized = true;
+                                string enteredPin = AdminPinBox.Password.Trim();
+
+                                if (string.IsNullOrEmpty(enteredPin))
+                                {
+                                    failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                                }
+                                else if (string.IsNullOrEmpty(details.PinHash))
+                                {
+                                    failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                                }
+                                else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
+                                {
+                                    failReason = "Authorization Denied: Invalid PIN.";
+                                }
+                                else
+                                {
+                                    isAuthorized = true;
+                                }
                             }
                             else
                             {
-                                failReason = "Authorization Denied: This action requires a Security Admin or higher.";
+                                failReason = "Authorization Denied: Tapped card must belong to a valid staff member.";
                             }
                         }
 
@@ -365,9 +371,10 @@ namespace NFC_System
                         {
                             _isAwaitingAdminAuth = false;
                             AdminAuthDialog.Hide();
+
                             PlaySuccessPing();
 
-                            string authorizedByName = details.FullName ?? "Admin";
+                            string authorizedByName = details.FullName ?? "Staff";
                             string actionToRun = _pendingAdminAction;
                             _pendingAdminAction = "";
 
@@ -388,7 +395,7 @@ namespace NFC_System
                                 case "EDIT_STAFF":
                                     await ExecuteStaffEditAsync(authorizedByName);
                                     break;
-                                case "DELETE_STAFF": // THE FIX: Run the deletion execution loop
+                                case "DELETE_STAFF":
                                     await ExecuteStaffDeletionAsync(authorizedByName);
                                     break;
                                 case "HEAL_STATE":
@@ -488,24 +495,25 @@ namespace NFC_System
                 return;
             }
 
-            if (AppSession.CurrentStaffRoleLabel == "Master Admin" || AppSession.CurrentStaffRoleLabel == "Administrator" || AppSession.CurrentStaffRoleLabel == "Security Admin")
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 _pendingHealStudentId = studentId;
                 _pendingHealState = state;
                 await ExecuteHealStateAsync(AppSession.CurrentStaffName);
             }
-            else
+            else // Personnel or Administrator
             {
                 _pendingHealStudentId = studentId;
                 _pendingHealState = state;
 
                 _pendingAdminAction = "HEAL_STATE";
-                _pendingAdminSeverity = "MODERATE";
+                _pendingAdminSeverity = "MODERATE"; // Allows any valid staff to correct states
 
-                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Visibility = Visibility.Visible;
                 AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "To manually override a student's state, a Security Admin (or higher) must verify this action.";
+                AdminAuthDescriptionText.Text = "To manually override a student's state, please verify your identity.";
+                AdminAuthTapPromptText.Text = "Please tap your NFC identification card & enter PIN...";
 
                 _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -714,6 +722,7 @@ namespace NFC_System
                 AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
                 AdminAuthDescriptionText.Text = "To prevent unauthorized account creation, a Master Administrator must verify this action.";
+                AdminAuthTapPromptText.Text = "Awaiting Master Administrator NFC identification card...";
 
                 _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -756,12 +765,16 @@ namespace NFC_System
 
         private async void OpenStaffDirectoryButton_Click(object sender, RoutedEventArgs e)
         {
-            StaffDirectoryDialog.XamlRoot = this.Content.XamlRoot;
+            await ReopenStaffDirectory();
+        }
 
+        private async Task ReopenStaffDirectory()
+        {
             try
             {
                 var staffList = await _database.GetAllStaffAsync();
                 StaffListView.ItemsSource = staffList;
+                StaffDirectoryDialog.XamlRoot = this.Content.XamlRoot;
                 await StaffDirectoryDialog.ShowAsync();
             }
             catch (Exception ex)
@@ -811,7 +824,8 @@ namespace NFC_System
                 AdminPinBox.Visibility = Visibility.Visible;
                 AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "To confirm this upload, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+                AdminAuthDescriptionText.Text = "To confirm this data upload, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+                AdminAuthTapPromptText.Text = "Awaiting Administrator NFC identification card & PIN...";
 
                 _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -922,7 +936,8 @@ namespace NFC_System
                 AdminPinBox.Visibility = Visibility.Visible;
                 AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "To confirm this download, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+                AdminAuthDescriptionText.Text = "To confirm this data download, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+                AdminAuthTapPromptText.Text = "Awaiting Administrator NFC identification card & PIN...";
 
                 _isAwaitingAdminAuth = true;
                 AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -1303,6 +1318,7 @@ namespace NFC_System
             if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
 
+        // THE FIX: Completely flattened the Staff Edit dialog flow to prevent overlaps
         private async void StaffListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StaffRecord staff)
@@ -1323,7 +1339,6 @@ namespace NFC_System
                 EditStaffChangeNfcButton.IsEnabled = true;
                 EditStaffStatusText.Visibility = Visibility.Collapsed;
 
-                // THE FIX: Hide delete button if the user is not a Master Admin
                 EditStaffDeleteButton.Visibility = AppSession.CurrentStaffRoleLabel == "Master Admin" ? Visibility.Visible : Visibility.Collapsed;
 
                 foreach (ComboBoxItem item in EditStaffRoleComboBox.Items)
@@ -1337,15 +1352,64 @@ namespace NFC_System
 
                 _isAwaitingStaffNfcReplacementScan = false;
                 EditStaffDialog.IsPrimaryButtonEnabled = false;
+                _pendingStaffAction = ""; // Reset tracker
 
                 EditStaffDialog.XamlRoot = this.Content.XamlRoot;
                 var result = await EditStaffDialog.ShowAsync();
 
-                if (result != ContentDialogResult.Primary)
+                // Dialog has cleanly closed. Now process what they requested:
+                if (_pendingStaffAction == "DELETE")
                 {
-                    var staffList = await _database.GetAllStaffAsync();
-                    StaffListView.ItemsSource = staffList;
-                    await StaffDirectoryDialog.ShowAsync();
+                    ContentDialog confirmDialog = new ContentDialog
+                    {
+                        Title = "Confirm Staff Deletion",
+                        Content = $"Are you sure you want to permanently delete {_origStaffName} ({_origStaffRole}) from the system?",
+                        PrimaryButtonText = "Delete Profile",
+                        CloseButtonText = "Cancel",
+                        DefaultButton = ContentDialogButton.Close,
+                        XamlRoot = this.Content.XamlRoot
+                    };
+
+                    var confirmResult = await confirmDialog.ShowAsync();
+
+                    if (confirmResult == ContentDialogResult.Primary)
+                    {
+                        await ExecuteStaffDeletionAsync(AppSession.CurrentStaffName);
+                    }
+                    else
+                    {
+                        await ReopenStaffDirectory();
+                    }
+                }
+                else if (_pendingStaffAction == "EDIT_STAFF_EXECUTE")
+                {
+                    await ExecuteStaffEditAsync(AppSession.CurrentStaffName);
+                }
+                else if (_pendingStaffAction == "EDIT_STAFF_AUTH")
+                {
+                    AdminPinBox.Visibility = Visibility.Collapsed;
+                    AdminPinBox.Password = "";
+                    AuthStatusText.Visibility = Visibility.Collapsed;
+                    AdminAuthDescriptionText.Text = "To modify staff credentials, a Master Administrator must verify this action.";
+                    AdminAuthTapPromptText.Text = "Awaiting Master Administrator NFC identification card...";
+
+                    _pendingAdminAction = "EDIT_STAFF";
+                    _pendingAdminSeverity = "CRITICAL";
+                    _isAwaitingAdminAuth = true;
+
+                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                    var authResult = await AdminAuthDialog.ShowAsync();
+
+                    if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                    {
+                        _isAwaitingAdminAuth = false;
+                        _pendingAdminAction = "";
+                        await ReopenStaffDirectory();
+                    }
+                }
+                else
+                {
+                    await ReopenStaffDirectory();
                 }
             }
         }
@@ -1407,7 +1471,7 @@ namespace NFC_System
             EditStaffNfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
         }
 
-        private async void EditStaffDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+        private void EditStaffDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
         {
             string name = EditStaffNameBox.Text.Trim();
             string uid = EditStaffNfcUidBox.Text.Trim();
@@ -1449,41 +1513,18 @@ namespace NFC_System
             _pendingStaffRole = role;
             _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim();
 
-            _pendingAdminAction = "EDIT_STAFF";
-            _pendingAdminSeverity = "CRITICAL";
-
-            args.Cancel = true;
-            EditStaffDialog.Hide();
-
+            // Set the execution state and let the dialog naturally close to unblock StaffListView_DoubleTapped
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
-                await ExecuteStaffEditAsync(AppSession.CurrentStaffName);
+                _pendingStaffAction = "EDIT_STAFF_EXECUTE";
             }
             else
             {
-                AdminPinBox.Visibility = Visibility.Collapsed;
-                AdminPinBox.Password = "";
-                AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "To modify staff credentials, a Master Administrator must verify this action.";
-
-                _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                var authResult = await AdminAuthDialog.ShowAsync();
-
-                if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
-                {
-                    _isAwaitingAdminAuth = false;
-                    _pendingAdminAction = "";
-
-                    var staffList = await _database.GetAllStaffAsync();
-                    StaffListView.ItemsSource = staffList;
-                    await StaffDirectoryDialog.ShowAsync();
-                }
+                _pendingStaffAction = "EDIT_STAFF_AUTH";
             }
         }
 
-        // THE FIX: Deletion Implementation
-        private async void EditStaffDeleteButton_Click(object sender, RoutedEventArgs e)
+        private void EditStaffDeleteButton_Click(object sender, RoutedEventArgs e)
         {
             if (AppSession.CurrentStaffRoleLabel != "Master Admin")
             {
@@ -1501,30 +1542,9 @@ namespace NFC_System
                 return;
             }
 
+            // Set state and hide to unblock StaffListView_DoubleTapped
+            _pendingStaffAction = "DELETE";
             EditStaffDialog.Hide();
-
-            ContentDialog confirmDialog = new ContentDialog
-            {
-                Title = "Confirm Staff Deletion",
-                Content = $"Are you sure you want to permanently delete {_origStaffName} ({_origStaffRole}) from the system?",
-                PrimaryButtonText = "Delete Profile",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = this.Content.XamlRoot
-            };
-
-            var result = await confirmDialog.ShowAsync();
-
-            if (result == ContentDialogResult.Primary)
-            {
-                await ExecuteStaffDeletionAsync(AppSession.CurrentStaffName);
-            }
-            else
-            {
-                var staffList = await _database.GetAllStaffAsync();
-                StaffListView.ItemsSource = staffList;
-                await StaffDirectoryDialog.ShowAsync();
-            }
         }
 
         private async Task ExecuteStaffEditAsync(string authorizedBy)
@@ -1550,9 +1570,7 @@ namespace NFC_System
 
                 _pendingStaffNfcReason = "";
 
-                var staffList = await _database.GetAllStaffAsync();
-                StaffListView.ItemsSource = staffList;
-                await StaffDirectoryDialog.ShowAsync();
+                await ReopenStaffDirectory();
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)
@@ -1580,9 +1598,7 @@ namespace NFC_System
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                 PlaySuccessPing();
 
-                var staffList = await _database.GetAllStaffAsync();
-                StaffListView.ItemsSource = staffList;
-                await StaffDirectoryDialog.ShowAsync();
+                await ReopenStaffDirectory();
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)

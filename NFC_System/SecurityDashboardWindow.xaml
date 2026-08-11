@@ -27,33 +27,24 @@
                         <AdaptiveTrigger MinWindowWidth="0" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <!-- Reduce padding for small screens -->
                         <Setter Target="ContentRoot.Padding" Value="16,24" />
-
-                        <!-- Reorganize Header to Stack Vertically -->
                         <Setter Target="HeaderCol1.Width" Value="*" />
                         <Setter Target="HeaderCol2.Width" Value="0" />
                         <Setter Target="HeaderCol3.Width" Value="0" />
                         <Setter Target="HeaderRow2.Height" Value="Auto" />
                         <Setter Target="HeaderRow3.Height" Value="Auto" />
-
                         <Setter Target="HeaderTitleStack.(Grid.Row)" Value="1" />
                         <Setter Target="HeaderTitleStack.(Grid.Column)" Value="0" />
                         <Setter Target="HeaderTitleStack.Margin" Value="0,16,0,16" />
                         <Setter Target="HeaderTitleStack.HorizontalAlignment" Value="Left" />
-
                         <Setter Target="RefreshButton.(Grid.Row)" Value="2" />
                         <Setter Target="RefreshButton.(Grid.Column)" Value="0" />
                         <Setter Target="RefreshButton.HorizontalAlignment" Value="Stretch" />
-
-                        <!-- Reorganize Main Content to Stack Vertically -->
                         <Setter Target="MainCol1.Width" Value="*" />
                         <Setter Target="MainCol2.Width" Value="0" />
                         <Setter Target="MainRow2.Height" Value="Auto" />
                         <Setter Target="MainContentGrid.ColumnSpacing" Value="0" />
                         <Setter Target="MainContentGrid.RowSpacing" Value="24" />
-
-                        <!-- Push the Right Panel under the Left Panel -->
                         <Setter Target="RightPanel.(Grid.Row)" Value="1" />
                         <Setter Target="RightPanel.(Grid.Column)" Value="0" />
                     </VisualState.Setters>
@@ -207,7 +198,6 @@
                                         <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
                                         <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
                                             <ComboBoxItem Content="Security Personnel"/>
-                                            <ComboBoxItem Content="Security Admin"/>
                                             <ComboBoxItem Content="Event Organizer"/>
                                             <ComboBoxItem Content="Administrator"/>
                                             <ComboBoxItem Content="Master Administrator"/>
@@ -463,14 +453,14 @@
             </Grid>
         </ContentDialog>
 
-        <ContentDialog x:Name="AdminAuthDialog" Title="Administrator Authorization" CloseButtonText="Cancel" CornerRadius="8">
+        <ContentDialog x:Name="AdminAuthDialog" Title="Security Authorization" CloseButtonText="Cancel" CornerRadius="8">
             <StackPanel Spacing="16" Width="350">
-                <TextBlock x:Name="AdminAuthDescriptionText" Text="To prevent unauthorized actions, an Administrator must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock x:Name="AdminAuthDescriptionText" Text="To prevent unauthorized actions, the user must verify this action." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
                 <PasswordBox x:Name="AdminPinBox" Header="Enter 4-Digit Staff PIN" MaxLength="4" PlaceholderText="****" Visibility="Collapsed"/>
                 <Border Background="#1A3B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="8" Padding="16">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <ProgressRing IsActive="True" Width="24" Height="24"/>
-                        <TextBlock Text="Please tap your Admin NFC card..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="AdminAuthTapPromptText" Text="Please tap your NFC identification card..." FontWeight="SemiBold" Foreground="#60A5FA" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="250"/>
                     </StackPanel>
                 </Border>
                 <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
@@ -535,7 +525,6 @@
 
                 <ComboBox x:Name="EditStaffRoleComboBox" Header="System Role" HorizontalAlignment="Stretch" SelectionChanged="EditStaffDialog_FieldChanged">
                     <ComboBoxItem Content="Security Personnel"/>
-                    <ComboBoxItem Content="Security Admin"/>
                     <ComboBoxItem Content="Event Organizer"/>
                     <ComboBoxItem Content="Administrator"/>
                     <ComboBoxItem Content="Master Administrator"/>
@@ -550,7 +539,6 @@
 
                 <TextBox x:Name="EditStaffNfcReasonBox" Header="Reason for NFC Replacement" PlaceholderText="e.g. Lost ID card..." TextChanged="EditStaffDialog_FieldChanged" Visibility="Collapsed"/>
 
-                <!-- THE FIX: DELETE STAFF BUTTON -->
                 <Button x:Name="EditStaffDeleteButton" Content="Delete Staff Profile" Click="EditStaffDeleteButton_Click" HorizontalAlignment="Stretch" CornerRadius="8" Background="#EF4444" Foreground="White" BorderThickness="0" Margin="0,8,0,0"/>
             </StackPanel>
         </ContentDialog>
