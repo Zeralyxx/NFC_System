@@ -38,7 +38,6 @@ namespace NFC_System
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
 
-        // THE FIX: Included the API key to bypass Firestore 403 Forbidden errors
         private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
         private const string FIREBASE_API_KEY = "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo";
         private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin?key={FIREBASE_API_KEY}";
@@ -112,7 +111,6 @@ namespace NFC_System
 
                     _isAwaitingAdminAuth = true;
 
-                    // THE FIX: Wake up the serial port temporarily so the dashboard can hear the card tap!
                     TryConnectSerial(_currentPort);
 
                     AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -123,7 +121,6 @@ namespace NFC_System
                         _isAwaitingAdminAuth = false;
                         _pendingAdminAction = "";
 
-                        // THE FIX: If they hit cancel, politely close the port again so other windows don't break.
                         CloseSerialPort();
                     }
                 }
@@ -245,7 +242,6 @@ namespace NFC_System
                                     string globalMasterUid = "";
                                     string globalMasterName = "Global Master Admin";
 
-                                    // THE FIX: Safe JSON Extraction to prevent KeyNotFoundException crashes
                                     if (fields.TryGetProperty("uid", out var uidField) && uidField.TryGetProperty("stringValue", out var uidVal))
                                         globalMasterUid = uidVal.GetString() ?? "";
 
@@ -550,12 +546,18 @@ namespace NFC_System
             }
             catch { }
 
+            // THE FIX: Assign mock roles perfectly to the 4 debug buttons
             if (role == null)
             {
                 if (uid == "04:A1:B2:C3")
                 {
                     role = "Master Administrator";
                     fullName = "Master Admin";
+                }
+                else if (uid == "VALID_ADMIN_CARD")
+                {
+                    role = "Administrator";
+                    fullName = "Simulated Admin";
                 }
                 else if (uid == "VALID_STAFF_CARD")
                 {
@@ -647,7 +649,7 @@ namespace NFC_System
             LoginOverlay.Visibility = Visibility.Collapsed;
             DashboardContent.Visibility = Visibility.Visible;
 
-            ActiveRoleText.Text = $"{AppSession.CurrentStaffName}({AppSession.CurrentStaffRoleLabel})";
+            ActiveRoleText.Text = $"{AppSession.CurrentStaffName} ({AppSession.CurrentStaffRoleLabel})";
 
             if (AppSession.IsAdmin)
             {
@@ -701,7 +703,6 @@ namespace NFC_System
             {
                 RegistrationCard.Visibility = Visibility.Collapsed;
                 StudentDirectoryCard.Visibility = Visibility.Collapsed;
-                SecurityAdminCard.Visibility = Visibility.Collapsed;
                 EventReportsCard.Visibility = Visibility.Collapsed;
                 DashboardSettingsButton.Visibility = Visibility.Collapsed;
 
@@ -711,8 +712,12 @@ namespace NFC_System
                 VerificationCard.SetValue(Grid.RowProperty, 0);
                 VerificationCard.SetValue(Grid.ColumnProperty, 1);
 
+                SecurityAdminCard.SetValue(Grid.RowProperty, 0);
+                SecurityAdminCard.SetValue(Grid.ColumnProperty, 2);
+
                 EventAttendanceCard.Visibility = Visibility.Visible;
                 VerificationCard.Visibility = Visibility.Visible;
+                SecurityAdminCard.Visibility = Visibility.Visible;
             }
         }
 
@@ -740,7 +745,10 @@ namespace NFC_System
             TryConnectSerial(_currentPort);
         }
 
+        // THE FIX: Added simulation buttons for Admin and Organizer
         private void SimulateAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("04:A1:B2:C3");
+        private void SimulateStandardAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_ADMIN_CARD");
+        private void SimulateOrganizerLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_EVENT_CARD");
         private void SimulatePersonnelLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_STAFF_CARD");
 
         private void Registration_Click(object sender, RoutedEventArgs e)

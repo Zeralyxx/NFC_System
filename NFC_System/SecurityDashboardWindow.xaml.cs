@@ -10,6 +10,7 @@ using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
+using MySqlConnector;
 
 namespace NFC_System
 {
@@ -30,13 +31,17 @@ namespace NFC_System
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
 
-        // THE FIX: Editing Staff tracking variables
+        // Editing Staff tracking variables
         private StaffRecord? _editingStaff = null;
         private string _origStaffUid = "";
         private string _origStaffName = "";
         private string _origStaffRole = "";
         private bool _isAwaitingStaffNfcReplacementScan = false;
         private string _pendingStaffNfcReason = "";
+
+        // Tracking variables for the Manual State Correction Healer
+        private string _pendingHealStudentId = "";
+        private string _pendingHealState = "";
 
         // Exit Interceptor Flags
         private bool _isForceClosing = false;
@@ -190,6 +195,20 @@ namespace NFC_System
 
         private async Task InitializeAsync()
         {
+            if (AppSession.CurrentStaffRoleLabel == "Personnel" || AppSession.CurrentStaffRoleLabel == "Security Admin")
+            {
+                UploadDataButton.Visibility = Visibility.Collapsed;
+                UploadDataColumn.Width = new GridLength(0);
+                CourseManagementPanel.Visibility = Visibility.Collapsed;
+                StaffManagementPanel.Visibility = Visibility.Collapsed;
+
+                if (AppSession.CurrentStaffRoleLabel == "Personnel")
+                {
+                    PopupStatusFilter.SelectedIndex = 2;
+                    PopupStatusFilter.IsEnabled = false;
+                }
+            }
+
             try
             {
                 await _database.EnsureSchemaAsync();
@@ -278,7 +297,6 @@ namespace NFC_System
 
                 DispatcherQueue.TryEnqueue(async () =>
                 {
-                    // THE FIX: Intercept scan for editing staff
                     if (_isAwaitingStaffNfcReplacementScan)
                     {
                         await HandleStaffNfcReplacementScanAsync(uid);
@@ -331,6 +349,17 @@ namespace NFC_System
                                 failReason = "Authorization Denied: Tapped card is not an Administrator.";
                             }
                         }
+                        else if (_pendingAdminSeverity == "MODERATE")
+                        {
+                            if (details.Role == "Administrator" || details.Role == "Master Administrator" || details.Role == "Security Admin")
+                            {
+                                isAuthorized = true;
+                            }
+                            else
+                            {
+                                failReason = "Authorization Denied: This action requires a Security Admin or higher.";
+                            }
+                        }
 
                         if (isAuthorized)
                         {
@@ -356,8 +385,14 @@ namespace NFC_System
                                 case "EXIT_SYNC":
                                     await PerformCloudPushAndExit();
                                     break;
-                                case "EDIT_STAFF": // THE FIX: Catch the staff edit action
+                                case "EDIT_STAFF":
                                     await ExecuteStaffEditAsync(authorizedByName);
+                                    break;
+                                case "DELETE_STAFF": // THE FIX: Run the deletion execution loop
+                                    await ExecuteStaffDeletionAsync(authorizedByName);
+                                    break;
+                                case "HEAL_STATE":
+                                    await ExecuteHealStateAsync(authorizedByName);
                                     break;
                             }
                         }
@@ -419,7 +454,9 @@ namespace NFC_System
         {
             try
             {
-                var recentLogs = await _database.GetMasterAuditLogsAsync(30);
+                string? statusFilter = AppSession.CurrentStaffRoleLabel == "Personnel" ? "Denied / Flagged" : null;
+
+                var recentLogs = await _database.GetMasterAuditLogsAsync(30, null, null, statusFilter, null);
                 RecentActivityListView.ItemsSource = recentLogs;
             }
             catch (Exception ex)
@@ -433,6 +470,90 @@ namespace NFC_System
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             _ = RefreshDashboardAsync();
+        }
+
+        // ====================================================================
+        // MANUAL STATE CORRECTION (ANTI-TAILGATING HEALER) LOGIC
+        // ====================================================================
+        private async void HealerApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            string studentId = HealerStudentIdBox.Text.Trim();
+            string state = (HealerStateComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+
+            if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(state))
+            {
+                StatusTextBlock.Text = "Please provide a valid Student ID and select a physical State.";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+                return;
+            }
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin" || AppSession.CurrentStaffRoleLabel == "Administrator" || AppSession.CurrentStaffRoleLabel == "Security Admin")
+            {
+                _pendingHealStudentId = studentId;
+                _pendingHealState = state;
+                await ExecuteHealStateAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _pendingHealStudentId = studentId;
+                _pendingHealState = state;
+
+                _pendingAdminAction = "HEAL_STATE";
+                _pendingAdminSeverity = "MODERATE";
+
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To manually override a student's state, a Security Admin (or higher) must verify this action.";
+
+                _isAwaitingAdminAuth = true;
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                var result = await AdminAuthDialog.ShowAsync();
+
+                if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+                    StatusTextBlock.Text = "State override cancelled.";
+                    StatusTextBlock.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+        }
+
+        private async Task ExecuteHealStateAsync(string authorizedByName)
+        {
+            try
+            {
+                var student = await _database.GetStudentByIdAsync(_pendingHealStudentId);
+                if (student == null)
+                {
+                    StatusTextBlock.Text = $"Override failed: Student ID '{_pendingHealStudentId}' not found.";
+                    StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    PlayErrorAlert();
+                    return;
+                }
+
+                await _database.UpdateEntryStateAsync(_pendingHealStudentId, _pendingHealState);
+
+                string logMessage = $"Manually overridden physical state for {student.FullName} ({student.StudentId}) to {_pendingHealState}.";
+                await _database.AddAlertAsync(authorizedByName, "ADMIN_OVERRIDE", logMessage);
+
+                HealerStudentIdBox.Text = "";
+                HealerStateComboBox.SelectedIndex = -1;
+
+                StatusTextBlock.Text = $"Successfully updated {student.FullName} to {_pendingHealState}.";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"State correction failed: {ex.Message}";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
         }
 
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
@@ -484,8 +605,12 @@ namespace NFC_System
         {
             PopupSearchBox.Text = "";
             PopupTypeFilter.SelectedIndex = 0;
-            PopupStatusFilter.SelectedIndex = 0;
             PopupDatePicker.Date = null;
+
+            if (AppSession.CurrentStaffRoleLabel != "Personnel")
+            {
+                PopupStatusFilter.SelectedIndex = 0;
+            }
 
             _searchDebounceTimer.Stop();
             await ApplyServerSidePopupFiltersAsync();
@@ -496,6 +621,11 @@ namespace NFC_System
             string searchTerm = PopupSearchBox.Text?.Trim() ?? "";
             string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
             string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
+
+            if (AppSession.CurrentStaffRoleLabel == "Personnel")
+            {
+                status = "Denied / Flagged";
+            }
 
             DateTime? searchDate = null;
             if (PopupDatePicker.Date.HasValue)
@@ -1014,7 +1144,8 @@ namespace NFC_System
             StatusTextBlock.Text = "Gathering audit records for export...";
             StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
-            var rawLogs = await _database.GetMasterAuditLogsAsync(10000);
+            string? statusFilter = AppSession.CurrentStaffRoleLabel == "Personnel" ? "Denied / Flagged" : null;
+            var rawLogs = await _database.GetMasterAuditLogsAsync(10000, null, null, statusFilter, null);
 
             if (rawLogs == null || !rawLogs.Any())
             {
@@ -1172,15 +1303,11 @@ namespace NFC_System
             if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
 
-        // ====================================================================
-        // THE FIX: NEW EDIT STAFF PROFILE LOGIC
-        // ====================================================================
-
         private async void StaffListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StaffRecord staff)
             {
-                StaffDirectoryDialog.Hide(); // Temporarily hide the directory
+                StaffDirectoryDialog.Hide();
 
                 _editingStaff = staff;
                 _origStaffUid = staff.NfcUid;
@@ -1195,6 +1322,9 @@ namespace NFC_System
                 EditStaffNfcScanStatusText.Visibility = Visibility.Collapsed;
                 EditStaffChangeNfcButton.IsEnabled = true;
                 EditStaffStatusText.Visibility = Visibility.Collapsed;
+
+                // THE FIX: Hide delete button if the user is not a Master Admin
+                EditStaffDeleteButton.Visibility = AppSession.CurrentStaffRoleLabel == "Master Admin" ? Visibility.Visible : Visibility.Collapsed;
 
                 foreach (ComboBoxItem item in EditStaffRoleComboBox.Items)
                 {
@@ -1213,7 +1343,6 @@ namespace NFC_System
 
                 if (result != ContentDialogResult.Primary)
                 {
-                    // If canceled, bring back the directory
                     var staffList = await _database.GetAllStaffAsync();
                     StaffListView.ItemsSource = staffList;
                     await StaffDirectoryDialog.ShowAsync();
@@ -1318,12 +1447,11 @@ namespace NFC_System
             _pendingStaffUid = uid;
             _pendingStaffPin = pin;
             _pendingStaffRole = role;
-            _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim(); // Saving the reason
+            _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim();
 
             _pendingAdminAction = "EDIT_STAFF";
             _pendingAdminSeverity = "CRITICAL";
 
-            // Intercept and hide manually to transition to the RBAC authorization
             args.Cancel = true;
             EditStaffDialog.Hide();
 
@@ -1347,11 +1475,55 @@ namespace NFC_System
                     _isAwaitingAdminAuth = false;
                     _pendingAdminAction = "";
 
-                    // Re-open directory if canceled
                     var staffList = await _database.GetAllStaffAsync();
                     StaffListView.ItemsSource = staffList;
                     await StaffDirectoryDialog.ShowAsync();
                 }
+            }
+        }
+
+        // THE FIX: Deletion Implementation
+        private async void EditStaffDeleteButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (AppSession.CurrentStaffRoleLabel != "Master Admin")
+            {
+                EditStaffStatusText.Text = "Only Master Administrators can delete staff profiles.";
+                EditStaffStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+                return;
+            }
+
+            if (_origStaffName == AppSession.CurrentStaffName)
+            {
+                EditStaffStatusText.Text = "You cannot delete your currently logged-in account.";
+                EditStaffStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+                return;
+            }
+
+            EditStaffDialog.Hide();
+
+            ContentDialog confirmDialog = new ContentDialog
+            {
+                Title = "Confirm Staff Deletion",
+                Content = $"Are you sure you want to permanently delete {_origStaffName} ({_origStaffRole}) from the system?",
+                PrimaryButtonText = "Delete Profile",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await confirmDialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary)
+            {
+                await ExecuteStaffDeletionAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                var staffList = await _database.GetAllStaffAsync();
+                StaffListView.ItemsSource = staffList;
+                await StaffDirectoryDialog.ShowAsync();
             }
         }
 
@@ -1376,9 +1548,8 @@ namespace NFC_System
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                 PlaySuccessPing();
 
-                _pendingStaffNfcReason = ""; // Clear reason
+                _pendingStaffNfcReason = "";
 
-                // Reload directory and pop it back open
                 var staffList = await _database.GetAllStaffAsync();
                 StaffListView.ItemsSource = staffList;
                 await StaffDirectoryDialog.ShowAsync();
@@ -1387,6 +1558,36 @@ namespace NFC_System
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Staff update failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
+        }
+
+        private async Task ExecuteStaffDeletionAsync(string authorizedBy)
+        {
+            try
+            {
+                using var connection = new MySqlConnection(DatabaseService.ConnectionString);
+                await connection.OpenAsync();
+
+                using var cmd = new MySqlCommand("DELETE FROM staff WHERE nfc_uid = @uid", connection);
+                cmd.Parameters.AddWithValue("@uid", _origStaffUid);
+                await cmd.ExecuteNonQueryAsync();
+
+                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Permanently deleted staff profile for {_origStaffName} ({_origStaffRole}).");
+
+                StatusTextBlock.Text = $"Successfully deleted staff profile: {_origStaffName}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+
+                var staffList = await _database.GetAllStaffAsync();
+                StaffListView.ItemsSource = staffList;
+                await StaffDirectoryDialog.ShowAsync();
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Staff deletion failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
             }

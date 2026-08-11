@@ -287,8 +287,8 @@
                                     </Border>
 
                                     <StackPanel Grid.Row="1" VerticalAlignment="Top">
-                                        <TextBlock Text="Security Admin" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
-                                        <TextBlock Text="Configure risk modes, manage restricted lists, review real-time alerts, and handle configurations." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
+                                        <TextBlock Text="Security Dashboard" Style="{StaticResource CardTitleStyle}" FontSize="20" Margin="0,0,0,8"/>
+                                        <TextBlock Text="Upload and download data, manage academic courses, manage staff, and review real-time alerts." Style="{StaticResource BodyTextStyle}" FontSize="13" TextWrapping="Wrap"/>
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0" VerticalAlignment="Bottom">
@@ -381,10 +381,12 @@
                     </Button>
                     <ProgressRing x:Name="LoginLoadingRing" IsActive="False" Visibility="Collapsed" HorizontalAlignment="Center" Width="40" Height="40" Margin="0,0,0,24"/>
 
-                    <!-- Debug Simulations -->
+                    <!-- THE FIX: Added 4 distinct simulation buttons mapped to proper roles -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Opacity="0.5">
-                        <Button Content="Simulate Admin Login" Click="SimulateAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
-                        <Button Content="Simulate Personnel Login" Click="SimulatePersonnelLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <Button Content="Simulate Master Admin" Click="SimulateAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <Button Content="Simulate Std Admin" Click="SimulateStandardAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <Button Content="Simulate Organizer" Click="SimulateOrganizerLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <Button Content="Simulate Personnel" Click="SimulatePersonnelLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>

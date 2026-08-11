@@ -127,6 +127,28 @@
                     <ScrollViewer x:Name="AdminScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,16,0">
                         <StackPanel Spacing="24">
 
+                            <!-- Manual State Correction (Anti-Tailgating Healer) -->
+                            <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="Manual State Correction" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Override a student's physical campus state if they bypassed a scanner (e.g., tailgating out)." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="HealerStudentIdBox" Grid.Column="0" PlaceholderText="Enter Student ID" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="HealerStateComboBox" Grid.Column="1" PlaceholderText="Select State" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                            <ComboBoxItem Content="INSIDE"/>
+                                            <ComboBoxItem Content="OUTSIDE"/>
+                                        </ComboBox>
+                                        <Button x:Name="HealerApplyButton" Grid.Column="2" Content="Force Update" Click="HealerApplyButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Cloud Synchronization Module -->
                             <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
@@ -135,7 +157,7 @@
 
                                     <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition x:Name="UploadDataColumn" Width="*"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
@@ -147,7 +169,7 @@
                             </Border>
 
                             <!-- Academic Course Management -->
-                            <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <Border x:Name="CourseManagementPanel" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
                                     <TextBlock Text="Academic Course Management" Style="{StaticResource CardTitleStyle}" Margin="0"/>
                                     <TextBlock Text="Add new degree programs or safely remove existing ones." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
@@ -156,7 +178,7 @@
                             </Border>
 
                             <!-- Staff Access & RBAC Registration -->
-                            <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                            <Border x:Name="StaffManagementPanel" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
 
                                     <Grid>
@@ -185,6 +207,7 @@
                                         <TextBox x:Name="StaffNameTextBox" Grid.Row="0" Grid.Column="0" Header="Staff Full Name" PlaceholderText="e.g. John Doe"/>
                                         <ComboBox x:Name="StaffRoleComboBox" Grid.Row="0" Grid.Column="1" Header="System Role" SelectedIndex="0" HorizontalAlignment="Stretch">
                                             <ComboBoxItem Content="Security Personnel"/>
+                                            <ComboBoxItem Content="Security Admin"/>
                                             <ComboBoxItem Content="Event Organizer"/>
                                             <ComboBoxItem Content="Administrator"/>
                                             <ComboBoxItem Content="Master Administrator"/>
@@ -280,7 +303,6 @@
                                             <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                             <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                             <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-
                                             <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
                                         </Grid>
                                     </DataTemplate>
@@ -482,7 +504,6 @@
             <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
                 <TextBlock Text="Double-click a staff member to edit their permissions or replace their NFC card." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">
-                    <!-- THE FIX: Enable DoubleTapped and SelectionMode here -->
                     <ListView x:Name="StaffListView" Height="350" SelectionMode="Single" DoubleTapped="StaffListView_DoubleTapped">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:StaffRecord">
@@ -506,7 +527,6 @@
             </StackPanel>
         </ContentDialog>
 
-        <!-- THE FIX: New Edit Staff Profile Dialog -->
         <ContentDialog x:Name="EditStaffDialog" Title="Edit Staff Profile" PrimaryButtonText="Save Changes" CloseButtonText="Cancel" CornerRadius="8" PrimaryButtonClick="EditStaffDialog_PrimaryButtonClick">
             <StackPanel Spacing="16" Width="400">
                 <TextBlock x:Name="EditStaffStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
@@ -515,6 +535,7 @@
 
                 <ComboBox x:Name="EditStaffRoleComboBox" Header="System Role" HorizontalAlignment="Stretch" SelectionChanged="EditStaffDialog_FieldChanged">
                     <ComboBoxItem Content="Security Personnel"/>
+                    <ComboBoxItem Content="Security Admin"/>
                     <ComboBoxItem Content="Event Organizer"/>
                     <ComboBoxItem Content="Administrator"/>
                     <ComboBoxItem Content="Master Administrator"/>
@@ -528,6 +549,9 @@
                 <TextBlock x:Name="EditStaffNfcScanStatusText" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
 
                 <TextBox x:Name="EditStaffNfcReasonBox" Header="Reason for NFC Replacement" PlaceholderText="e.g. Lost ID card..." TextChanged="EditStaffDialog_FieldChanged" Visibility="Collapsed"/>
+
+                <!-- THE FIX: DELETE STAFF BUTTON -->
+                <Button x:Name="EditStaffDeleteButton" Content="Delete Staff Profile" Click="EditStaffDeleteButton_Click" HorizontalAlignment="Stretch" CornerRadius="8" Background="#EF4444" Foreground="White" BorderThickness="0" Margin="0,8,0,0"/>
             </StackPanel>
         </ContentDialog>
 
