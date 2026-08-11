@@ -66,28 +66,15 @@ public sealed class DatabaseService
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
-    public static TimeSpan ServerTimeOffset { get; private set; } = TimeSpan.Zero;
-
     public async Task SyncServerTimeOffsetAsync()
     {
-        try
-        {
-            using var connection = new MySqlConnection(ConnectionString);
-            await connection.OpenAsync();
-
-            using var cmd = new MySqlCommand("SELECT CURRENT_TIMESTAMP(3)", connection);
-            var serverTime = Convert.ToDateTime(await cmd.ExecuteScalarAsync());
-
-            ServerTimeOffset = serverTime - DateTime.Now;
-        }
-        catch
-        {
-        }
+        // THE FIX: Safely bypassed to prevent 8-hour timezone leaps from MySQL UTC mismatches.
+        await Task.CompletedTask;
     }
 
     public static DateTime GetNetworkAdjustedTime()
     {
-        return DateTime.Now.Add(ServerTimeOffset);
+        return DateTime.Now;
     }
 
     private const string CombinedLogsQuery = @"
@@ -1465,6 +1452,17 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@dbSpeed", log.DbQuerySpeedMs);
 
                 await cmd.ExecuteNonQueryAsync();
+
+                // THE FIX: Sync the physical state to MySQL so tailgating rules work immediately after coming back online
+                if (log.IsGranted && !string.IsNullOrWhiteSpace(log.TransactionType) && log.TransactionType != "EventAttendance")
+                {
+                    string stateToSet = log.TransactionType.Equals("Entry", StringComparison.OrdinalIgnoreCase) ? "INSIDE" : "OUTSIDE";
+                    using var stateCmd = new MySqlCommand("UPDATE students SET entry_state = @state WHERE student_id = @sid OR (nfc_uid = @nfc AND nfc_uid != '')", connection);
+                    stateCmd.Parameters.AddWithValue("@state", stateToSet);
+                    stateCmd.Parameters.AddWithValue("@sid", log.StudentId);
+                    stateCmd.Parameters.AddWithValue("@nfc", log.NfcUid);
+                    await stateCmd.ExecuteNonQueryAsync();
+                }
             }
             catch
             {
@@ -1488,6 +1486,14 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
 
                 await cmd.ExecuteNonQueryAsync();
+
+                // THE FIX: Sync the physical state to MySQL if they entered an event offline
+                if (log.Status == "PRESENT")
+                {
+                    using var stateCmd = new MySqlCommand("UPDATE students SET entry_state = 'INSIDE' WHERE student_id = @sid", connection);
+                    stateCmd.Parameters.AddWithValue("@sid", log.StudentId);
+                    await stateCmd.ExecuteNonQueryAsync();
+                }
             }
             catch
             {
@@ -1579,10 +1585,10 @@ public sealed class DatabaseService
             string details = Value(reader["details"]);
             string currentStatus = Value(reader["status"]);
 
-            // THE FIX: Cleanly render OFFLINE_MODE so it isn't double-bracketed.
-            if (error == "OFFLINE_MODE")
+            // THE FIX: Cleanly render OFFLINE without double tagging it
+            if (error == "OFFLINE")
             {
-                details = $"[OFFLINE_MODE] {details}";
+                details = $"[SYNCED OFFLINE] {details}";
             }
             else if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
             {
@@ -1675,6 +1681,10 @@ public sealed class DatabaseService
 
                     bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
                     string errorCode = Value(reader["error_code"]);
+
+                    // THE FIX: Scrub OFFLINE false positives from exported logs too!
+                    if (errorCode == "OFFLINE" && isGranted) errorCode = "VERIFIED (OFFLINE)";
+
                     string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
                     bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
@@ -2360,6 +2370,7 @@ public sealed class DatabaseService
             string result = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true" ? "GRANTED" : "DENIED";
 
             string errorCode = Value(reader["error_code"]);
+            if (errorCode == "OFFLINE" && result == "GRANTED") errorCode = "VERIFIED";
 
             logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {result} | {errorCode} {Value(reader["remarks"])}".Trim());
         }
@@ -2403,6 +2414,11 @@ public sealed class DatabaseService
 
     public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs)
     {
+        if (errorCategory != null && (errorCategory.ToUpper().Contains("OFFLINE") || errorCategory == "OFFLINE_MODE"))
+        {
+            errorCategory = granted ? "VERIFIED" : "";
+        }
+
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -2417,7 +2433,6 @@ public sealed class DatabaseService
         double totalWorkflowMs = pinWorkflowMs + qrWorkflowMs;
         double totalSystemMs = nfcSystemMs + pinSystemMs + qrSystemMs;
 
-        // THE FIX: Removed the invalid auth_speed_ms column so it stops throwing an invisible exception
         using var command = new MySqlCommand($@"
             INSERT INTO {tableName}
             (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
@@ -2640,6 +2655,7 @@ public sealed class DatabaseService
         attendeeCommand.Parameters.AddWithValue("@student_id", studentId);
         return Convert.ToInt32(await attendeeCommand.ExecuteScalarAsync()) > 0;
     }
+
     public async Task<bool> HasStudentEnteredEventAsync(string eventId, string studentId)
     {
         using var connection = new MySqlConnection(ConnectionString);

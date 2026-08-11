@@ -88,9 +88,6 @@ public static class OfflineCacheService
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly object FileLock = new();
 
-    // =========================================================================
-    // IN-MEMORY RAM CACHE (TO PREVENT UI FREEZING)
-    // =========================================================================
     private static List<CachedStudent> _inMemoryStudents = new();
     private static List<CachedEvent> _inMemoryEvents = new();
     private static List<CachedEventRoster> _inMemoryRosters = new();
@@ -144,10 +141,6 @@ public static class OfflineCacheService
         }
     }
 
-    // =========================================================================
-    // 1. SAVE SHADOW CACHE (EXECUTED REGULARLY WHEN ONLINE)
-    // =========================================================================
-
     public static void UpdateStudentCache(List<CachedStudent> students)
     {
         lock (FileLock)
@@ -173,10 +166,6 @@ public static class OfflineCacheService
         }
     }
 
-    // =========================================================================
-    // 2. READ SHADOW CACHE (FOR UI DROPDOWNS)
-    // =========================================================================
-
     public static List<CachedStudent> GetCachedStudents()
     {
         LoadStudentMemoryCache();
@@ -188,10 +177,6 @@ public static class OfflineCacheService
         LoadEventMemoryCache();
         return _inMemoryEvents;
     }
-
-    // =========================================================================
-    // 3. OFFLINE VERIFICATION ENGINE (LIGHTNING FAST)
-    // =========================================================================
 
     public static (bool IsGranted, CachedStudent? Student, string ErrorCode, string Remarks) VerifyStudentOffline(string uid, string transactionType, string? enteredPin = null)
     {
@@ -238,10 +223,6 @@ public static class OfflineCacheService
         return (false, "DENIED", "Student ID is not on the approved offline roster for this event.");
     }
 
-    // =========================================================================
-    // 4. FAST BACKGROUND FILE WRITERS (NO UI FREEZES)
-    // =========================================================================
-
     public static void UpdateCachedStudentPinProgress(string studentId, int failedAttempts, bool isLocked)
     {
         LoadStudentMemoryCache();
@@ -275,10 +256,6 @@ public static class OfflineCacheService
         });
     }
 
-    // =========================================================================
-    // 5. EMERGENCY LOG WRITING & ATOMIC EXTRACTION
-    // =========================================================================
-
     public static void SaveOfflineGateLog(string studentId, string studentName, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks, double nfcSys, double pinWf, double pinSys, double qrWf, double qrSys, double totWf, double totSys, double dbSpeed)
     {
         lock (FileLock)
@@ -287,7 +264,8 @@ public static class OfflineCacheService
             var logs = GetPendingGateLogs();
             logs.Add(new PendingGateLog
             {
-                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                // THE FIX: Uses perfectly accurate local time to prevent the 8-hour timezone shift disappearance
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
                 StudentId = studentId,
                 StudentName = studentName,
                 NfcUid = nfcUid,
@@ -295,9 +273,9 @@ public static class OfflineCacheService
                 VerificationMode = mode,
                 IsGranted = isGranted,
 
-                // THE FIX: Enforce OFFLINE_MODE flag natively into the JSON to bypass DatabaseService stripping logic
-                ErrorCode = isGranted ? "OFFLINE_MODE" : errorCode,
-                Remarks = $"[OFFLINE MODE] {remarks}",
+                // THE FIX: Simplified the error code and wiped the string injection to prevent double UI tags
+                ErrorCode = isGranted ? "OFFLINE" : errorCode,
+                Remarks = remarks,
 
                 NfcSystemMs = nfcSys,
                 PinWorkflowMs = pinWf,
@@ -325,12 +303,13 @@ public static class OfflineCacheService
             var logs = GetPendingEventLogs();
             logs.Add(new PendingEventAttendance
             {
-                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                // THE FIX: Uses perfectly accurate local time 
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
                 EventId = eventId,
                 StudentId = studentId,
                 VerificationMode = mode,
                 Status = status,
-                Remarks = $"[OFFLINE MODE] {remarks}"
+                Remarks = remarks
             });
             File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
         }
