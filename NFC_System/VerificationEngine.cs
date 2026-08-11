@@ -57,22 +57,26 @@ public sealed class VerificationEngine
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         StudentRecord? student = null;
-
-        // THE FIX: Instantly drop to offline mode without suffering the 3-second ADO.NET timeout
         bool isOffline = !DatabaseMonitor.IsOnline;
 
         if (!isOffline)
         {
             dbTimer.Start();
-            try
-            {
-                student = await _database.GetStudentByUidAsync(uid);
-            }
-            catch
-            {
-                isOffline = true;
-            }
+            try { student = await _database.GetStudentByUidAsync(uid); }
+            catch { isOffline = true; }
             dbTimer.Stop();
+
+            // THE FIX (HYBRID CACHE MERGE): Prevent tailgating race-conditions when switching from Offline to Online
+            if (student != null)
+            {
+                var localCache = OfflineCacheService.GetCachedStudents().FirstOrDefault(s => s.StudentId == student.StudentId);
+                if (localCache != null)
+                {
+                    student.EntryState = localCache.EntryState;
+                    student.FailedPinAttempts = localCache.FailedPinAttempts;
+                    student.PinLocked = localCache.PinLocked;
+                }
+            }
         }
 
         double dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
@@ -80,7 +84,6 @@ public sealed class VerificationEngine
 
         if (isOffline)
         {
-            // THE FIX: Pass the transactionType to enforce strict offline anti-tailgating
             var offlineResult = OfflineCacheService.VerifyStudentOffline(uid, transactionType.ToString());
 
             if (offlineResult.Student != null)
@@ -95,8 +98,6 @@ public sealed class VerificationEngine
                     Status = offlineResult.Student.Status,
                     PinLocked = offlineResult.Student.PinLocked,
                     EntryState = offlineResult.Student.EntryState,
-
-                    // THE FIX: You missed these two mappings!
                     FailedPinAttempts = offlineResult.Student.FailedPinAttempts,
                     QrCredential = offlineResult.Student.QrCredential
                 };
@@ -104,7 +105,7 @@ public sealed class VerificationEngine
 
             if (!offlineResult.IsGranted && offlineResult.ErrorCode != "VERIFIED")
             {
-                authTimer.Stop(); // Stop the timer so we can log the hardware speed
+                authTimer.Stop();
 
                 OfflineCacheService.SaveOfflineGateLog(
                     student?.StudentId ?? "",
@@ -136,28 +137,28 @@ public sealed class VerificationEngine
             if (student == null)
             {
                 string error = "NOT_REGISTERED";
-                await SafeLogGateAsync(null, uid, transactionType, mode, false, error, "NFC UID is not linked to a student record.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs);
+                await SafeLogGateAsync(null, uid, transactionType, mode, false, error, "NFC UID is not linked to a student record.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs, isOffline);
                 return Denied(uid, null, "UNAUTHORIZED", "NFC credential is not registered", error, $"{scanTime} | UID {uid} | DENIED | NOT REGISTERED");
             }
 
             if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "INACTIVE_STUDENT";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, $"Student status is {student.Status}.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs);
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, $"Student status is {student.Status}.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs, isOffline);
                 return Denied(uid, student, "ACCESS DENIED", $"Student status is {student.Status}", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {student.Status.ToUpper()}");
             }
 
             if (transactionType == TransactionType.Entry && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "ANTI_TAILGATING_VIOLATION";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Consecutive entry attempt detected before an exit transaction.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs);
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Consecutive entry attempt detected before an exit transaction.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs, isOffline);
                 return Denied(uid, student, "ACCESS DENIED", "Anti-tailgating rule blocked repeated entry", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | TAILGATING");
             }
 
             if (transactionType == TransactionType.Exit && string.IsNullOrWhiteSpace(eventId) && student.EntryState.Equals("OUTSIDE", StringComparison.OrdinalIgnoreCase))
             {
                 string error = "IRREGULAR_EXIT_SEQUENCE";
-                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Exit attempted while student is already marked OUTSIDE.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs);
+                await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "Exit attempted while student is already marked OUTSIDE.", authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, dbQueryMs, isOffline);
                 return Denied(uid, student, "ACCESS DENIED", "Exit blocked because student is already outside", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | IRREGULAR EXIT");
             }
 
@@ -171,7 +172,7 @@ public sealed class VerificationEngine
                 if (!hasEntered)
                 {
                     string error = "IRREGULAR_EVENT_EXIT";
-                    await SafeLogEventAsync(eventId, student.StudentId, mode, "DENIED", "Event exit attempted without prior check-in.");
+                    await SafeLogEventAsync(eventId, student.StudentId, mode, "DENIED", "Event exit attempted without prior check-in.", isOffline);
                     return Denied(uid, student, "ATTENDANCE DENIED", "Cannot check out without checking in first", error, $"{scanTime} | {student.StudentId} | {student.FullName} | EVENT DENIED | IRREGULAR EXIT");
                 }
             }
@@ -186,7 +187,7 @@ public sealed class VerificationEngine
                 if (!allowed)
                 {
                     string error = "UNAUTHORIZED_EVENT_ACCESS";
-                    await SafeLogEventAsync(eventId, student.StudentId, mode, "DENIED", $"Student is not approved for event {eventId}.");
+                    await SafeLogEventAsync(eventId, student.StudentId, mode, "DENIED", $"Student is not approved for event {eventId}.", isOffline);
                     return Denied(uid, student, "ATTENDANCE DENIED", "Student is not on the approved event list", error, $"{scanTime} | {student.StudentId} | {student.FullName} | EVENT DENIED | UNAUTHORIZED");
                 }
             }
@@ -202,13 +203,14 @@ public sealed class VerificationEngine
             EventId = eventId,
             IsQrFallback = isQrFallback,
             NfcSystemMs = isQrFallback ? 0 : authTimer.Elapsed.TotalMilliseconds,
-            TotalDbQueryMs = dbQueryMs
+            TotalDbQueryMs = dbQueryMs,
+            IsOffline = isOffline
         };
 
         if (student!.PinLocked)
         {
             string error = "PIN_LOCKED";
-            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", session.NfcSystemMs, 0, 0, 0, 0, session.TotalDbQueryMs);
+            await SafeLogGateAsync(student, uid, transactionType, mode, false, error, "PIN verification is locked after repeated failed attempts.", session.NfcSystemMs, 0, 0, 0, 0, session.TotalDbQueryMs, session.IsOffline);
             return Denied(uid, student, isOffline ? "OFFLINE: ACCESS DENIED" : "ACCESS DENIED", "PIN is locked after repeated failed attempts", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | PIN LOCKED");
         }
 
@@ -262,7 +264,7 @@ public sealed class VerificationEngine
 
             string error = locked ? "PIN_LOCKED" : "PIN_FAILURE";
 
-            if (DatabaseMonitor.IsOnline)
+            if (!session.IsOffline)
             {
                 try
                 {
@@ -272,25 +274,23 @@ public sealed class VerificationEngine
                     dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
                     if (locked) await _database.AddAlertAsync(student.StudentId, error, $"{student.FullName} reached three failed PIN attempts and has been locked.");
                 }
-                catch { }
+                catch { session.IsOffline = true; }
             }
-            else
-            {
-                // THE FIX: Persist the offline failure locally so they actually get locked out!
-                OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, failedAttempts, locked);
-            }
+
+            // UNCONDITIONAL LOCAL STATE UPDATE: Always lock them out in RAM cache immediately
+            OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, failedAttempts, locked);
 
             authTimer.Stop();
             session.PinWorkflowMs = uiPinTimeMs;
             session.PinSystemMs = authTimer.Elapsed.TotalMilliseconds;
             session.TotalDbQueryMs += dbQueryMs;
 
-            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, session.IsOffline);
 
             return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}");
         }
 
-        if (DatabaseMonitor.IsOnline)
+        if (!session.IsOffline)
         {
             try
             {
@@ -299,13 +299,11 @@ public sealed class VerificationEngine
                 dbTimer.Stop();
                 dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
             }
-            catch { }
+            catch { session.IsOffline = true; }
         }
-        else if (student.FailedPinAttempts > 0)
-        {
-            // THE FIX: Clear offline progress if they get it right
-            OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, 0, false);
-        }
+
+        // UNCONDITIONAL LOCAL STATE UPDATE: Clear lockouts
+        OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, 0, false);
 
         student.FailedPinAttempts = 0;
         student.PinLocked = false;
@@ -338,7 +336,6 @@ public sealed class VerificationEngine
 
         StudentRecord student = session.Student;
         string normalizedInput = qrCredential.Trim();
-        // Safely handles null QR strings from offline cache
         string normalizedStored = student.QrCredential?.Trim() ?? "";
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
@@ -350,7 +347,7 @@ public sealed class VerificationEngine
         if (string.IsNullOrWhiteSpace(normalizedStored) || !normalizedStored.Equals(normalizedInput, StringComparison.OrdinalIgnoreCase))
         {
             string error = "CREDENTIAL_MISMATCH";
-            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
+            await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, session.IsOffline);
             return Denied(session.Uid, student, "ACCESS DENIED", "QR credential mismatch detected", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | QR MISMATCH");
         }
 
@@ -376,7 +373,6 @@ public sealed class VerificationEngine
         }
         catch { }
 
-        // Fallback to offline immediately
         if (student == null)
         {
             string cacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NFC_System", "Cache", "local_students.json");
@@ -398,8 +394,6 @@ public sealed class VerificationEngine
                             Status = cached.Status,
                             PinLocked = cached.PinLocked,
                             EntryState = cached.EntryState,
-                            
-                            // THE FIX: You missed these two mappings here too!
                             FailedPinAttempts = cached.FailedPinAttempts,
                             QrCredential = cached.QrCredential
                         };
@@ -431,9 +425,32 @@ public sealed class VerificationEngine
         StudentRecord student = session.Student;
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
-        bool isOffline = !DatabaseMonitor.IsOnline;
+        bool isOffline = session.IsOffline;
         Stopwatch updateTimer = new Stopwatch();
 
+        // 1. UNCONDITIONAL LOCAL CACHE UPDATE (Instant Truth)
+        // We do this immediately so the RAM cache is NEVER out of sync with physical reality,
+        // preventing tailgating vulnerabilities if the server crashes a millisecond later.
+        if (session.TransactionType == TransactionType.Entry)
+        {
+            OfflineCacheService.UpdateCachedStudentStateLocally(student.StudentId, "INSIDE");
+            student.EntryState = "INSIDE";
+        }
+        else if (session.TransactionType == TransactionType.Exit)
+        {
+            if (string.IsNullOrWhiteSpace(session.EventId))
+            {
+                OfflineCacheService.UpdateCachedStudentStateLocally(student.StudentId, "OUTSIDE");
+                student.EntryState = "OUTSIDE";
+            }
+        }
+        else if (session.TransactionType == TransactionType.EventAttendance)
+        {
+            OfflineCacheService.UpdateCachedStudentStateLocally(student.StudentId, "INSIDE");
+            student.EntryState = "INSIDE";
+        }
+
+        // 2. REMOTE DB UPDATE (If Online)
         if (!isOffline)
         {
             try
@@ -442,36 +459,32 @@ public sealed class VerificationEngine
                 if (session.TransactionType == TransactionType.Entry)
                 {
                     await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
-                    student.EntryState = "INSIDE";
                 }
                 else if (session.TransactionType == TransactionType.Exit)
                 {
                     if (!string.IsNullOrWhiteSpace(session.EventId))
                         await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
                     else
-                    {
                         await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
-                        student.EntryState = "OUTSIDE";
-                    }
                 }
                 else if (session.TransactionType == TransactionType.EventAttendance)
                 {
                     await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
                     await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
-                    student.EntryState = "INSIDE";
                 }
                 updateTimer.Stop();
                 session.TotalDbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
 
-                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs);
+                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, isOffline);
             }
             catch
             {
                 isOffline = true;
+                session.IsOffline = true;
             }
         }
 
-        // Catch the fallthrough gracefully
+        // 3. FALLBACK JSON LOGGING (If Offline or Remote DB Failed)
         if (isOffline)
         {
             if (session.TransactionType == TransactionType.EventAttendance && !string.IsNullOrWhiteSpace(session.EventId))
@@ -518,7 +531,7 @@ public sealed class VerificationEngine
         };
     }
 
-    private async Task SafeLogGateAsync(StudentRecord? student, string uid, TransactionType type, VerificationMode mode, bool granted, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs)
+    private async Task SafeLogGateAsync(StudentRecord? student, string uid, TransactionType type, VerificationMode mode, bool granted, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs, bool isOffline)
     {
         if (dbQuerySpeedMs > 0)
         {
@@ -528,7 +541,7 @@ public sealed class VerificationEngine
         string? loggedName = student?.FullName;
         if (student != null && student.IsTemporary) loggedName = $"[TEMP] {loggedName}";
 
-        if (DatabaseMonitor.IsOnline)
+        if (!isOffline)
         {
             try
             {
@@ -539,7 +552,6 @@ public sealed class VerificationEngine
             catch { }
         }
 
-        // THE FIX: Calculate totals and pass ALL metrics to the offline JSON queue
         double totalWorkflowMs = pinWorkflowMs + qrWorkflowMs;
         double totalSystemMs = nfcSystemMs + pinSystemMs + qrSystemMs;
 
@@ -556,9 +568,9 @@ public sealed class VerificationEngine
         );
     }
 
-    private async Task SafeLogEventAsync(string eventId, string studentId, VerificationMode mode, string status, string remarks)
+    private async Task SafeLogEventAsync(string eventId, string studentId, VerificationMode mode, string status, string remarks, bool isOffline)
     {
-        if (DatabaseMonitor.IsOnline)
+        if (!isOffline)
         {
             try
             {

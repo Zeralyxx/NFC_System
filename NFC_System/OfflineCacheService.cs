@@ -235,7 +235,8 @@ public static class OfflineCacheService
         }
     }
 
-    private static void UpdateCachedStudentStateLocally(string studentId, string newState)
+    // THE FIX: Changed to Public so the VerificationEngine can unconditionally sync online/offline physical states
+    public static void UpdateCachedStudentStateLocally(string studentId, string newState)
     {
         LoadStudentMemoryCache();
         var student = _inMemoryStudents.FirstOrDefault(s => s.StudentId == studentId);
@@ -273,7 +274,7 @@ public static class OfflineCacheService
                 IsGranted = isGranted,
 
                 ErrorCode = isGranted ? "OFFLINE_MODE" : errorCode,
-                Remarks = remarks, // THE FIX: Let the UI append the tag dynamically rather than saving it to the database string
+                Remarks = remarks,
 
                 NfcSystemMs = nfcSys,
                 PinWorkflowMs = pinWf,
@@ -285,11 +286,6 @@ public static class OfflineCacheService
                 DbQuerySpeedMs = dbSpeed
             });
             File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
-
-            if (isGranted && !string.IsNullOrEmpty(studentId))
-            {
-                UpdateCachedStudentStateLocally(studentId, transactionType == "Entry" ? "INSIDE" : "OUTSIDE");
-            }
         }
     }
 
@@ -306,7 +302,7 @@ public static class OfflineCacheService
                 StudentId = studentId,
                 VerificationMode = mode,
                 Status = status,
-                Remarks = remarks // THE FIX: Remove double-tagging
+                Remarks = remarks
             });
             File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
         }

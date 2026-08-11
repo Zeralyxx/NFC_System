@@ -1320,6 +1320,9 @@ public sealed class DatabaseService
 
     public async Task UpdateShadowCacheAsync()
     {
+        // THE FIX: Protect local cache from being overwritten by stale cloud data before offline sync completes
+        if (OfflineCacheService.HasPendingLogs()) return;
+
         try
         {
             using var connection = new MySqlConnection(ConnectionString);
