@@ -1453,7 +1453,7 @@ public sealed class DatabaseService
 
                 await cmd.ExecuteNonQueryAsync();
 
-                // THE FIX: Sync the physical state to MySQL so tailgating rules work immediately after coming back online
+                // THE FIX: Sync the physical state changes made during offline mode back to the online database!
                 if (log.IsGranted && !string.IsNullOrWhiteSpace(log.TransactionType) && log.TransactionType != "EventAttendance")
                 {
                     string stateToSet = log.TransactionType.Equals("Entry", StringComparison.OrdinalIgnoreCase) ? "INSIDE" : "OUTSIDE";
@@ -1486,14 +1486,6 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
 
                 await cmd.ExecuteNonQueryAsync();
-
-                // THE FIX: Sync the physical state to MySQL if they entered an event offline
-                if (log.Status == "PRESENT")
-                {
-                    using var stateCmd = new MySqlCommand("UPDATE students SET entry_state = 'INSIDE' WHERE student_id = @sid", connection);
-                    stateCmd.Parameters.AddWithValue("@sid", log.StudentId);
-                    await stateCmd.ExecuteNonQueryAsync();
-                }
             }
             catch
             {

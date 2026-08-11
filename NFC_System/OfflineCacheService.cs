@@ -264,8 +264,7 @@ public static class OfflineCacheService
             var logs = GetPendingGateLogs();
             logs.Add(new PendingGateLog
             {
-                // THE FIX: Uses perfectly accurate local time to prevent the 8-hour timezone shift disappearance
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss.fff"),
                 StudentId = studentId,
                 StudentName = studentName,
                 NfcUid = nfcUid,
@@ -273,9 +272,8 @@ public static class OfflineCacheService
                 VerificationMode = mode,
                 IsGranted = isGranted,
 
-                // THE FIX: Simplified the error code and wiped the string injection to prevent double UI tags
-                ErrorCode = isGranted ? "OFFLINE" : errorCode,
-                Remarks = remarks,
+                ErrorCode = isGranted ? "OFFLINE_MODE" : errorCode,
+                Remarks = remarks, // THE FIX: Let the UI append the tag dynamically rather than saving it to the database string
 
                 NfcSystemMs = nfcSys,
                 PinWorkflowMs = pinWf,
@@ -303,13 +301,12 @@ public static class OfflineCacheService
             var logs = GetPendingEventLogs();
             logs.Add(new PendingEventAttendance
             {
-                // THE FIX: Uses perfectly accurate local time 
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss.fff"),
                 EventId = eventId,
                 StudentId = studentId,
                 VerificationMode = mode,
                 Status = status,
-                Remarks = remarks
+                Remarks = remarks // THE FIX: Remove double-tagging
             });
             File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
         }
