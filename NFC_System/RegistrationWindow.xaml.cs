@@ -12,6 +12,7 @@ using WinRT.Interop;
 using ZXing;
 using ZXing.Common;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace NFC_System
 {
@@ -541,6 +542,15 @@ namespace NFC_System
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] Critical structural criteria missing (ID, Name, or NFC).");
+                return;
+            }
+
+            // THE FIX: Strict Email Format Validation
+            string emailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
+            if (string.IsNullOrWhiteSpace(email) || !Regex.IsMatch(email, emailPattern))
+            {
+                UidLogListView.Items.Insert(0, "[ERROR] A valid email address is required (e.g., student@university.edu).");
+                PlayErrorAlert();
                 return;
             }
 

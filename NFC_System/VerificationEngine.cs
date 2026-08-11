@@ -104,7 +104,20 @@ public sealed class VerificationEngine
 
             if (!offlineResult.IsGranted && offlineResult.ErrorCode != "VERIFIED")
             {
-                OfflineCacheService.SaveOfflineGateLog(student?.StudentId ?? "", uid, transactionType.ToString(), mode.ToString(), false, offlineResult.ErrorCode, offlineResult.Remarks);
+                authTimer.Stop(); // Stop the timer so we can log the hardware speed
+
+                OfflineCacheService.SaveOfflineGateLog(
+                    student?.StudentId ?? "",
+                    student?.FullName ?? "UNKNOWN USER",
+                    uid,
+                    transactionType.ToString(),
+                    mode.ToString(),
+                    false,
+                    offlineResult.ErrorCode,
+                    offlineResult.Remarks,
+                    authTimer.Elapsed.TotalMilliseconds, 0, 0, 0, 0, 0, authTimer.Elapsed.TotalMilliseconds, 0
+                );
+
                 return Denied(uid, student, "OFFLINE: ACCESS DENIED", offlineResult.Remarks, offlineResult.ErrorCode, $"{scanTime} | UID {uid} | OFFLINE DENIED | {offlineResult.ErrorCode}");
             }
 
@@ -462,9 +475,33 @@ public sealed class VerificationEngine
         if (isOffline)
         {
             if (session.TransactionType == TransactionType.EventAttendance && !string.IsNullOrWhiteSpace(session.EventId))
+            {
                 OfflineCacheService.SaveOfflineEventLog(session.EventId, student.StudentId, session.Mode.ToString(), "PRESENT", remarks);
+            }
             else
-                OfflineCacheService.SaveOfflineGateLog(student.StudentId, session.Uid, session.TransactionType.ToString(), session.Mode.ToString(), true, "VERIFIED", remarks);
+            {
+                double totalWorkflowMs = session.PinWorkflowMs + session.QrWorkflowMs;
+                double totalSystemMs = session.NfcSystemMs + session.PinSystemMs + session.QrSystemMs;
+
+                OfflineCacheService.SaveOfflineGateLog(
+                    student.StudentId,
+                    student.FullName,
+                    session.Uid,
+                    session.TransactionType.ToString(),
+                    session.Mode.ToString(),
+                    true,
+                    "VERIFIED",
+                    remarks,
+                    session.NfcSystemMs,
+                    session.PinWorkflowMs,
+                    session.PinSystemMs,
+                    session.QrWorkflowMs,
+                    session.QrSystemMs,
+                    totalWorkflowMs,
+                    totalSystemMs,
+                    session.TotalDbQueryMs
+                );
+            }
         }
 
         string nameForLog = student.IsTemporary ? $"[TEMP] {student.FullName}" : student.FullName;
@@ -502,7 +539,21 @@ public sealed class VerificationEngine
             catch { }
         }
 
-        OfflineCacheService.SaveOfflineGateLog(student?.StudentId ?? "", uid, DatabaseService.ToStorageValue(type), DatabaseService.ToStorageValue(mode), granted, errorCategory, remarks);
+        // THE FIX: Calculate totals and pass ALL metrics to the offline JSON queue
+        double totalWorkflowMs = pinWorkflowMs + qrWorkflowMs;
+        double totalSystemMs = nfcSystemMs + pinSystemMs + qrSystemMs;
+
+        OfflineCacheService.SaveOfflineGateLog(
+            student?.StudentId ?? "",
+            loggedName ?? "",
+            uid,
+            DatabaseService.ToStorageValue(type),
+            DatabaseService.ToStorageValue(mode),
+            granted,
+            errorCategory,
+            remarks,
+            nfcSystemMs, pinWorkflowMs, pinSystemMs, qrWorkflowMs, qrSystemMs, totalWorkflowMs, totalSystemMs, dbQuerySpeedMs
+        );
     }
 
     private async Task SafeLogEventAsync(string eventId, string studentId, VerificationMode mode, string status, string remarks)

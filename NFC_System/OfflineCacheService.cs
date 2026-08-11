@@ -42,12 +42,23 @@ public class PendingGateLog
 {
     public string Timestamp { get; set; } = "";
     public string StudentId { get; set; } = "";
+    public string StudentName { get; set; } = ""; // THE FIX: Keep name for offline logs
     public string NfcUid { get; set; } = "";
     public string TransactionType { get; set; } = "";
     public string VerificationMode { get; set; } = "";
     public bool IsGranted { get; set; }
     public string ErrorCode { get; set; } = "";
     public string Remarks { get; set; } = "";
+
+    // THE FIX: Added telemetry metrics to the offline JSON
+    public double NfcSystemMs { get; set; }
+    public double PinWorkflowMs { get; set; }
+    public double PinSystemMs { get; set; }
+    public double QrWorkflowMs { get; set; }
+    public double QrSystemMs { get; set; }
+    public double TotalWorkflowMs { get; set; }
+    public double TotalSystemMs { get; set; }
+    public double DbQuerySpeedMs { get; set; }
 }
 
 public class PendingEventAttendance
@@ -270,7 +281,7 @@ public static class OfflineCacheService
     // 5. EMERGENCY LOG WRITING & ATOMIC EXTRACTION
     // =========================================================================
 
-    public static void SaveOfflineGateLog(string studentId, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks)
+    public static void SaveOfflineGateLog(string studentId, string studentName, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks, double nfcSys, double pinWf, double pinSys, double qrWf, double qrSys, double totWf, double totSys, double dbSpeed)
     {
         lock (FileLock)
         {
@@ -278,15 +289,23 @@ public static class OfflineCacheService
             var logs = GetPendingGateLogs();
             logs.Add(new PendingGateLog
             {
-                // THE FIX: Use the mathematically adjusted time instead of local PC time!
                 Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss"),
                 StudentId = studentId,
+                StudentName = studentName,
                 NfcUid = nfcUid,
                 TransactionType = transactionType,
                 VerificationMode = mode,
                 IsGranted = isGranted,
                 ErrorCode = errorCode,
-                Remarks = $"[OFFLINE MODE] {remarks}"
+                Remarks = $"[OFFLINE MODE] {remarks}",
+                NfcSystemMs = nfcSys,
+                PinWorkflowMs = pinWf,
+                PinSystemMs = pinSys,
+                QrWorkflowMs = qrWf,
+                QrSystemMs = qrSys,
+                TotalWorkflowMs = totWf,
+                TotalSystemMs = totSys,
+                DbQuerySpeedMs = dbSpeed
             });
             File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
 

@@ -1418,7 +1418,6 @@ public sealed class DatabaseService
         }
         catch
         {
-            // If the database connection drops right as we try to sync, put everything back
             OfflineCacheService.RestoreFailedGateLogs(gateLogs);
             OfflineCacheService.RestoreFailedEventLogs(eventLogs);
             return;
@@ -1435,13 +1434,15 @@ public sealed class DatabaseService
                     _ => "standard_mode_logs"
                 };
 
+                // THE FIX: Insert all telemetry metrics and the student name
                 using var cmd = new MySqlCommand($@"
-                    INSERT INTO {targetTable} (timestamp, student_id, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks) 
-                    VALUES (@ts, @sid, @nfc, @ttype, @vmode, @granted, @err, @rem)", connection);
+                    INSERT INTO {targetTable} 
+                    (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms) 
+                    VALUES (@ts, @sid, @sname, @nfc, @ttype, @vmode, @granted, @err, @rem, @nfcSys, @pinWf, @pinSys, @qrWf, @qrSys, @totWf, @totSys, @dbSpeed)", connection);
 
-                // THE FIX: Pass the string directly. MySQL naturally accepts "yyyy-MM-dd HH:mm:ss" without needing C# to parse it!
                 cmd.Parameters.AddWithValue("@ts", log.Timestamp);
                 cmd.Parameters.AddWithValue("@sid", NullIfEmpty(log.StudentId));
+                cmd.Parameters.AddWithValue("@sname", NullIfEmpty(log.StudentName));
                 cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(log.NfcUid));
                 cmd.Parameters.AddWithValue("@ttype", log.TransactionType);
                 cmd.Parameters.AddWithValue("@vmode", log.VerificationMode);
@@ -1449,11 +1450,19 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@err", NullIfEmpty(log.ErrorCode));
                 cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
 
+                cmd.Parameters.AddWithValue("@nfcSys", log.NfcSystemMs);
+                cmd.Parameters.AddWithValue("@pinWf", log.PinWorkflowMs);
+                cmd.Parameters.AddWithValue("@pinSys", log.PinSystemMs);
+                cmd.Parameters.AddWithValue("@qrWf", log.QrWorkflowMs);
+                cmd.Parameters.AddWithValue("@qrSys", log.QrSystemMs);
+                cmd.Parameters.AddWithValue("@totWf", log.TotalWorkflowMs);
+                cmd.Parameters.AddWithValue("@totSys", log.TotalSystemMs);
+                cmd.Parameters.AddWithValue("@dbSpeed", log.DbQuerySpeedMs);
+
                 await cmd.ExecuteNonQueryAsync();
             }
             catch
             {
-                // THE FIX: If this specific log fails, isolate it. Don't block the rest!
                 failedGateLogs.Add(log);
             }
         }
@@ -1481,7 +1490,6 @@ public sealed class DatabaseService
             }
         }
 
-        // Put ONLY the bad logs back into the queue to try again later
         if (failedGateLogs.Count > 0) OfflineCacheService.RestoreFailedGateLogs(failedGateLogs);
         if (failedEventLogs.Count > 0) OfflineCacheService.RestoreFailedEventLogs(failedEventLogs);
     }
@@ -1606,7 +1614,6 @@ public sealed class DatabaseService
 
     public async Task ExportCleanLogsToCsvAsync(string folderPath)
     {
-        // THE FIX: Instantly block the export if the database is offline instead of crashing
         if (!await TestConnectionAsync())
         {
             throw new InvalidOperationException("Cannot export logs while the system is offline. Please wait for the server connection to be restored to generate a complete historical report.");
@@ -1621,11 +1628,15 @@ public sealed class DatabaseService
 
             foreach (var table in tables)
             {
+                // THE FIX: Use LEFT JOIN to dynamically heal missing Student Names just like the Ledger does!
                 string sql = $@"
-                    SELECT timestamp, student_name, transaction_type, verification_mode, is_granted, error_code, 
-                           nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms 
-                    FROM {table} 
-                    ORDER BY timestamp DESC";
+                    SELECT vl.timestamp, 
+                           COALESCE(NULLIF(vl.student_name, ''), s.full_name) as student_name, 
+                           vl.transaction_type, vl.verification_mode, vl.is_granted, vl.error_code, 
+                           vl.nfc_system_ms, vl.pin_workflow_ms, vl.pin_system_ms, vl.qr_workflow_ms, vl.qr_system_ms, vl.total_workflow_ms, vl.total_system_ms, vl.db_query_speed_ms 
+                    FROM {table} vl
+                    LEFT JOIN students s ON (s.student_id = vl.student_id OR (vl.nfc_uid != '' AND s.nfc_uid = vl.nfc_uid))
+                    ORDER BY vl.timestamp DESC";
 
                 using var cmd = new MySqlCommand(sql, connection);
                 using var reader = await cmd.ExecuteReaderAsync();
@@ -1684,7 +1695,6 @@ public sealed class DatabaseService
         }
         catch (Exception ex)
         {
-            // Catch any unexpected database drops during the export process
             throw new InvalidOperationException($"Export failed. The database connection may have been lost. Details: {ex.Message}");
         }
     }
