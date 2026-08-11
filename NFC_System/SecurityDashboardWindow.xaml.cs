@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -29,6 +30,14 @@ namespace NFC_System
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
 
+        // THE FIX: Editing Staff tracking variables
+        private StaffRecord? _editingStaff = null;
+        private string _origStaffUid = "";
+        private string _origStaffName = "";
+        private string _origStaffRole = "";
+        private bool _isAwaitingStaffNfcReplacementScan = false;
+        private string _pendingStaffNfcReason = "";
+
         // Exit Interceptor Flags
         private bool _isForceClosing = false;
 
@@ -42,7 +51,6 @@ namespace NFC_System
             UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
 
-            // THE FIX: Hook into native window closing event to intercept exit
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
@@ -65,7 +73,6 @@ namespace NFC_System
             if (_isForceClosing) return;
             args.Cancel = true;
 
-            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 ContentDialog masterDialog = new ContentDialog
@@ -82,7 +89,6 @@ namespace NFC_System
                 if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
                 else if (result == ContentDialogResult.Secondary) ForceExit();
             }
-            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
             else if (AppSession.IsAdmin)
             {
                 ContentDialog adminDialog = new ContentDialog
@@ -121,7 +127,6 @@ namespace NFC_System
                     ForceExit();
                 }
             }
-            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
             else
             {
                 ContentDialog restrictedDialog = new ContentDialog
@@ -242,6 +247,8 @@ namespace NFC_System
 
         private void TryConnectSerial(string portName)
         {
+            if (_serialPort != null && _serialPort.IsOpen) return;
+
             try
             {
                 _serialPort = new SerialPort(portName, 115200);
@@ -265,102 +272,110 @@ namespace NFC_System
             {
                 if (_serialPort == null || !_serialPort.IsOpen) return;
                 string line = _serialPort.ReadLine().Trim();
+                if (!line.StartsWith("UID=")) return;
 
-                if (line.StartsWith("UID="))
+                string uid = line.Substring(4).Trim();
+
+                DispatcherQueue.TryEnqueue(async () =>
                 {
-                    string uid = line.Substring(4).Trim();
-
-                    DispatcherQueue.TryEnqueue(async () =>
+                    // THE FIX: Intercept scan for editing staff
+                    if (_isAwaitingStaffNfcReplacementScan)
                     {
-                        if (_isAwaitingAdminAuth)
+                        await HandleStaffNfcReplacementScanAsync(uid);
+                        return;
+                    }
+
+                    if (_isAwaitingAdminAuth)
+                    {
+                        var details = await _database.GetStaffDetailsAsync(uid);
+
+                        bool isAuthorized = false;
+                        string failReason = "";
+
+                        if (_pendingAdminSeverity == "CRITICAL")
                         {
-                            var details = await _database.GetStaffDetailsAsync(uid);
-
-                            bool isAuthorized = false;
-                            string failReason = "";
-
-                            if (_pendingAdminSeverity == "CRITICAL")
+                            if (details.Role == "Master Administrator")
                             {
-                                if (details.Role == "Master Administrator")
+                                isAuthorized = true;
+                            }
+                            else
+                            {
+                                failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
+                            }
+                        }
+                        else if (_pendingAdminSeverity == "HIGH")
+                        {
+                            if (details.Role == "Administrator" || details.Role == "Master Administrator")
+                            {
+                                string enteredPin = AdminPinBox.Password.Trim();
+
+                                if (string.IsNullOrEmpty(enteredPin))
+                                {
+                                    failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                                }
+                                else if (string.IsNullOrEmpty(details.PinHash))
+                                {
+                                    failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                                }
+                                else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
+                                {
+                                    failReason = "Authorization Denied: Invalid PIN.";
+                                }
+                                else
                                 {
                                     isAuthorized = true;
-                                }
-                                else
-                                {
-                                    failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
-                                }
-                            }
-                            else if (_pendingAdminSeverity == "HIGH")
-                            {
-                                if (details.Role == "Administrator" || details.Role == "Master Administrator")
-                                {
-                                    string enteredPin = AdminPinBox.Password.Trim();
-
-                                    if (string.IsNullOrEmpty(enteredPin))
-                                    {
-                                        failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
-                                    }
-                                    else if (string.IsNullOrEmpty(details.PinHash))
-                                    {
-                                        failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
-                                    }
-                                    else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
-                                    {
-                                        failReason = "Authorization Denied: Invalid PIN.";
-                                    }
-                                    else
-                                    {
-                                        isAuthorized = true;
-                                    }
-                                }
-                                else
-                                {
-                                    failReason = "Authorization Denied: Tapped card is not an Administrator.";
-                                }
-                            }
-
-                            if (isAuthorized)
-                            {
-                                _isAwaitingAdminAuth = false;
-                                AdminAuthDialog.Hide();
-                                PlaySuccessPing();
-
-                                string authorizedByName = details.FullName ?? "Admin";
-                                string actionToRun = _pendingAdminAction;
-                                _pendingAdminAction = "";
-
-                                switch (actionToRun)
-                                {
-                                    case "REGISTER_STAFF":
-                                        await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName, _pendingStaffPin);
-                                        break;
-                                    case "UPLOAD_DATA":
-                                        await ExecuteUploadDataAsync(authorizedByName);
-                                        break;
-                                    case "DOWNLOAD_DATA":
-                                        await ExecuteDownloadDataAsync(authorizedByName);
-                                        break;
-                                    case "EXIT_SYNC": // THE FIX: Catch the Exit Interceptor case
-                                        await PerformCloudPushAndExit();
-                                        break;
                                 }
                             }
                             else
                             {
-                                AuthStatusText.Text = failReason;
-                                AuthStatusText.Visibility = Visibility.Visible;
-                                PlayErrorAlert();
+                                failReason = "Authorization Denied: Tapped card is not an Administrator.";
+                            }
+                        }
+
+                        if (isAuthorized)
+                        {
+                            _isAwaitingAdminAuth = false;
+                            AdminAuthDialog.Hide();
+                            PlaySuccessPing();
+
+                            string authorizedByName = details.FullName ?? "Admin";
+                            string actionToRun = _pendingAdminAction;
+                            _pendingAdminAction = "";
+
+                            switch (actionToRun)
+                            {
+                                case "REGISTER_STAFF":
+                                    await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName, _pendingStaffPin);
+                                    break;
+                                case "UPLOAD_DATA":
+                                    await ExecuteUploadDataAsync(authorizedByName);
+                                    break;
+                                case "DOWNLOAD_DATA":
+                                    await ExecuteDownloadDataAsync(authorizedByName);
+                                    break;
+                                case "EXIT_SYNC":
+                                    await PerformCloudPushAndExit();
+                                    break;
+                                case "EDIT_STAFF": // THE FIX: Catch the staff edit action
+                                    await ExecuteStaffEditAsync(authorizedByName);
+                                    break;
                             }
                         }
                         else
                         {
-                            StaffNfcUidTextBox.Text = uid;
-                            StatusTextBlock.Text = "Card scanned. Ready to register staff.";
-                            StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
-                            PlaySuccessPing();
+                            AuthStatusText.Text = failReason;
+                            AuthStatusText.Visibility = Visibility.Visible;
+                            PlayErrorAlert();
                         }
-                    });
-                }
+                    }
+                    else
+                    {
+                        StaffNfcUidTextBox.Text = uid;
+                        StatusTextBlock.Text = "Card scanned. Ready to register staff.";
+                        StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                        PlaySuccessPing();
+                    }
+                });
             }
             catch { }
         }
@@ -1155,6 +1170,246 @@ namespace NFC_System
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
             if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
+        }
+
+        // ====================================================================
+        // THE FIX: NEW EDIT STAFF PROFILE LOGIC
+        // ====================================================================
+
+        private async void StaffListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        {
+            if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StaffRecord staff)
+            {
+                StaffDirectoryDialog.Hide(); // Temporarily hide the directory
+
+                _editingStaff = staff;
+                _origStaffUid = staff.NfcUid;
+                _origStaffName = staff.FullName;
+                _origStaffRole = staff.Role;
+
+                EditStaffNameBox.Text = staff.FullName;
+                EditStaffNfcUidBox.Text = staff.NfcUid;
+                EditStaffPinBox.Password = "";
+                EditStaffNfcReasonBox.Text = "";
+                EditStaffNfcReasonBox.Visibility = Visibility.Collapsed;
+                EditStaffNfcScanStatusText.Visibility = Visibility.Collapsed;
+                EditStaffChangeNfcButton.IsEnabled = true;
+                EditStaffStatusText.Visibility = Visibility.Collapsed;
+
+                foreach (ComboBoxItem item in EditStaffRoleComboBox.Items)
+                {
+                    if (item.Content.ToString() == staff.Role)
+                    {
+                        EditStaffRoleComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                _isAwaitingStaffNfcReplacementScan = false;
+                EditStaffDialog.IsPrimaryButtonEnabled = false;
+
+                EditStaffDialog.XamlRoot = this.Content.XamlRoot;
+                var result = await EditStaffDialog.ShowAsync();
+
+                if (result != ContentDialogResult.Primary)
+                {
+                    // If canceled, bring back the directory
+                    var staffList = await _database.GetAllStaffAsync();
+                    StaffListView.ItemsSource = staffList;
+                    await StaffDirectoryDialog.ShowAsync();
+                }
+            }
+        }
+
+        private void EditStaffDialog_FieldChanged(object sender, object e)
+        {
+            if (_editingStaff == null) return;
+
+            string name = EditStaffNameBox.Text.Trim();
+            string uid = EditStaffNfcUidBox.Text.Trim();
+            string role = (EditStaffRoleComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+            bool hasPinChange = !string.IsNullOrWhiteSpace(EditStaffPinBox.Password);
+
+            bool nfcChanged = uid != _origStaffUid;
+
+            if (EditStaffNfcReasonBox != null)
+            {
+                EditStaffNfcReasonBox.Visibility = nfcChanged ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            bool isDirty = name != _origStaffName || role != _origStaffRole || nfcChanged || hasPinChange;
+            EditStaffDialog.IsPrimaryButtonEnabled = isDirty;
+        }
+
+        private void EditStaffChangeNfcButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isAwaitingStaffNfcReplacementScan = true;
+            EditStaffChangeNfcButton.IsEnabled = false;
+            EditStaffNfcScanStatusText.Text = "Waiting for NFC tap... present the new staff card.";
+            EditStaffNfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250));
+            EditStaffNfcScanStatusText.Visibility = Visibility.Visible;
+        }
+
+        private async Task HandleStaffNfcReplacementScanAsync(string uid)
+        {
+            _isAwaitingStaffNfcReplacementScan = false;
+            EditStaffChangeNfcButton.IsEnabled = true;
+
+            if (IsInvalidUid(uid))
+            {
+                EditStaffNfcScanStatusText.Text = "Bad read. Try again.";
+                EditStaffNfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                return;
+            }
+
+            if (DatabaseMonitor.IsOnline)
+            {
+                var existing = await _database.GetStaffDetailsAsync(uid);
+                if (!string.IsNullOrEmpty(existing.Role) && uid != _origStaffUid)
+                {
+                    EditStaffNfcScanStatusText.Text = $"Card belongs to {existing.FullName}. Tap a different card.";
+                    EditStaffNfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    return;
+                }
+            }
+
+            EditStaffNfcUidBox.Text = uid;
+            EditStaffNfcScanStatusText.Text = "New card captured. Note the reason below.";
+            EditStaffNfcScanStatusText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+        }
+
+        private async void EditStaffDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+        {
+            string name = EditStaffNameBox.Text.Trim();
+            string uid = EditStaffNfcUidBox.Text.Trim();
+            string pin = EditStaffPinBox.Password.Trim();
+            bool nfcChanged = uid != _origStaffUid;
+
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(uid))
+            {
+                EditStaffStatusText.Text = "Name and NFC UID are strictly required.";
+                EditStaffStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+                args.Cancel = true;
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(pin) && (pin.Length != 4 || !pin.All(char.IsDigit)))
+            {
+                EditStaffStatusText.Text = "New PIN must be exactly 4 numeric digits.";
+                EditStaffStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+                args.Cancel = true;
+                return;
+            }
+
+            if (nfcChanged && string.IsNullOrWhiteSpace(EditStaffNfcReasonBox.Text))
+            {
+                EditStaffStatusText.Text = "Please provide a reason for the NFC card replacement.";
+                EditStaffStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+                args.Cancel = true;
+                return;
+            }
+
+            string role = (EditStaffRoleComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Security Personnel";
+
+            _pendingStaffName = name;
+            _pendingStaffUid = uid;
+            _pendingStaffPin = pin;
+            _pendingStaffRole = role;
+            _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim(); // Saving the reason
+
+            _pendingAdminAction = "EDIT_STAFF";
+            _pendingAdminSeverity = "CRITICAL";
+
+            // Intercept and hide manually to transition to the RBAC authorization
+            args.Cancel = true;
+            EditStaffDialog.Hide();
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecuteStaffEditAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To modify staff credentials, a Master Administrator must verify this action.";
+
+                _isAwaitingAdminAuth = true;
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                var authResult = await AdminAuthDialog.ShowAsync();
+
+                if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+
+                    // Re-open directory if canceled
+                    var staffList = await _database.GetAllStaffAsync();
+                    StaffListView.ItemsSource = staffList;
+                    await StaffDirectoryDialog.ShowAsync();
+                }
+            }
+        }
+
+        private async Task ExecuteStaffEditAsync(string authorizedBy)
+        {
+            try
+            {
+                await _database.UpdateStaffAsync(_origStaffUid, _pendingStaffUid, _pendingStaffName, _pendingStaffRole, _pendingStaffPin);
+
+                List<string> changes = new List<string>();
+                if (_origStaffName != _pendingStaffName) changes.Add("Name");
+                if (_origStaffRole != _pendingStaffRole) changes.Add($"Role (→ {_pendingStaffRole})");
+                if (!string.IsNullOrWhiteSpace(_pendingStaffPin)) changes.Add("Reset PIN");
+                if (_origStaffUid != _pendingStaffUid) changes.Add($"Replaced NFC Card (Reason: {_pendingStaffNfcReason})");
+
+                string changesString = changes.Count > 0 ? string.Join(", ", changes) : "Forced save";
+                string logMessage = $"Edited staff profile for {_pendingStaffName}. Changes: {changesString}.";
+
+                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", logMessage);
+
+                StatusTextBlock.Text = $"Successfully updated staff: {_pendingStaffName}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+
+                _pendingStaffNfcReason = ""; // Clear reason
+
+                // Reload directory and pop it back open
+                var staffList = await _database.GetAllStaffAsync();
+                StaffListView.ItemsSource = staffList;
+                await StaffDirectoryDialog.ShowAsync();
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Staff update failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
+        }
+
+        private static bool IsInvalidUid(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid)) return true;
+            string[] parts = uid.Split(':');
+            if (parts.Length != 4 && parts.Length != 7) return true;
+
+            bool allZero = true;
+            foreach (string part in parts) { if (part != "00") { allZero = false; break; } }
+            if (allZero) return true;
+
+            if (parts.Length >= 4)
+            {
+                int start = parts.Length - 4;
+                bool trailingZeros = true;
+                for (int i = start; i < parts.Length; i++) { if (parts[i] != "00") { trailingZeros = false; break; } }
+                if (trailingZeros) return true;
+            }
+            return false;
         }
     }
 }

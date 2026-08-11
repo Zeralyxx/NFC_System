@@ -391,14 +391,18 @@ public sealed class DatabaseService
                 byte[]? photoData = ExtractBlob(fields, "photo_data");
                 bool isTemporary = ExtractBool(fields, "is_temporary");
 
+                // THE FIX: Download the state from Firebase
+                string entryState = ExtractString(fields, "entry_state");
+                if (string.IsNullOrWhiteSpace(entryState)) entryState = "OUTSIDE";
+
                 string sql = @"
                     INSERT INTO students 
-                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data, is_temporary)
+                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data, is_temporary, entry_state)
                     VALUES 
-                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo, @temp)
+                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo, @temp, @state)
                     ON DUPLICATE KEY UPDATE 
                     full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
-                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp";
+                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp, entry_state=@state";
 
                 using var cmd = new MySqlCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@id", studentId);
@@ -416,6 +420,7 @@ public sealed class DatabaseService
                 cmd.Parameters.AddWithValue("@failed", failedAttempts);
                 cmd.Parameters.AddWithValue("@photo", photoData != null ? photoData : DBNull.Value);
                 cmd.Parameters.AddWithValue("@temp", isTemporary);
+                cmd.Parameters.AddWithValue("@state", entryState); // Inject the parameter
 
                 int affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) updatedCount++;
@@ -461,7 +466,10 @@ public sealed class DatabaseService
                     { "pin_salt", new { stringValue = Value(reader["pin_salt"]) } },
                     { "pin_locked", new { booleanValue = reader["pin_locked"].ToString() == "1" || reader["pin_locked"].ToString()?.ToLower() == "true" } },
                     { "failed_pin_attempts", new { integerValue = Value(reader["failed_pin_attempts"]) } },
-                    { "is_temporary", new { booleanValue = reader["is_temporary"].ToString() == "1" || reader["is_temporary"].ToString()?.ToLower() == "true" } }
+                    { "is_temporary", new { booleanValue = reader["is_temporary"].ToString() == "1" || reader["is_temporary"].ToString()?.ToLower() == "true" } },
+                    
+                    // THE FIX: Upload the state to Firebase
+                    { "entry_state", new { stringValue = Value(reader["entry_state"]) } }
                 };
 
                 if (reader["photo_data"] is byte[] photoData && photoData.Length > 0)
@@ -571,6 +579,17 @@ public sealed class DatabaseService
 
                     await cmd.ExecuteNonQueryAsync();
                     updatedCount++;
+
+                    // THE FIX: Actively update the student's local Entry State when a log is downloaded!
+                    if (isGranted && !string.IsNullOrWhiteSpace(transactionType) && transactionType != "EventAttendance")
+                    {
+                        string stateToSet = transactionType.Equals("Entry", StringComparison.OrdinalIgnoreCase) ? "INSIDE" : "OUTSIDE";
+                        using var stateCmd = new MySqlCommand("UPDATE students SET entry_state = @state WHERE student_id = @sid OR (nfc_uid = @nfc AND nfc_uid != '')", connection);
+                        stateCmd.Parameters.AddWithValue("@state", stateToSet);
+                        stateCmd.Parameters.AddWithValue("@sid", studentId);
+                        stateCmd.Parameters.AddWithValue("@nfc", nfcUid);
+                        await stateCmd.ExecuteNonQueryAsync();
+                    }
                 }
             }
             catch { }
@@ -1536,13 +1555,18 @@ public sealed class DatabaseService
 
         string whereSql = whereClauses.Count > 0 ? " AND " + string.Join(" AND ", whereClauses) : "";
 
+        // THE FIX: Added the LEFT JOIN to dynamically heal missing student names (just like the CSV export does)
         string sql = $@"
             SELECT * FROM (
-                SELECT timestamp, student_id, student_name, nfc_uid, transaction_type as action, 
-                       CASE WHEN is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
-                       error_code, remarks as details, 'GATE LOG' as log_type
+                SELECT cl.timestamp, 
+                       COALESCE(NULLIF(cl.student_id, ''), s.student_id) as student_id, 
+                       COALESCE(NULLIF(cl.student_name, ''), s.full_name) as student_name, 
+                       cl.nfc_uid, cl.transaction_type as action, 
+                       CASE WHEN cl.is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
+                       cl.error_code, cl.remarks as details, 'GATE LOG' as log_type
                 FROM ({CombinedLogsQuery}) cl 
-                WHERE transaction_type != 'EventAttendance'
+                LEFT JOIN students s ON (s.student_id = cl.student_id OR (cl.nfc_uid != '' AND s.nfc_uid = cl.nfc_uid))
+                WHERE cl.transaction_type != 'EventAttendance'
                 
                 UNION ALL 
                 
@@ -1727,13 +1751,39 @@ public sealed class DatabaseService
         int inside = 0;
         int denied = 0;
 
-        using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM ({CombinedLogsQuery}) vl WHERE transaction_type != 'EventAttendance' AND DATE(timestamp) = CURDATE()", connection))
+        // THE FIX: Added "as inner_vl" to the subquery to prevent the MySQL syntax error!
+        string countInsideSql = $@"
+            SELECT COUNT(DISTINCT ident) 
+            FROM (
+                SELECT COALESCE(NULLIF(vl.student_id, ''), vl.nfc_uid) as ident, vl.transaction_type
+                FROM ({CombinedLogsQuery}) as vl
+                INNER JOIN (
+                    SELECT COALESCE(NULLIF(student_id, ''), nfc_uid) as ident, MAX(timestamp) as max_time 
+                    FROM ({CombinedLogsQuery}) as inner_vl 
+                    WHERE is_granted = 1 AND transaction_type IN ('Entry', 'Exit') 
+                    GROUP BY COALESCE(NULLIF(student_id, ''), nfc_uid)
+                ) latest 
+                ON COALESCE(NULLIF(vl.student_id, ''), vl.nfc_uid) = latest.ident 
+                AND vl.timestamp = latest.max_time
+                WHERE vl.is_granted = 1 AND vl.transaction_type = 'Entry'
+            ) final_states";
+
+        try
+        {
+            using var cmdInside = new MySqlCommand(countInsideSql, connection);
+            inside = Convert.ToInt32(await cmdInside.ExecuteScalarAsync());
+        }
+        catch
+        {
+            // Failsafe fallback
+            using var cmdFallback = new MySqlCommand("SELECT COUNT(*) FROM students WHERE entry_state = 'INSIDE'", connection);
+            inside = Convert.ToInt32(await cmdFallback.ExecuteScalarAsync());
+        }
+
+        using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM ({CombinedLogsQuery}) as vl WHERE transaction_type != 'EventAttendance' AND DATE(timestamp) = CURDATE()", connection))
             totalScans = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
-        using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE entry_state = 'INSIDE'", connection))
-            inside = Convert.ToInt32(await cmd.ExecuteScalarAsync());
-
-        using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM ({CombinedLogsQuery}) vl WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
+        using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM ({CombinedLogsQuery}) as vl WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND DATE(timestamp) = CURDATE()", connection))
             denied = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
         return (totalScans, inside, denied);
@@ -1789,6 +1839,43 @@ public sealed class DatabaseService
         var low = list.Last();
 
         return (high.DateLbl, high.Count, low.DateLbl, low.Count);
+    }
+
+    public async Task UpdateStaffAsync(string oldUid, string newUid, string fullName, string role, string? rawPin)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        string pinUpdateSql = "";
+        string? pinHash = null;
+        string? pinSalt = null;
+
+        if (!string.IsNullOrWhiteSpace(rawPin))
+        {
+            var hashed = PinHasher.HashPin(rawPin);
+            pinHash = hashed.Hash;
+            pinSalt = hashed.Salt;
+            pinUpdateSql = ", pin_hash = @hash, pin_salt = @salt";
+        }
+
+        string sql = $@"
+            UPDATE staff 
+            SET nfc_uid = @newUid, full_name = @name, role = @role {pinUpdateSql}
+            WHERE nfc_uid = @oldUid";
+
+        using var cmd = new MySqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@newUid", newUid);
+        cmd.Parameters.AddWithValue("@name", fullName);
+        cmd.Parameters.AddWithValue("@role", role);
+        cmd.Parameters.AddWithValue("@oldUid", oldUid);
+
+        if (!string.IsNullOrWhiteSpace(rawPin))
+        {
+            cmd.Parameters.AddWithValue("@hash", pinHash);
+            cmd.Parameters.AddWithValue("@salt", pinSalt);
+        }
+
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task<IReadOnlyList<StatItem>> GetDailyEntryStatsAsync()

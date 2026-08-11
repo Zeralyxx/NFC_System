@@ -292,9 +292,7 @@
             </Grid>
         </Grid>
 
-        <!-- ========================================================= -->
-        <!-- THE FIX: EXIT SYNC OVERLAY MASK                           -->
-        <!-- ========================================================= -->
+        <!-- EXIT SYNC OVERLAY MASK -->
         <Grid x:Name="SyncOverlay" Background="#D9000000" Visibility="Collapsed" Grid.RowSpan="2">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24">
                 <ProgressRing IsActive="True" Width="64" Height="64"/>
@@ -482,9 +480,10 @@
 
         <ContentDialog x:Name="StaffDirectoryDialog" Title="Staff Directory" CloseButtonText="Close" CornerRadius="8">
             <StackPanel Spacing="16" Width="500" Margin="0,16,0,0">
-                <TextBlock Text="List of all registered personnel and their assigned system roles." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                <TextBlock Text="Double-click a staff member to edit their permissions or replace their NFC card." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 <Border Background="#05FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8">
-                    <ListView x:Name="StaffListView" Height="350" SelectionMode="None">
+                    <!-- THE FIX: Enable DoubleTapped and SelectionMode here -->
+                    <ListView x:Name="StaffListView" Height="350" SelectionMode="Single" DoubleTapped="StaffListView_DoubleTapped">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:StaffRecord">
                                 <Grid Padding="16,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
@@ -506,5 +505,31 @@
                 </Border>
             </StackPanel>
         </ContentDialog>
+
+        <!-- THE FIX: New Edit Staff Profile Dialog -->
+        <ContentDialog x:Name="EditStaffDialog" Title="Edit Staff Profile" PrimaryButtonText="Save Changes" CloseButtonText="Cancel" CornerRadius="8" PrimaryButtonClick="EditStaffDialog_PrimaryButtonClick">
+            <StackPanel Spacing="16" Width="400">
+                <TextBlock x:Name="EditStaffStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+
+                <TextBox x:Name="EditStaffNameBox" Header="Staff Full Name" TextChanged="EditStaffDialog_FieldChanged"/>
+
+                <ComboBox x:Name="EditStaffRoleComboBox" Header="System Role" HorizontalAlignment="Stretch" SelectionChanged="EditStaffDialog_FieldChanged">
+                    <ComboBoxItem Content="Security Personnel"/>
+                    <ComboBoxItem Content="Event Organizer"/>
+                    <ComboBoxItem Content="Administrator"/>
+                    <ComboBoxItem Content="Master Administrator"/>
+                </ComboBox>
+
+                <PasswordBox x:Name="EditStaffPinBox" Header="Set New 4-Digit PIN (Leave blank to keep current)" MaxLength="4" PasswordChanged="EditStaffDialog_FieldChanged" PlaceholderText="****"/>
+
+                <TextBox x:Name="EditStaffNfcUidBox" Header="NFC UID" IsReadOnly="True" TextChanged="EditStaffDialog_FieldChanged"/>
+                <Button x:Name="EditStaffChangeNfcButton" Content="Scan New NFC Card" Click="EditStaffChangeNfcButton_Click" HorizontalAlignment="Stretch" CornerRadius="8" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+
+                <TextBlock x:Name="EditStaffNfcScanStatusText" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
+
+                <TextBox x:Name="EditStaffNfcReasonBox" Header="Reason for NFC Replacement" PlaceholderText="e.g. Lost ID card..." TextChanged="EditStaffDialog_FieldChanged" Visibility="Collapsed"/>
+            </StackPanel>
+        </ContentDialog>
+
     </Grid>
 </Window>

@@ -46,6 +46,7 @@ namespace NFC_System
         private AdminActionType _pendingAction = AdminActionType.None;
 
         private string _pendingAdminSeverity = "";
+        private string _pendingNfcReplacementReason = ""; // THE FIX: Add this line
 
         public StudentManagementWindow()
         {
@@ -684,6 +685,8 @@ namespace NFC_System
                 return;
             }
 
+            // THE FIX: Save the reason into memory before the dialog hides and wipes the UI!
+            _pendingNfcReplacementReason = NfcReplacementReasonBox.Text.Trim();
             EditStudentDialog.Hide();
 
             _pendingAction = AdminActionType.EditFullProfile;
@@ -792,7 +795,7 @@ namespace NFC_System
                         string originalId = _editingStudent.StudentId;
                         string oldUid = _editingStudent.NfcUid;
                         string pin = EditDialogNewPinBox.Password.Trim();
-                        string nfcReplacementReason = NfcReplacementReasonBox.Text.Trim();
+                        string nfcReplacementReason = _pendingNfcReplacementReason;
 
                         var updated = new StudentRecord
                         {

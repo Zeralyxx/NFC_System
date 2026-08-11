@@ -41,7 +41,7 @@
                 <Button x:Name="BackButton" Grid.Column="0" Content="Back to Dashboard" Click="BackButton_Click" Padding="16,10" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
                 <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
-                    <TextBlock Text="Student Directory &amp; Security State" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <TextBlock Text="Student Directory" Style="{StaticResource PageTitleStyle}" Margin="0"/>
                 </StackPanel>
             </Grid>
 
