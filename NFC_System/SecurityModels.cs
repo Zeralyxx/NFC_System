@@ -64,6 +64,9 @@ public sealed class VerificationSession
     public double QrWorkflowMs { get; set; }
     public double QrSystemMs { get; set; }
     public double TotalDbQueryMs { get; set; }
+
+    // THE MISSING PROPERTY TO ADD:
+    public bool IsOffline { get; set; } = false;
 }
 
 public sealed class VerificationOutcome

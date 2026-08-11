@@ -42,7 +42,7 @@ public class PendingGateLog
 {
     public string Timestamp { get; set; } = "";
     public string StudentId { get; set; } = "";
-    public string StudentName { get; set; } = ""; // THE FIX: Keep name for offline logs
+    public string StudentName { get; set; } = "";
     public string NfcUid { get; set; } = "";
     public string TransactionType { get; set; } = "";
     public string VerificationMode { get; set; } = "";
@@ -50,7 +50,6 @@ public class PendingGateLog
     public string ErrorCode { get; set; } = "";
     public string Remarks { get; set; } = "";
 
-    // THE FIX: Added telemetry metrics to the offline JSON
     public double NfcSystemMs { get; set; }
     public double PinWorkflowMs { get; set; }
     public double PinSystemMs { get; set; }
@@ -272,7 +271,6 @@ public static class OfflineCacheService
         {
             string json;
             lock (FileLock) { json = JsonSerializer.Serialize(_inMemoryStudents, JsonOptions); }
-            // Write happens completely off the main UI thread
             try { File.WriteAllText(StudentsCacheFile, json); } catch { }
         });
     }
@@ -296,8 +294,11 @@ public static class OfflineCacheService
                 TransactionType = transactionType,
                 VerificationMode = mode,
                 IsGranted = isGranted,
-                ErrorCode = errorCode,
+
+                // THE FIX: Enforce OFFLINE_MODE flag natively into the JSON to bypass DatabaseService stripping logic
+                ErrorCode = isGranted ? "OFFLINE_MODE" : errorCode,
                 Remarks = $"[OFFLINE MODE] {remarks}",
+
                 NfcSystemMs = nfcSys,
                 PinWorkflowMs = pinWf,
                 PinSystemMs = pinSys,
@@ -324,7 +325,6 @@ public static class OfflineCacheService
             var logs = GetPendingEventLogs();
             logs.Add(new PendingEventAttendance
             {
-                // THE FIX: Use the mathematically adjusted time!
                 Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss"),
                 EventId = eventId,
                 StudentId = studentId,
@@ -364,8 +364,6 @@ public static class OfflineCacheService
             try
             {
                 string json = File.ReadAllText(GateLogsFile);
-
-                // THE FIX: Parse the file BEFORE deleting it to prevent invisible data loss!
                 var logs = JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
                 File.Delete(GateLogsFile);
                 return logs;
@@ -382,8 +380,6 @@ public static class OfflineCacheService
             try
             {
                 string json = File.ReadAllText(EventLogsFile);
-
-                // THE FIX: Parse the file BEFORE deleting it!
                 var logs = JsonSerializer.Deserialize<List<PendingEventAttendance>>(json) ?? new();
                 File.Delete(EventLogsFile);
                 return logs;
@@ -391,8 +387,6 @@ public static class OfflineCacheService
             catch { return new(); }
         }
     }
-
-    
 
     public static void RestoreFailedGateLogs(List<PendingGateLog> failedLogs)
     {

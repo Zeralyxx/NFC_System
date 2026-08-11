@@ -1580,11 +1580,7 @@ public sealed class DatabaseService
             string details = Value(reader["details"]);
             string currentStatus = Value(reader["status"]);
 
-            // THE FIX: Intercept false-positive historical OFFLINE flags and scrub them before display.
-            if (error.ToUpper().Contains("OFFLINE") && currentStatus == "GRANTED")
-            {
-                error = "VERIFIED";
-            }
+
 
             if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
                 details = $"[{error}] {details}";
@@ -1676,8 +1672,6 @@ public sealed class DatabaseService
                     bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
                     string errorCode = Value(reader["error_code"]);
 
-                    // THE FIX: Scrub OFFLINE false positives from exported logs too!
-                    if (errorCode.ToUpper().Contains("OFFLINE") && isGranted) errorCode = "VERIFIED";
 
                     string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
