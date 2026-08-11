@@ -18,6 +18,8 @@ namespace NFC_System
     {
         public static bool IsLoggedIn { get; set; } = false;
         public static bool IsAdmin { get; set; } = false;
+        // THE FIX: Added the SecurityAdmin boolean flag
+        public static bool IsSecurityAdmin { get; set; } = false;
         public static bool IsEventOrganizer { get; set; } = false;
         public static string CurrentStaffName { get; set; } = "";
         public static string CurrentStaffRoleLabel { get; set; } = "";
@@ -38,7 +40,6 @@ namespace NFC_System
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
 
-        // THE FIX: Included the API key to bypass Firestore 403 Forbidden errors
         private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
         private const string FIREBASE_API_KEY = "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo";
         private const string FIRESTORE_URL = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/MasterCard/master_admin?key={FIREBASE_API_KEY}";
@@ -112,7 +113,6 @@ namespace NFC_System
 
                     _isAwaitingAdminAuth = true;
 
-                    // THE FIX: Wake up the serial port temporarily so the dashboard can hear the card tap!
                     TryConnectSerial(_currentPort);
 
                     AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
@@ -123,7 +123,6 @@ namespace NFC_System
                         _isAwaitingAdminAuth = false;
                         _pendingAdminAction = "";
 
-                        // THE FIX: If they hit cancel, politely close the port again so other windows don't break.
                         CloseSerialPort();
                     }
                 }
@@ -245,7 +244,6 @@ namespace NFC_System
                                     string globalMasterUid = "";
                                     string globalMasterName = "Global Master Admin";
 
-                                    // THE FIX: Safe JSON Extraction to prevent KeyNotFoundException crashes
                                     if (fields.TryGetProperty("uid", out var uidField) && uidField.TryGetProperty("stringValue", out var uidVal))
                                         globalMasterUid = uidVal.GetString() ?? "";
 
@@ -395,6 +393,7 @@ namespace NFC_System
                 SetupOverlay.Visibility = Visibility.Collapsed;
 
                 AppSession.IsAdmin = true;
+                AppSession.IsSecurityAdmin = false;
                 AppSession.IsEventOrganizer = false;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName;
@@ -557,6 +556,11 @@ namespace NFC_System
                     role = "Master Administrator";
                     fullName = "Master Admin";
                 }
+                else if (uid == "VALID_SEC_ADMIN") // Setup for our simulator button
+                {
+                    role = "Security Admin";
+                    fullName = "Simulated Chief Guard";
+                }
                 else if (uid == "VALID_STAFF_CARD")
                 {
                     role = "Security Personnel";
@@ -572,6 +576,7 @@ namespace NFC_System
             if (role == "Administrator" || role == "Master Administrator")
             {
                 AppSession.IsAdmin = true;
+                AppSession.IsSecurityAdmin = false;
                 AppSession.IsEventOrganizer = false;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName ?? "Administrator";
@@ -585,9 +590,28 @@ namespace NFC_System
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
+            // THE FIX: Intercept the new Security Admin role
+            else if (role == "Security Admin")
+            {
+                AppSession.IsAdmin = false;
+                AppSession.IsSecurityAdmin = true;
+                AppSession.IsEventOrganizer = false;
+                AppSession.IsLoggedIn = true;
+                AppSession.CurrentStaffName = fullName ?? "Security Admin";
+                AppSession.CurrentStaffRoleLabel = "Security Admin";
+
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
+                }
+
+                PlaySuccessPing();
+                ApplyRoleBasedAccess();
+            }
             else if (role == "Event Organizer")
             {
                 AppSession.IsAdmin = false;
+                AppSession.IsSecurityAdmin = false;
                 AppSession.IsEventOrganizer = true;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName ?? "Organizer";
@@ -604,6 +628,7 @@ namespace NFC_System
             else if (role == "Security Personnel")
             {
                 AppSession.IsAdmin = false;
+                AppSession.IsSecurityAdmin = false;
                 AppSession.IsEventOrganizer = false;
                 AppSession.IsLoggedIn = true;
                 AppSession.CurrentStaffName = fullName ?? "Guard";
@@ -647,7 +672,7 @@ namespace NFC_System
             LoginOverlay.Visibility = Visibility.Collapsed;
             DashboardContent.Visibility = Visibility.Visible;
 
-            ActiveRoleText.Text = $"{AppSession.CurrentStaffName}({AppSession.CurrentStaffRoleLabel})";
+            ActiveRoleText.Text = $"{AppSession.CurrentStaffName} ({AppSession.CurrentStaffRoleLabel})";
 
             if (AppSession.IsAdmin)
             {
@@ -676,6 +701,27 @@ namespace NFC_System
                 SecurityAdminCard.Visibility = Visibility.Visible;
                 EventReportsCard.Visibility = Visibility.Visible;
                 DashboardSettingsButton.Visibility = Visibility.Visible;
+            }
+            // THE FIX: Display the 3 specific cards for the Security Admin
+            else if (AppSession.IsSecurityAdmin)
+            {
+                RegistrationCard.Visibility = Visibility.Collapsed;
+                StudentDirectoryCard.Visibility = Visibility.Collapsed;
+                EventReportsCard.Visibility = Visibility.Collapsed;
+                DashboardSettingsButton.Visibility = Visibility.Collapsed;
+
+                EventAttendanceCard.SetValue(Grid.RowProperty, 0);
+                EventAttendanceCard.SetValue(Grid.ColumnProperty, 0);
+
+                VerificationCard.SetValue(Grid.RowProperty, 0);
+                VerificationCard.SetValue(Grid.ColumnProperty, 1);
+
+                SecurityAdminCard.SetValue(Grid.RowProperty, 0);
+                SecurityAdminCard.SetValue(Grid.ColumnProperty, 2);
+
+                EventAttendanceCard.Visibility = Visibility.Visible;
+                VerificationCard.Visibility = Visibility.Visible;
+                SecurityAdminCard.Visibility = Visibility.Visible;
             }
             else if (AppSession.IsEventOrganizer)
             {
@@ -725,6 +771,7 @@ namespace NFC_System
 
             AppSession.IsLoggedIn = false;
             AppSession.IsAdmin = false;
+            AppSession.IsSecurityAdmin = false;
             AppSession.IsEventOrganizer = false;
             AppSession.CurrentStaffName = "";
             AppSession.CurrentStaffRoleLabel = "";
@@ -741,6 +788,7 @@ namespace NFC_System
         }
 
         private void SimulateAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("04:A1:B2:C3");
+        private void SimulateSecAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_SEC_ADMIN");
         private void SimulatePersonnelLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_STAFF_CARD");
 
         private void Registration_Click(object sender, RoutedEventArgs e)

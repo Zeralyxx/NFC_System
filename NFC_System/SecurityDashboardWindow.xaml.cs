@@ -30,13 +30,17 @@ namespace NFC_System
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
 
-        // THE FIX: Editing Staff tracking variables
+        // Editing Staff tracking variables
         private StaffRecord? _editingStaff = null;
         private string _origStaffUid = "";
         private string _origStaffName = "";
         private string _origStaffRole = "";
         private bool _isAwaitingStaffNfcReplacementScan = false;
         private string _pendingStaffNfcReason = "";
+
+        // Tracking variables for the Manual State Correction Healer
+        private string _pendingHealStudentId = "";
+        private string _pendingHealState = "";
 
         // Exit Interceptor Flags
         private bool _isForceClosing = false;
@@ -190,6 +194,15 @@ namespace NFC_System
 
         private async Task InitializeAsync()
         {
+            // THE FIX: Restrict UI for the Security Admin role
+            if (AppSession.CurrentStaffRoleLabel == "Security Admin")
+            {
+                UploadDataButton.Visibility = Visibility.Collapsed;
+                UploadDataColumn.Width = new GridLength(0);
+                CourseManagementPanel.Visibility = Visibility.Collapsed;
+                StaffManagementPanel.Visibility = Visibility.Collapsed;
+            }
+
             try
             {
                 await _database.EnsureSchemaAsync();
@@ -278,7 +291,6 @@ namespace NFC_System
 
                 DispatcherQueue.TryEnqueue(async () =>
                 {
-                    // THE FIX: Intercept scan for editing staff
                     if (_isAwaitingStaffNfcReplacementScan)
                     {
                         await HandleStaffNfcReplacementScanAsync(uid);
@@ -331,6 +343,17 @@ namespace NFC_System
                                 failReason = "Authorization Denied: Tapped card is not an Administrator.";
                             }
                         }
+                        else if (_pendingAdminSeverity == "MODERATE")
+                        {
+                            if (details.Role == "Administrator" || details.Role == "Master Administrator" || details.Role == "Security Admin")
+                            {
+                                isAuthorized = true;
+                            }
+                            else
+                            {
+                                failReason = "Authorization Denied: This action requires a Security Admin or higher.";
+                            }
+                        }
 
                         if (isAuthorized)
                         {
@@ -356,8 +379,11 @@ namespace NFC_System
                                 case "EXIT_SYNC":
                                     await PerformCloudPushAndExit();
                                     break;
-                                case "EDIT_STAFF": // THE FIX: Catch the staff edit action
+                                case "EDIT_STAFF":
                                     await ExecuteStaffEditAsync(authorizedByName);
+                                    break;
+                                case "HEAL_STATE":
+                                    await ExecuteHealStateAsync(authorizedByName);
                                     break;
                             }
                         }
@@ -433,6 +459,90 @@ namespace NFC_System
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             _ = RefreshDashboardAsync();
+        }
+
+        // ====================================================================
+        // MANUAL STATE CORRECTION (ANTI-TAILGATING HEALER) LOGIC
+        // ====================================================================
+        private async void HealerApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            string studentId = HealerStudentIdBox.Text.Trim();
+            string state = (HealerStateComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+
+            if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(state))
+            {
+                StatusTextBlock.Text = "Please provide a valid Student ID and select a physical State.";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+                return;
+            }
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin" || AppSession.CurrentStaffRoleLabel == "Administrator" || AppSession.CurrentStaffRoleLabel == "Security Admin")
+            {
+                _pendingHealStudentId = studentId;
+                _pendingHealState = state;
+                await ExecuteHealStateAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _pendingHealStudentId = studentId;
+                _pendingHealState = state;
+
+                _pendingAdminAction = "HEAL_STATE";
+                _pendingAdminSeverity = "MODERATE";
+
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To manually override a student's state, a Security Admin (or higher) must verify this action.";
+
+                _isAwaitingAdminAuth = true;
+                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                var result = await AdminAuthDialog.ShowAsync();
+
+                if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+                    StatusTextBlock.Text = "State override cancelled.";
+                    StatusTextBlock.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+                }
+            }
+        }
+
+        private async Task ExecuteHealStateAsync(string authorizedByName)
+        {
+            try
+            {
+                var student = await _database.GetStudentByIdAsync(_pendingHealStudentId);
+                if (student == null)
+                {
+                    StatusTextBlock.Text = $"Override failed: Student ID '{_pendingHealStudentId}' not found.";
+                    StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    PlayErrorAlert();
+                    return;
+                }
+
+                await _database.UpdateEntryStateAsync(_pendingHealStudentId, _pendingHealState);
+
+                string logMessage = $"Manually overridden physical state for {student.FullName} ({student.StudentId}) to {_pendingHealState}.";
+                await _database.AddAlertAsync(authorizedByName, "ADMIN_OVERRIDE", logMessage);
+
+                HealerStudentIdBox.Text = "";
+                HealerStateComboBox.SelectedIndex = -1;
+
+                StatusTextBlock.Text = $"Successfully updated {student.FullName} to {_pendingHealState}.";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"State correction failed: {ex.Message}";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
         }
 
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
@@ -1172,15 +1282,11 @@ namespace NFC_System
             if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
 
-        // ====================================================================
-        // THE FIX: NEW EDIT STAFF PROFILE LOGIC
-        // ====================================================================
-
         private async void StaffListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StaffRecord staff)
             {
-                StaffDirectoryDialog.Hide(); // Temporarily hide the directory
+                StaffDirectoryDialog.Hide();
 
                 _editingStaff = staff;
                 _origStaffUid = staff.NfcUid;
@@ -1213,7 +1319,6 @@ namespace NFC_System
 
                 if (result != ContentDialogResult.Primary)
                 {
-                    // If canceled, bring back the directory
                     var staffList = await _database.GetAllStaffAsync();
                     StaffListView.ItemsSource = staffList;
                     await StaffDirectoryDialog.ShowAsync();
@@ -1318,12 +1423,11 @@ namespace NFC_System
             _pendingStaffUid = uid;
             _pendingStaffPin = pin;
             _pendingStaffRole = role;
-            _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim(); // Saving the reason
+            _pendingStaffNfcReason = EditStaffNfcReasonBox.Text.Trim();
 
             _pendingAdminAction = "EDIT_STAFF";
             _pendingAdminSeverity = "CRITICAL";
 
-            // Intercept and hide manually to transition to the RBAC authorization
             args.Cancel = true;
             EditStaffDialog.Hide();
 
@@ -1347,7 +1451,6 @@ namespace NFC_System
                     _isAwaitingAdminAuth = false;
                     _pendingAdminAction = "";
 
-                    // Re-open directory if canceled
                     var staffList = await _database.GetAllStaffAsync();
                     StaffListView.ItemsSource = staffList;
                     await StaffDirectoryDialog.ShowAsync();
@@ -1376,9 +1479,8 @@ namespace NFC_System
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                 PlaySuccessPing();
 
-                _pendingStaffNfcReason = ""; // Clear reason
+                _pendingStaffNfcReason = "";
 
-                // Reload directory and pop it back open
                 var staffList = await _database.GetAllStaffAsync();
                 StaffListView.ItemsSource = staffList;
                 await StaffDirectoryDialog.ShowAsync();

@@ -14,7 +14,7 @@
 
     <Grid x:Name="RootGrid">
 
-        <!-- THE FIX: Dynamic Responsive Triggers -->
+        <!-- Dynamic Responsive Triggers -->
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="AdaptiveStates">
                 <VisualState x:Name="WideState">
@@ -35,19 +35,17 @@
                         <Setter Target="SetupTitle.FontSize" Value="28" />
                         <Setter Target="SetupTitle.Margin" Value="16,0,16,0" />
 
-                        <!-- Dashboard Header Adjustments (Break columns into stacked rows) -->
+                        <!-- Dashboard Header Adjustments -->
                         <Setter Target="DashboardHeaderLeftCol.Width" Value="*" />
                         <Setter Target="DashboardHeaderRightCol.Width" Value="Auto" />
                         <Setter Target="DashboardHeaderMidCol.Width" Value="0" />
                         <Setter Target="DashboardHeaderBottomRow.Height" Value="Auto" />
 
-                        <!-- Push the main title down to row 1 to give it breathing room -->
                         <Setter Target="DashboardTitleStack.(Grid.Row)" Value="1" />
                         <Setter Target="DashboardTitleStack.(Grid.Column)" Value="0" />
                         <Setter Target="DashboardTitleStack.(Grid.ColumnSpan)" Value="3" />
                         <Setter Target="DashboardTitleStack.Margin" Value="0,24,0,0" />
 
-                        <!-- Shrink text size for narrow fit -->
                         <Setter Target="DashboardTitleText.FontSize" Value="24" />
                         <Setter Target="DashboardSubtitleText.FontSize" Value="13" />
                         <Setter Target="DashboardSubtitleText.TextWrapping" Value="Wrap" />
@@ -71,7 +69,7 @@
             </StackPanel>
         </Border>
 
-        <!-- Container for all Overlays (Dashboard, Setup, Login) -->
+        <!-- Container for all Overlays -->
         <Grid Grid.Row="1">
 
             <!-- MAIN DASHBOARD CONTENT -->
@@ -383,8 +381,10 @@
 
                     <!-- Debug Simulations -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Opacity="0.5">
-                        <Button Content="Simulate Admin Login" Click="SimulateAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
-                        <Button Content="Simulate Personnel Login" Click="SimulatePersonnelLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <Button Content="Simulate Master Admin" Click="SimulateAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <!-- THE FIX: Added Simulate Security Admin Button -->
+                        <Button Content="Simulate Security Admin" Click="SimulateSecAdminLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                        <Button Content="Simulate Guard" Click="SimulatePersonnelLogin_Click" Background="#1AFFFFFF" BorderThickness="1" BorderBrush="#30FFFFFF"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -403,9 +403,6 @@
                 </StackPanel>
             </ContentDialog>
 
-            <!-- ========================================================= -->
-            <!-- THE FIX: ADMINISTRATOR AUTHORIZATION INTERCEPT POPUP      -->
-            <!-- ========================================================= -->
             <ContentDialog x:Name="AdminAuthDialog"
                            Title="Administrator Authorization Required"
                            CloseButtonText="Cancel"
