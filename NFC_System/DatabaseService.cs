@@ -82,7 +82,6 @@ public sealed class DatabaseService
         }
         catch
         {
-            // Keep last offset if offline
         }
     }
 
@@ -1580,10 +1579,15 @@ public sealed class DatabaseService
             string details = Value(reader["details"]);
             string currentStatus = Value(reader["status"]);
 
-
-
-            if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
+            // THE FIX: Cleanly render OFFLINE_MODE so it isn't double-bracketed.
+            if (error == "OFFLINE_MODE")
+            {
+                details = $"[OFFLINE_MODE] {details}";
+            }
+            else if (!string.IsNullOrEmpty(error) && error != "VERIFIED" && error != "BAD_READ")
+            {
                 details = $"[{error}] {details}";
+            }
 
             int nfcIndex = details.IndexOf("(NFC UID:");
             if (nfcIndex != -1)
@@ -1671,8 +1675,6 @@ public sealed class DatabaseService
 
                     bool isGranted = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true";
                     string errorCode = Value(reader["error_code"]);
-
-
                     string verdict = isGranted ? "GRANTED" : (string.IsNullOrWhiteSpace(errorCode) ? "DENIED" : $"DENIED [{errorCode}]");
 
                     bool usedPin = !action.Equals("Exit", StringComparison.OrdinalIgnoreCase) &&
@@ -2358,7 +2360,6 @@ public sealed class DatabaseService
             string result = reader["is_granted"].ToString() == "1" || reader["is_granted"].ToString()?.ToLower() == "true" ? "GRANTED" : "DENIED";
 
             string errorCode = Value(reader["error_code"]);
-            if (errorCode.ToUpper().Contains("OFFLINE") && result == "GRANTED") errorCode = "VERIFIED";
 
             logs.Add($"{time} | {subject} | {Value(reader["transaction_type"])} | {Value(reader["verification_mode"])} | {result} | {errorCode} {Value(reader["remarks"])}".Trim());
         }
@@ -2402,13 +2403,6 @@ public sealed class DatabaseService
 
     public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs)
     {
-        // THE FIX: If the verification engine incorrectly holds an "OFFLINE_MODE" error string from a previous fast-check, we scrub it here. 
-        // If it successfully hits this method, it means the database is online and working perfectly.
-        if (errorCategory != null && (errorCategory.ToUpper().Contains("OFFLINE") || errorCategory == "OFFLINE_MODE"))
-        {
-            errorCategory = granted ? "VERIFIED" : "";
-        }
-
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -2422,13 +2416,13 @@ public sealed class DatabaseService
 
         double totalWorkflowMs = pinWorkflowMs + qrWorkflowMs;
         double totalSystemMs = nfcSystemMs + pinSystemMs + qrSystemMs;
-        double authSpeedMs = totalWorkflowMs + totalSystemMs;
 
+        // THE FIX: Removed the invalid auth_speed_ms column so it stops throwing an invisible exception
         using var command = new MySqlCommand($@"
             INSERT INTO {tableName}
-            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, auth_speed_ms, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
+            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
             VALUES
-            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @auth_speed, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
+            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
 
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
         command.Parameters.AddWithValue("@student_name", NullIfEmpty(studentName));
@@ -2440,7 +2434,6 @@ public sealed class DatabaseService
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@remarks", NullIfEmpty(remarks));
 
-        command.Parameters.AddWithValue("@auth_speed", authSpeedMs);
         command.Parameters.AddWithValue("@nfc_speed", nfcSystemMs);
         command.Parameters.AddWithValue("@pin_wf", pinWorkflowMs);
         command.Parameters.AddWithValue("@pin_sys", pinSystemMs);
