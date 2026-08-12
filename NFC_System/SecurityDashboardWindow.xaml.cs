@@ -44,6 +44,38 @@ namespace NFC_System
         private bool _isForceClosing = false;
         private readonly DispatcherTimer _searchDebounceTimer = new();
 
+        // THE FIX: Asynchronous Dialog Queuing Engine
+        // This mathematically prevents WinUI 3 from crashing due to overlapping ContentDialogs
+        private bool _isDialogOpen = false;
+
+        private async Task<ContentDialogResult> EnqueueDialogAsync(ContentDialog dialog)
+        {
+            // Pause execution safely in the background until the active dialog finishes closing
+            while (_isDialogOpen)
+            {
+                await Task.Delay(50);
+            }
+
+            _isDialogOpen = true;
+            try
+            {
+                if (this.Content?.XamlRoot != null)
+                {
+                    dialog.XamlRoot = this.Content.XamlRoot;
+                }
+                return await dialog.ShowAsync();
+            }
+            catch
+            {
+                return ContentDialogResult.None;
+            }
+            finally
+            {
+                _isDialogOpen = false;
+                await Task.Delay(250); // Generous buffer to clear the pop-out visual animation
+            }
+        }
+
         public SecurityDashboardWindow()
         {
             this.InitializeComponent();
@@ -78,11 +110,10 @@ namespace NFC_System
                     Content = "You may have unsynced offline data. Would you like to push it to the cloud before exiting?",
                     PrimaryButtonText = "Push to Cloud & Exit",
                     SecondaryButtonText = "Exit Anyway",
-                    CloseButtonText = "Cancel",
-                    XamlRoot = this.Content.XamlRoot
+                    CloseButtonText = "Cancel"
                 };
 
-                var result = await masterDialog.ShowAsync();
+                var result = await EnqueueDialogAsync(masterDialog);
                 if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
                 else if (result == ContentDialogResult.Secondary) ForceExit();
             }
@@ -94,11 +125,10 @@ namespace NFC_System
                     Content = "You have unsynced offline data. Pushing this to the cloud requires High-Severity authorization (PIN + NFC Tap).",
                     PrimaryButtonText = "Authorize Sync & Exit",
                     SecondaryButtonText = "Exit Without Syncing",
-                    CloseButtonText = "Cancel",
-                    XamlRoot = this.Content.XamlRoot
+                    CloseButtonText = "Cancel"
                 };
 
-                var result = await adminDialog.ShowAsync();
+                var result = await EnqueueDialogAsync(adminDialog);
                 if (result == ContentDialogResult.Primary)
                 {
                     _pendingAdminAction = "EXIT_SYNC";
@@ -111,8 +141,7 @@ namespace NFC_System
                     AdminAuthTapPromptText.Text = "Awaiting Administrator NFC tap & PIN...";
 
                     _isAwaitingAdminAuth = true;
-                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                    var authResult = await AdminAuthDialog.ShowAsync();
+                    var authResult = await EnqueueDialogAsync(AdminAuthDialog);
 
                     if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
                     {
@@ -132,13 +161,12 @@ namespace NFC_System
                     Title = "Exit Application",
                     Content = "Warning: There may be unsynced offline data. You do not have Administrator privileges to push this data to the cloud. If you exit now, the data will remain safely stored locally.",
                     PrimaryButtonText = "Exit Anyway",
-                    CloseButtonText = "Cancel",
-                    XamlRoot = this.Content.XamlRoot
+                    CloseButtonText = "Cancel"
                 };
 
                 restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
-                var result = await restrictedDialog.ShowAsync();
+                var result = await EnqueueDialogAsync(restrictedDialog);
                 if (result == ContentDialogResult.Primary) ForceExit();
             }
         }
@@ -372,7 +400,6 @@ namespace NFC_System
                         {
                             _isAwaitingAdminAuth = false;
                             AdminAuthDialog.Hide();
-                            await Task.Delay(250);
 
                             PlaySuccessPing();
 
@@ -513,8 +540,7 @@ namespace NFC_System
                 AdminAuthTapPromptText.Text = "Please tap your NFC identification card & enter PIN...";
 
                 _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                var result = await AdminAuthDialog.ShowAsync();
+                var result = await EnqueueDialogAsync(AdminAuthDialog);
 
                 if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
                 {
@@ -563,13 +589,12 @@ namespace NFC_System
 
         private async void OpenPopupLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            MasterLogsDialog.XamlRoot = this.Content.XamlRoot;
             DialogLogContainer.Width = 900;
             PopupExpandToggle.IsChecked = false;
             PopupExpandToggle.Content = "⛶ Expand View";
 
             await ApplyServerSidePopupFiltersAsync();
-            await MasterLogsDialog.ShowAsync();
+            await EnqueueDialogAsync(MasterLogsDialog);
         }
 
         private void PopupExpandToggle_Click(object sender, RoutedEventArgs e)
@@ -686,12 +711,11 @@ namespace NFC_System
                     Content = $"This NFC card is currently registered to:\n\nName: {existingStaff.FullName}\nRole: {existingStaff.Role}\n\nDo you want to overwrite this assignment and register the card to {fullName}?",
                     PrimaryButtonText = "Yes, Overwrite",
                     CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = this.Content.XamlRoot
+                    DefaultButton = ContentDialogButton.Close
                 };
 
                 PlayErrorAlert();
-                var dialogResult = await overwriteDialog.ShowAsync();
+                var dialogResult = await EnqueueDialogAsync(overwriteDialog);
 
                 if (dialogResult != ContentDialogResult.Primary)
                 {
@@ -722,8 +746,7 @@ namespace NFC_System
                 AdminAuthTapPromptText.Text = "Awaiting Master Administrator NFC identification card...";
 
                 _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                var result = await AdminAuthDialog.ShowAsync();
+                var result = await EnqueueDialogAsync(AdminAuthDialog);
 
                 if (result == ContentDialogResult.None && _isAwaitingAdminAuth)
                 {
@@ -771,7 +794,6 @@ namespace NFC_System
             ApplyStaffFilter();
         }
 
-        // THE FIX: Automatically categorize and group staff by Role, then Alphabetically
         private void ApplyStaffFilter()
         {
             if (StaffListView == null || StaffDirectoryFilter == null) return;
@@ -799,10 +821,7 @@ namespace NFC_System
                 _allStaffCache = (await _database.GetAllStaffAsync()).ToList();
                 ApplyStaffFilter();
 
-                await Task.Delay(250); // Ensure clear UI thread
-
-                StaffDirectoryDialog.XamlRoot = this.Content.XamlRoot;
-                await StaffDirectoryDialog.ShowAsync();
+                await EnqueueDialogAsync(StaffDirectoryDialog);
             }
             catch (Exception ex)
             {
@@ -818,10 +837,9 @@ namespace NFC_System
             {
                 Title = title,
                 Content = message,
-                CloseButtonText = "OK",
-                XamlRoot = this.Content.XamlRoot
+                CloseButtonText = "OK"
             };
-            await resultDialog.ShowAsync();
+            await EnqueueDialogAsync(resultDialog);
         }
 
         private async void UploadDataButton_Click(object sender, RoutedEventArgs e)
@@ -832,11 +850,10 @@ namespace NFC_System
                 Content = "This will push new local students, staff, courses, events, and logs to the cloud database. Continue?",
                 PrimaryButtonText = "Yes, Upload",
                 CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = this.Content.XamlRoot
+                DefaultButton = ContentDialogButton.Close
             };
 
-            var confirmResult = await confirmDialog.ShowAsync();
+            var confirmResult = await EnqueueDialogAsync(confirmDialog);
             if (confirmResult != ContentDialogResult.Primary) return;
 
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
@@ -855,8 +872,7 @@ namespace NFC_System
                 AdminAuthTapPromptText.Text = "Awaiting Administrator NFC identification card & PIN...";
 
                 _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                var authResult = await AdminAuthDialog.ShowAsync();
+                var authResult = await EnqueueDialogAsync(AdminAuthDialog);
 
                 if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
                 {
@@ -944,11 +960,10 @@ namespace NFC_System
                 Content = "This will pull the latest students, staff, courses, events, and rosters from the cloud database into this local terminal. Continue?",
                 PrimaryButtonText = "Yes, Download",
                 CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = this.Content.XamlRoot
+                DefaultButton = ContentDialogButton.Close
             };
 
-            var confirmResult = await confirmDialog.ShowAsync();
+            var confirmResult = await EnqueueDialogAsync(confirmDialog);
             if (confirmResult != ContentDialogResult.Primary) return;
 
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
@@ -967,8 +982,7 @@ namespace NFC_System
                 AdminAuthTapPromptText.Text = "Awaiting Administrator NFC identification card & PIN...";
 
                 _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                var authResult = await AdminAuthDialog.ShowAsync();
+                var authResult = await EnqueueDialogAsync(AdminAuthDialog);
 
                 if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
                 {
@@ -1051,13 +1065,12 @@ namespace NFC_System
 
         private async void OpenManageCoursesDialog_Click(object sender, RoutedEventArgs e)
         {
-            ManageCoursesDialog.XamlRoot = this.Content.XamlRoot;
             CourseDialogStatusText.Text = "Select an action below.";
             CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
             DialogNewCourseTextBox.Text = "";
 
             await LoadCoursesIntoDialogAsync();
-            await ManageCoursesDialog.ShowAsync();
+            await EnqueueDialogAsync(ManageCoursesDialog);
         }
 
         private async Task LoadCoursesIntoDialogAsync()
@@ -1116,7 +1129,6 @@ namespace NFC_System
             }
 
             ManageCoursesDialog.Hide();
-            await Task.Delay(250);
 
             try
             {
@@ -1128,13 +1140,12 @@ namespace NFC_System
                     {
                         Title = "Action Blocked: Course in Use",
                         Content = $"You cannot delete '{courseName}' because there are currently {enrolledStudents} student(s) enrolled in it.\n\nPlease reassign these students to a different course before deleting.",
-                        CloseButtonText = "Understood",
-                        XamlRoot = this.Content.XamlRoot
+                        CloseButtonText = "Understood"
                     };
                     PlayErrorAlert();
-                    await warningDialog.ShowAsync();
+                    await EnqueueDialogAsync(warningDialog);
 
-                    await ManageCoursesDialog.ShowAsync();
+                    await EnqueueDialogAsync(ManageCoursesDialog);
                     return;
                 }
 
@@ -1144,11 +1155,10 @@ namespace NFC_System
                     Content = $"Are you absolutely sure you want to delete '{courseName}'? This action cannot be undone.",
                     PrimaryButtonText = "Delete Course",
                     CloseButtonText = "Cancel",
-                    DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = this.Content.XamlRoot
+                    DefaultButton = ContentDialogButton.Close
                 };
 
-                var result = await confirmDialog.ShowAsync();
+                var result = await EnqueueDialogAsync(confirmDialog);
 
                 if (result == ContentDialogResult.Primary)
                 {
@@ -1162,7 +1172,7 @@ namespace NFC_System
                     await RefreshDashboardAsync();
                 }
 
-                await ManageCoursesDialog.ShowAsync();
+                await EnqueueDialogAsync(ManageCoursesDialog);
             }
             catch (Exception ex)
             {
@@ -1170,7 +1180,7 @@ namespace NFC_System
                 CourseDialogStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
 
-                await ManageCoursesDialog.ShowAsync();
+                await EnqueueDialogAsync(ManageCoursesDialog);
             }
         }
 
@@ -1196,16 +1206,14 @@ namespace NFC_System
                 {
                     Title = "Nothing to Export",
                     Content = "There are no audit records in the database to export.",
-                    CloseButtonText = "OK",
-                    XamlRoot = this.Content.XamlRoot
+                    CloseButtonText = "OK"
                 };
-                await emptyDialog.ShowAsync();
+                await EnqueueDialogAsync(emptyDialog);
                 StatusTextBlock.Text = "System Ready: Waiting for input...";
                 return;
             }
 
-            ExportConfigDialog.XamlRoot = this.Content.XamlRoot;
-            var dialogResult = await ExportConfigDialog.ShowAsync();
+            var dialogResult = await EnqueueDialogAsync(ExportConfigDialog);
 
             if (dialogResult != ContentDialogResult.Primary)
             {
@@ -1286,10 +1294,9 @@ namespace NFC_System
                         {
                             Title = "Export Complete",
                             Content = $"Your custom security audit was successfully exported and saved to:\n\n{file.Path}",
-                            CloseButtonText = "OK",
-                            XamlRoot = this.Content.XamlRoot
+                            CloseButtonText = "OK"
                         };
-                        await successDialog.ShowAsync();
+                        await EnqueueDialogAsync(successDialog);
                     }
                 }
                 catch (Exception ex)
@@ -1346,13 +1353,11 @@ namespace NFC_System
             if (appWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
         }
 
-        // THE FIX: Enforced Dialog Flattening sequence with await Task.Delay()
         private async void StaffListView_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StaffRecord staff)
             {
                 StaffDirectoryDialog.Hide();
-                await Task.Delay(250);
 
                 _editingStaff = staff;
                 _origStaffUid = staff.NfcUid;
@@ -1383,9 +1388,7 @@ namespace NFC_System
                 EditStaffDialog.IsPrimaryButtonEnabled = false;
                 _pendingStaffAction = "";
 
-                EditStaffDialog.XamlRoot = this.Content.XamlRoot;
-                var result = await EditStaffDialog.ShowAsync();
-                await Task.Delay(250); // FIX: Vital delay before evaluating action to prevent overlap crash
+                var result = await EnqueueDialogAsync(EditStaffDialog);
 
                 if (_pendingStaffAction == "DELETE")
                 {
@@ -1395,11 +1398,10 @@ namespace NFC_System
                         Content = $"Are you sure you want to permanently delete {_origStaffName} ({_origStaffRole}) from the system?",
                         PrimaryButtonText = "Delete Profile",
                         CloseButtonText = "Cancel",
-                        DefaultButton = ContentDialogButton.Close,
-                        XamlRoot = this.Content.XamlRoot
+                        DefaultButton = ContentDialogButton.Close
                     };
 
-                    var confirmResult = await confirmDialog.ShowAsync();
+                    var confirmResult = await EnqueueDialogAsync(confirmDialog);
 
                     if (confirmResult == ContentDialogResult.Primary)
                     {
@@ -1426,8 +1428,7 @@ namespace NFC_System
                     _pendingAdminSeverity = "CRITICAL";
                     _isAwaitingAdminAuth = true;
 
-                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                    var authResult = await AdminAuthDialog.ShowAsync();
+                    var authResult = await EnqueueDialogAsync(AdminAuthDialog);
 
                     if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
                     {
