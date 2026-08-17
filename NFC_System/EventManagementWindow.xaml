@@ -129,13 +129,21 @@
 
                                     <TextBox x:Name="EventIdTextBox" Grid.Row="0" Grid.Column="0" Header="Event ID" PlaceholderText="EVT-001"/>
                                     <TextBox x:Name="EventNameTextBox" Grid.Row="0" Grid.Column="1" Header="Event Name" PlaceholderText="Assembly"/>
-                                    <ComboBox x:Name="EventModeComboBox" Grid.Row="1" Grid.ColumnSpan="2" Header="Required Security Mode" SelectedIndex="2" HorizontalAlignment="Stretch">
+                                    <!-- THE NEW EVENT CATEGORY DROPDOWN -->
+                                    <ComboBox x:Name="EventCategoryComboBox" Grid.Row="1" Grid.ColumnSpan="2" Header="Event Category" SelectedIndex="0" HorizontalAlignment="Stretch">
+                                        <ComboBoxItem Content="Assembly"/>
+                                        <ComboBoxItem Content="Seminar"/>
+                                        <ComboBoxItem Content="Sports Fest"/>
+                                        <ComboBoxItem Content="Workshop"/>
+                                        <ComboBoxItem Content="Other"/>
+                                    </ComboBox>
+                                    <ComboBox x:Name="EventModeComboBox" Grid.Row="2" Grid.ColumnSpan="2" Header="Required Security Mode" SelectedIndex="2" HorizontalAlignment="Stretch">
                                         <ComboBoxItem Content="Fast (NFC Only)"/>
                                         <ComboBoxItem Content="Standard (NFC + PIN)"/>
                                         <ComboBoxItem Content="High-Security (NFC + PIN + QR)"/>
                                     </ComboBox>
-                                    <CheckBox x:Name="RestrictedEventCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="Restricted event (Only approved attendees allowed)" IsChecked="True" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                    <Button x:Name="CreateEventButton" Grid.Row="3" Grid.ColumnSpan="2" Content="Create &amp; Activate Event" Click="CreateEventButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                                    <CheckBox x:Name="RestrictedEventCheckBox" Grid.Row="3" Grid.ColumnSpan="2" Content="Restricted event (Only approved attendees allowed)" IsChecked="True" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Button x:Name="CreateEventButton" Grid.Row="4" Grid.ColumnSpan="2" Content="Create &amp; Activate Event" Click="CreateEventButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
