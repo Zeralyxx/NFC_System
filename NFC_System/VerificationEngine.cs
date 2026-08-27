@@ -228,11 +228,13 @@ public sealed class VerificationEngine
             };
         }
 
+        // 1. EVALUATING FAST MODE (1FA: Tap-and-Go)
         if (mode == VerificationMode.Fast || transactionType == TransactionType.Exit)
         {
             return await GrantAsync(session, transactionType == TransactionType.Exit ? "NFC validation passed." : "NFC validation passed in Fast Mode.");
         }
 
+        // 2. ROUTING TO STANDARD OR HIGH-SECURITY MODE (Requires PIN)
         return new VerificationOutcome
         {
             Step = VerificationStep.RequiresPin,
@@ -313,6 +315,7 @@ public sealed class VerificationEngine
         session.PinSystemMs = authTimer.Elapsed.TotalMilliseconds;
         session.TotalDbQueryMs += dbQueryMs;
 
+        // 3. EVALUATING HIGH-SECURITY MODE (3FA: Demands QR Code after PIN)
         if (session.Mode == VerificationMode.HighSecurity && !session.IsQrFallback)
         {
             return new VerificationOutcome

@@ -2853,10 +2853,12 @@ public sealed class DatabaseService
 
         int rowsAffected = await command.ExecuteNonQueryAsync();
 
+        //this removes the duplicate alert messages when the batch update is performed multiple times with the same parameters
+        /*
         if (rowsAffected > 0)
         {
             await AddAlertAsync(null, "ADMIN_ACTION", $"Batch updated {rowsAffected} students to '{newStatus}' (Course: {course ?? "All"}, Year: {yearLevel ?? "All"}).");
-        }
+        } */
 
         return rowsAffected;
     }
