@@ -692,7 +692,7 @@ namespace NFC_System
             _pendingAction = AdminActionType.EditFullProfile;
             _pendingAdminSeverity = "MODERATE";
 
-            if (AppSession.CurrentStaffRoleLabel == "Master Administrator")
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }
@@ -948,7 +948,7 @@ namespace NFC_System
             _pendingAction = AdminActionType.SaveIndividual;
             _pendingAdminSeverity = "MODERATE";
 
-            if (AppSession.CurrentStaffRoleLabel == "Master Administrator")
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }
@@ -985,7 +985,7 @@ namespace NFC_System
             _pendingAction = AdminActionType.DeleteIndividual;
             _pendingAdminSeverity = "CRITICAL";
 
-            if (AppSession.CurrentStaffRoleLabel == "Master Administrator")
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }
@@ -1009,7 +1009,7 @@ namespace NFC_System
             _pendingAction = AdminActionType.BatchUpdate;
             _pendingAdminSeverity = "HIGH";
 
-            if (AppSession.CurrentStaffRoleLabel == "Master Administrator")
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 await ExecutePendingAdminAction(AppSession.CurrentStaffName);
             }

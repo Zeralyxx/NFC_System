@@ -129,14 +129,7 @@
 
                                     <TextBox x:Name="EventIdTextBox" Grid.Row="0" Grid.Column="0" Header="Event ID" PlaceholderText="EVT-001"/>
                                     <TextBox x:Name="EventNameTextBox" Grid.Row="0" Grid.Column="1" Header="Event Name" PlaceholderText="Assembly"/>
-                                    <!-- THE NEW EVENT CATEGORY DROPDOWN -->
-                                    <ComboBox x:Name="EventCategoryComboBox" Grid.Row="1" Grid.ColumnSpan="2" Header="Event Category" SelectedIndex="0" HorizontalAlignment="Stretch">
-                                        <ComboBoxItem Content="Assembly"/>
-                                        <ComboBoxItem Content="Seminar"/>
-                                        <ComboBoxItem Content="Sports Fest"/>
-                                        <ComboBoxItem Content="Workshop"/>
-                                        <ComboBoxItem Content="Other"/>
-                                    </ComboBox>
+                                    
                                     <ComboBox x:Name="EventModeComboBox" Grid.Row="2" Grid.ColumnSpan="2" Header="Required Security Mode" SelectedIndex="2" HorizontalAlignment="Stretch">
                                         <ComboBoxItem Content="Fast (NFC Only)"/>
                                         <ComboBoxItem Content="Standard (NFC + PIN)"/>
