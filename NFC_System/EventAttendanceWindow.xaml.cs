@@ -326,7 +326,7 @@ namespace NFC_System
 
                 AttendanceLogListView.Items.Insert(0, "[INFO] Event attendance monitor ready.");
 
-                if (!AppSession.IsAdmin)
+                if (!AppSession.IsAdmin && !AppSession.IsEventOrganizer)
                 {
                     ManageEventsButton.Visibility = Visibility.Collapsed;
                 }
