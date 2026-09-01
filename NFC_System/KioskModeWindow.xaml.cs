@@ -387,6 +387,19 @@ namespace NFC_System
                 _currentMode = KioskStateController.CurrentMode;
                 TryConnectSerial("COM3");
             }
+
+            // THE FIX: Enforce "No ID, No Entry" Policy from the database
+            try
+            {
+                string strictEntry = await _database.GetSettingAsync("strict_entry_policy", "False");
+                ForgotIdButton.Visibility = (strictEntry == "True") ? Visibility.Collapsed : Visibility.Visible;
+            }
+            catch
+            {
+                // If offline, fallback to allowing it (or whatever you prefer)
+                ForgotIdButton.Visibility = Visibility.Visible;
+            }
+
             SetState(AuthenticationStage.Idle);
         }
 

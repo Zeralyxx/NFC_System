@@ -426,6 +426,27 @@
                     <TextBlock x:Name="AuthStatusText" Foreground="#F87171" FontWeight="SemiBold" Visibility="Collapsed" TextWrapping="Wrap"/>
                 </StackPanel>
             </ContentDialog>
+            <!-- SYSTEM SETTINGS DIALOG -->
+            <ContentDialog x:Name="SettingsDialog"
+                           Title="System Settings"
+                           PrimaryButtonText="Save Changes"
+                           CloseButtonText="Cancel"
+                           DefaultButton="Primary"
+                           PrimaryButtonClick="SettingsDialog_PrimaryButtonClick"
+                           CornerRadius="8">
+                <StackPanel Spacing="16" Width="350">
+                    <TextBlock Text="Network Configuration" FontWeight="SemiBold" FontSize="16"/>
+                    <TextBox x:Name="SettingsIpBox" Header="MySQL Server IP Address" PlaceholderText="e.g., 192.168.1.7 or 127.0.0.1" />
+
+                    <TextBlock Text="Security Policies" FontWeight="SemiBold" FontSize="16" Margin="0,12,0,0"/>
+                    <TextBlock Text="Strict 'No ID, No Entry' Policy" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="If enabled, hides the 'Forgot ID' fallback button on the Kiosk terminal. Students without a physical ID will be completely blocked from entry." 
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                    <ToggleSwitch x:Name="StrictEntryToggle" OffContent="Disabled (Allow Fallback)" OnContent="Enabled (Hide Fallback)" />
+
+                    <TextBlock x:Name="SettingsStatusText" Foreground="#F87171" FontWeight="SemiBold" TextWrapping="Wrap" Visibility="Collapsed"/>
+                </StackPanel>
+            </ContentDialog>
         </Grid>
     </Grid>
 </Window>

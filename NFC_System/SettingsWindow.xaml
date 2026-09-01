@@ -5,53 +5,71 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="Application Settings"
-    >
+    Title="Application Settings">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid Padding="32" Background="{StaticResource AppBackgroundBrush}">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <!-- Wrap everything in a Grid with the background, and add a ScrollViewer -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Padding="32">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,24">
-            <TextBlock Text="Configuration" Style="{StaticResource PageTitleStyle}" FontSize="28"/>
-            <TextBlock Text="Manage server connection and system parameters." Style="{StaticResource BodyTextStyle}" Opacity="0.8"/>
-        </StackPanel>
+                <!-- Header -->
+                <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,24">
+                    <TextBlock Text="Configuration" Style="{StaticResource PageTitleStyle}" FontSize="28"/>
+                    <TextBlock Text="Manage server connection and system parameters." Style="{StaticResource BodyTextStyle}" Opacity="0.8"/>
+                </StackPanel>
 
-        <!-- Network Configuration Card -->
-        <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
-            <StackPanel Spacing="20">
-                <TextBlock Text="Network Configuration" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
-                <TextBlock Text="Set the IPv4 address of the local MySQL server this station connects to." Style="{StaticResource BodyTextStyle}" FontSize="12" TextWrapping="Wrap"/>
+                <!-- Network Configuration Card -->
+                <Border Grid.Row="1" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="20">
+                        <TextBlock Text="Network Configuration" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
+                        <TextBlock Text="Set the IPv4 address of the local MySQL server this station connects to." Style="{StaticResource BodyTextStyle}" FontSize="12" TextWrapping="Wrap"/>
 
-                <TextBox x:Name="ServerIpConfigTextBox"
-                         Header="MySQL Server IP Address"
-                         PlaceholderText="e.g., 192.168.1.7 or 127.0.0.1"/>
+                        <TextBox x:Name="ServerIpConfigTextBox"
+                                 Header="MySQL Server IP Address"
+                                 PlaceholderText="e.g., 192.168.1.7 or 127.0.0.1"/>
 
-                <TextBlock x:Name="ServerIpStatusText"
-                           Text=""
-                           FontSize="12"
-                           Foreground="#34D399"
-                           TextWrapping="Wrap"/>
-            </StackPanel>
-        </Border>
+                        <TextBlock x:Name="ServerIpStatusText"
+                                   Text=""
+                                   FontSize="12"
+                                   Foreground="#34D399"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
 
-        <!-- Action Buttons Footer -->
-        <Grid Grid.Row="2" Margin="0,24,0,0" ColumnSpacing="16">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+                <!-- Security Policies Card -->
+                <Border Grid.Row="2" Padding="24" Margin="0,24,0,0" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Security Policies" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
 
-            <Button x:Name="CancelButton" Grid.Column="0" Content="Cancel" Click="CancelButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="Transparent" BorderBrush="#30FFFFFF"/>
-            <Button x:Name="SaveButton" Grid.Column="1" Content="Save Changes" Click="SaveButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
-        </Grid>
+                        <TextBlock Text="Strict 'No ID, No Entry' Policy" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                        <TextBlock Text="If enabled, hides the 'Forgot ID' fallback button on the Kiosk terminal. Students without a physical ID will be completely blocked from entry." 
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+
+                        <ToggleSwitch x:Name="StrictEntryToggle" OffContent="Disabled (Allow Forgot ID)" OnContent="Enabled (Hide Forgot ID)" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Action Buttons Footer -->
+                <Grid Grid.Row="3" Margin="0,32,0,0" ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button x:Name="CancelButton" Grid.Column="0" Content="Cancel" Click="CancelButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="Transparent" BorderBrush="#30FFFFFF"/>
+                    <Button x:Name="SaveButton" Grid.Column="1" Content="Save Changes" Click="SaveButton_Click" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
     </Grid>
 </Window>

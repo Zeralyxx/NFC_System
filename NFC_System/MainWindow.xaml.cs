@@ -546,7 +546,6 @@ namespace NFC_System
             }
             catch { }
 
-            // THE FIX: Assign mock roles perfectly to the 4 debug buttons
             if (role == null)
             {
                 if (uid == "04:A1:B2:C3")
@@ -745,7 +744,6 @@ namespace NFC_System
             TryConnectSerial(_currentPort);
         }
 
-        // THE FIX: Added simulation buttons for Admin and Organizer
         private void SimulateAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("04:A1:B2:C3");
         private void SimulateStandardAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_ADMIN_CARD");
         private void SimulateOrganizerLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("VALID_EVENT_CARD");
@@ -781,9 +779,81 @@ namespace NFC_System
             this.Close();
         }
 
-        private void DashboardSettingsButton_Click(object sender, RoutedEventArgs e)
+        // ====================================================================
+        // THE FIX: SETTINGS DIALOG LAUNCHER & LOGIC
+        // ====================================================================
+        private async void DashboardSettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            new SettingsWindow().Activate();
+            // Populate the dialog with current config before showing it
+            SettingsIpBox.Text = DatabaseService.ServerIp;
+            SettingsStatusText.Visibility = Visibility.Collapsed;
+
+            try
+            {
+                if (DatabaseMonitor.IsOnline)
+                {
+                    string strictEntry = await _database.GetSettingAsync("strict_entry_policy", "False");
+                    StrictEntryToggle.IsOn = (strictEntry == "True");
+                }
+            }
+            catch { }
+
+            SettingsDialog.XamlRoot = this.Content.XamlRoot;
+
+            // THE FIX: Wait for the dialog to close, capture the result
+            var result = await SettingsDialog.ShowAsync();
+
+            // Only show the success dialog AFTER the settings dialog has safely closed
+            if (result == ContentDialogResult.Primary)
+            {
+                ContentDialog successDialog = new ContentDialog
+                {
+                    Title = "Settings Saved",
+                    Content = "System configuration updated successfully. If you changed the IP address, please click 'Refresh Connection' on the login screen or restart the application.",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await successDialog.ShowAsync();
+            }
+        }
+
+        private async void SettingsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+        {
+            // We use a deferral so we can perform async operations and cancel the close if validation fails
+            var deferral = args.GetDeferral();
+            try
+            {
+                string newIp = SettingsIpBox.Text.Trim();
+
+                if (string.IsNullOrWhiteSpace(newIp))
+                {
+                    SettingsStatusText.Text = "Please enter a valid IP address.";
+                    SettingsStatusText.Visibility = Visibility.Visible;
+                    args.Cancel = true; // Stops the dialog from closing
+                    return;
+                }
+
+                // Save Local IP Text File
+                DatabaseService.SaveConfig(newIp);
+
+                // Save Policy to MySQL if online
+                if (DatabaseMonitor.IsOnline)
+                {
+                    await _database.SetSettingAsync("strict_entry_policy", StrictEntryToggle.IsOn.ToString());
+                }
+
+                // THE FIX: The success popup was removed from here to prevent the crash!
+            }
+            catch (Exception ex)
+            {
+                SettingsStatusText.Text = $"Failed to save: {ex.Message}";
+                SettingsStatusText.Visibility = Visibility.Visible;
+                args.Cancel = true; // Stops the dialog from closing
+            }
+            finally
+            {
+                deferral.Complete();
+            }
         }
 
         private void Settings_Click(object sender, RoutedEventArgs e)
