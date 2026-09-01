@@ -125,6 +125,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <TextBox x:Name="EventIdTextBox" Grid.Row="0" Grid.Column="0" Header="Event ID" PlaceholderText="EVT-001"/>
