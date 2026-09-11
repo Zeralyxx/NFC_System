@@ -8,7 +8,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Ports;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
@@ -44,7 +43,6 @@ namespace NFC_System
         private readonly string _contextDetails;
         private readonly string? _eventId;
 
-        private SerialPort? _serialPort;
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
         private VerificationSession? _activeSession;
@@ -105,6 +103,12 @@ namespace NFC_System
         public KioskModeWindow(string originatingMode, string contextDetails, string? eventId = null)
         {
             this.InitializeComponent();
+
+            // THE FIX: Take control of the hardware flow globally
+            AppSession.IsKioskRunning = true;
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
+            HardwareService.OnKeypadInput += HardwareService_OnKeypadInput;
+
             _originatingMode = originatingMode;
             _contextDetails = contextDetails;
             _eventId = eventId;
@@ -176,6 +180,51 @@ namespace NFC_System
             _syncRecoveryTimer.Start();
 
             KioskStateController.ModeChanged += KioskStateController_ModeChanged;
+        }
+
+        // ====================================================================
+        // THE FIX: SHARED HARDWARE SERVICE EVENT HANDLERS
+        // ====================================================================
+        private void HardwareService_OnUidScanned(string uid)
+        {
+            if (_currentStage == AuthenticationStage.Idle)
+            {
+                DispatcherQueue.TryEnqueue(() => ProcessNfcScan(uid));
+            }
+        }
+
+        private void HardwareService_OnKeypadInput(string key)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (key.Contains("D"))
+                {
+                    if (_currentStage == AuthenticationStage.Idle || _currentStage == AuthenticationStage.WaitingForPIN)
+                    {
+                        ForgotIdButton_Click(this, new RoutedEventArgs());
+                    }
+                    return;
+                }
+
+                if (_currentStage == AuthenticationStage.WaitingForPIN && !string.IsNullOrEmpty(key))
+                {
+                    bool isEnter = key.Contains("A");
+                    bool isClear = key.Contains("B");
+                    bool isCancel = key.Contains("C");
+
+                    string digit = "";
+                    foreach (char c in key)
+                    {
+                        if (char.IsDigit(c))
+                        {
+                            digit = c.ToString();
+                            break;
+                        }
+                    }
+
+                    ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
+                }
+            });
         }
 
         // ====================================================================
@@ -279,87 +328,6 @@ namespace NFC_System
             });
         }
 
-        private void TryConnectSerial(string portName)
-        {
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-            }
-            catch { }
-        }
-
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-
-                if (line.StartsWith("UID="))
-                {
-                    string uid = line.Substring(4).Trim();
-                    if (_currentStage == AuthenticationStage.Idle)
-                    {
-                        DispatcherQueue.TryEnqueue(() => ProcessNfcScan(uid));
-                    }
-                }
-                else if (line.StartsWith("KEY="))
-                {
-                    string key = line.Substring(4).Trim().ToUpper();
-
-                    DispatcherQueue.TryEnqueue(() =>
-                    {
-                        if (key.Contains("D"))
-                        {
-                            if (_currentStage == AuthenticationStage.Idle || _currentStage == AuthenticationStage.WaitingForPIN)
-                            {
-                                ForgotIdButton_Click(this, new RoutedEventArgs());
-                            }
-                            return;
-                        }
-
-                        if (_currentStage == AuthenticationStage.WaitingForPIN && !string.IsNullOrEmpty(key))
-                        {
-                            bool isEnter = key.Contains("A");
-                            bool isClear = key.Contains("B");
-                            bool isCancel = key.Contains("C");
-
-                            string digit = "";
-                            foreach (char c in key)
-                            {
-                                if (char.IsDigit(c))
-                                {
-                                    digit = c.ToString();
-                                    break;
-                                }
-                            }
-
-                            ProcessHardwareKeypadStroke(digit, isEnter, isClear, isCancel);
-                        }
-                    });
-                }
-            }
-            catch { }
-        }
-
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
-        }
-
         private async Task SyncOperationalModeAsync()
         {
             try
@@ -378,17 +346,14 @@ namespace NFC_System
                 }
 
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
-                TryConnectSerial(nfcPort);
+                HardwareService.Connect(nfcPort);
             }
             catch
             {
-                // THE FIX: Stop defaulting to Standard mode when offline! 
-                // Rely on the global state controller instead.
                 _currentMode = KioskStateController.CurrentMode;
-                TryConnectSerial("COM3");
+                HardwareService.Connect("COM3");
             }
 
-            // THE FIX: Enforce "No ID, No Entry" Policy from the database
             try
             {
                 string strictEntry = await _database.GetSettingAsync("strict_entry_policy", "False");
@@ -396,7 +361,6 @@ namespace NFC_System
             }
             catch
             {
-                // If offline, fallback to allowing it (or whatever you prefer)
                 ForgotIdButton.Visibility = Visibility.Visible;
             }
 
@@ -406,13 +370,18 @@ namespace NFC_System
         private void KioskModeWindow_Closed(object sender, WindowEventArgs args)
         {
             _isClosing = true;
+
+            // THE FIX: Clean up listeners and return control
+            AppSession.IsKioskRunning = false;
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
+            HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
+
             _inactivityTimer.Stop();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
             SetHardwareLeds(false);
             System.Threading.Thread.Sleep(50);
-            CloseSerialPort();
             _ = DisposeCameraAsync();
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
         }
@@ -420,13 +389,18 @@ namespace NFC_System
         private void ExitKiosk_Click(object sender, RoutedEventArgs e)
         {
             _isClosing = true;
+
+            // THE FIX: Clean up listeners and return control
+            AppSession.IsKioskRunning = false;
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
+            HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
+
             _inactivityTimer.Stop();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
             SetHardwareLeds(false);
             System.Threading.Thread.Sleep(50);
-            CloseSerialPort();
             _ = DisposeCameraAsync();
             this.Close();
         }
@@ -584,7 +558,6 @@ namespace NFC_System
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | DOUBLE ENTRY");
 
                 nfcTimer.Stop();
-                // THE FIX: Added 15th param (machineProcessingMs)
                 _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0, nfcTimer.Elapsed.TotalMilliseconds));
                 return;
             }
@@ -610,7 +583,6 @@ namespace NFC_System
                             OnKioskLog?.Invoke($"{logTime} | UID {uid} | DENIED | UNINVITED");
 
                             nfcTimer.Stop();
-                            // THE FIX: Added 15th param (machineProcessingMs)
                             _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, uid, transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0, nfcTimer.Elapsed.TotalMilliseconds));
                             return;
                         }
@@ -630,7 +602,6 @@ namespace NFC_System
                 OnKioskLog?.Invoke($"{logTime} | UID {uid} | BAD READ: Please tap again");
 
                 nfcTimer.Stop();
-                // THE FIX: Added 15th param (machineProcessingMs)
                 _ = Task.Run(() => _database.LogVerificationAsync(null, null, uid, transType, _currentMode, false, "BAD_READ", "BAD_NFC_READ", "Card couldn't be read properly. User prompted to tap again.", nfcTimer.Elapsed.TotalMilliseconds, nfcTimer.Elapsed.TotalMilliseconds, 0, 0, 0, nfcTimer.Elapsed.TotalMilliseconds));
                 return;
             }
@@ -656,7 +627,6 @@ namespace NFC_System
 
                 if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
                 {
-                    // THE FIX: Added "ACCOUNT_LOCKED" and "IRREGULAR_EXIT_SEQUENCE" so the hardware siren triggers during offline violations
                     string[] severeErrors = { "PIN_LOCKED", "ACCOUNT_LOCKED", "ANTI_TAILGATING_VIOLATION", "IRREGULAR_EXIT_SEQUENCE", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
                     if (severeErrors.Contains(outcome.ErrorCategory))
                         PlaySecurityAlert();
@@ -830,7 +800,6 @@ namespace NFC_System
                 string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                 OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
 
-                // THE FIX: Added 15th param (machineProcessingMs)
                 _ = Task.Run(() => _database.LogVerificationAsync(null, null, payload.Trim(), transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
 
                 LogPerformanceMetric("QR Credential Validation Timer", _qrScanTimer.ElapsedMilliseconds, "DENIED / DOUBLE ENTRY");
@@ -858,7 +827,6 @@ namespace NFC_System
                             string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
                             OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | UNINVITED");
 
-                            // THE FIX: Added 15th param (machineProcessingMs)
                             _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, payload.Trim(), transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
 
                             LogPerformanceMetric("QR Credential Validation Timer", _qrScanTimer.ElapsedMilliseconds, "DENIED / UNINVITED");
@@ -1267,31 +1235,14 @@ namespace NFC_System
 
         private void SetHardwareLeds(bool turnOn)
         {
-            try
+            if (_isClosing)
             {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    if (_isClosing)
-                    {
-                        _serialPort.WriteLine(turnOn ? "LED=ON" : "LED=OFF");
-                    }
-                    else
-                    {
-                        Task.Run(() =>
-                        {
-                            try
-                            {
-                                if (_serialPort != null && _serialPort.IsOpen)
-                                {
-                                    _serialPort.WriteLine(turnOn ? "LED=ON" : "LED=OFF");
-                                }
-                            }
-                            catch { }
-                        });
-                    }
-                }
+                HardwareService.SendCommand(turnOn ? "LED=ON" : "LED=OFF");
             }
-            catch { }
+            else
+            {
+                Task.Run(() => HardwareService.SendCommand(turnOn ? "LED=ON" : "LED=OFF"));
+            }
         }
     }
 }

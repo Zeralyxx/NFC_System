@@ -6,7 +6,6 @@ using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
@@ -19,7 +18,6 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private List<SystemAuditLog> _masterLogsCache = new();
         private IReadOnlyList<StaffRecord> _allStaffCache = new List<StaffRecord>();
-        private SerialPort? _serialPort;
 
         private bool _isAwaitingAdminAuth = false;
         private string _pendingStaffName = "";
@@ -40,17 +38,16 @@ namespace NFC_System
 
         private string _pendingHealStudentId = "";
         private string _pendingHealState = "";
+        private int _pendingPurgeDays = 30; // THE FIX: State for Log Purging
 
         private bool _isForceClosing = false;
         private readonly DispatcherTimer _searchDebounceTimer = new();
 
-        // THE FIX: Asynchronous Dialog Queuing Engine
-        // This mathematically prevents WinUI 3 from crashing due to overlapping ContentDialogs
+        // Asynchronous Dialog Queuing Engine
         private bool _isDialogOpen = false;
 
         private async Task<ContentDialogResult> EnqueueDialogAsync(ContentDialog dialog)
         {
-            // Pause execution safely in the background until the active dialog finishes closing
             while (_isDialogOpen)
             {
                 await Task.Delay(50);
@@ -72,7 +69,7 @@ namespace NFC_System
             finally
             {
                 _isDialogOpen = false;
-                await Task.Delay(250); // Generous buffer to clear the pop-out visual animation
+                await Task.Delay(250);
             }
         }
 
@@ -91,10 +88,152 @@ namespace NFC_System
             this.Closed += Window_Closed;
             this.Activated += Window_Activated;
 
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
+
             _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(500);
             _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
 
             _ = InitializeAsync();
+        }
+
+        private void HardwareService_OnUidScanned(string uid)
+        {
+            if (AppSession.IsKioskRunning) return;
+
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (_isAwaitingStaffNfcReplacementScan)
+                {
+                    await HandleStaffNfcReplacementScanAsync(uid);
+                    return;
+                }
+
+                if (_isAwaitingAdminAuth)
+                {
+                    var details = await _database.GetStaffDetailsAsync(uid);
+
+                    bool isAuthorized = false;
+                    string failReason = "";
+
+                    if (_pendingAdminSeverity == "CRITICAL")
+                    {
+                        if (details.Role == "Master Administrator")
+                        {
+                            isAuthorized = true;
+                        }
+                        else
+                        {
+                            failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
+                        }
+                    }
+                    else if (_pendingAdminSeverity == "HIGH")
+                    {
+                        if (details.Role == "Administrator" || details.Role == "Master Administrator")
+                        {
+                            string enteredPin = AdminPinBox.Password.Trim();
+
+                            if (string.IsNullOrEmpty(enteredPin))
+                            {
+                                failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                            }
+                            else if (string.IsNullOrEmpty(details.PinHash))
+                            {
+                                failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                            }
+                            else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
+                            {
+                                failReason = "Authorization Denied: Invalid PIN.";
+                            }
+                            else
+                            {
+                                isAuthorized = true;
+                            }
+                        }
+                        else
+                        {
+                            failReason = "Authorization Denied: Tapped card is not an Administrator.";
+                        }
+                    }
+                    else if (_pendingAdminSeverity == "MODERATE")
+                    {
+                        if (details.Role == "Security Personnel" || details.Role == "Administrator" || details.Role == "Master Administrator")
+                        {
+                            string enteredPin = AdminPinBox.Password.Trim();
+
+                            if (string.IsNullOrEmpty(enteredPin))
+                            {
+                                failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                            }
+                            else if (string.IsNullOrEmpty(details.PinHash))
+                            {
+                                failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                            }
+                            else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
+                            {
+                                failReason = "Authorization Denied: Invalid PIN.";
+                            }
+                            else
+                            {
+                                isAuthorized = true;
+                            }
+                        }
+                        else
+                        {
+                            failReason = "Authorization Denied: Tapped card must belong to a valid staff member.";
+                        }
+                    }
+
+                    if (isAuthorized)
+                    {
+                        _isAwaitingAdminAuth = false;
+                        AdminAuthDialog.Hide();
+
+                        PlaySuccessPing();
+
+                        string authorizedByName = details.FullName ?? "Staff";
+                        string actionToRun = _pendingAdminAction;
+                        _pendingAdminAction = "";
+
+                        switch (actionToRun)
+                        {
+                            case "REGISTER_STAFF":
+                                await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName, _pendingStaffPin);
+                                break;
+                            case "UPLOAD_DATA":
+                                await ExecuteUploadDataAsync(authorizedByName);
+                                break;
+                            case "DOWNLOAD_DATA":
+                                await ExecuteDownloadDataAsync(authorizedByName);
+                                break;
+                            case "EXIT_SYNC":
+                                await PerformCloudPushAndExit();
+                                break;
+                            case "HEAL_STATE":
+                                await ExecuteHealStateAsync(authorizedByName);
+                                break;
+                            case "PURGE_LOGS":
+                                await ExecutePurgeLogsAsync(authorizedByName);
+                                break;
+                            case "PURGE_STUDENTS":
+                                await ExecutePurgeStudentsAsync(authorizedByName);
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        AuthStatusText.Text = failReason;
+                        AuthStatusText.Visibility = Visibility.Visible;
+                        PlayErrorAlert();
+                    }
+                }
+                else
+                {
+                    StaffNfcUidTextBox.Text = uid;
+                    StatusTextBlock.Text = "Card scanned. Ready to register staff.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                    PlaySuccessPing();
+                }
+            });
         }
 
         private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -202,6 +341,7 @@ namespace NFC_System
                 try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
             }
 
+            HardwareService.Disconnect();
             _isForceClosing = true;
             Application.Current.Exit();
         }
@@ -214,6 +354,12 @@ namespace NFC_System
             }
         }
 
+        private void Window_Closed(object sender, WindowEventArgs args)
+        {
+            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
+        }
+
         private async Task InitializeAsync()
         {
             if (AppSession.CurrentStaffRoleLabel == "Personnel")
@@ -223,6 +369,8 @@ namespace NFC_System
                 CourseManagementPanel.Visibility = Visibility.Collapsed;
                 StaffManagementPanel.Visibility = Visibility.Collapsed;
 
+                if (MaintenancePanel != null) MaintenancePanel.Visibility = Visibility.Collapsed;
+
                 PopupStatusFilter.SelectedIndex = 2;
                 PopupStatusFilter.IsEnabled = false;
             }
@@ -231,9 +379,6 @@ namespace NFC_System
             {
                 await _database.EnsureSchemaAsync();
                 await RefreshDashboardAsync();
-
-                string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
-                TryConnectSerial(nfcPort);
             }
             catch (Exception ex)
             {
@@ -280,190 +425,6 @@ namespace NFC_System
                 }
                 catch { }
             });
-        }
-
-        private void TryConnectSerial(string portName)
-        {
-            if (_serialPort != null && _serialPort.IsOpen) return;
-
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-                StatusTextBlock.Text = $"Ready. NFC connected on {portName}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
-            }
-            catch (Exception ex)
-            {
-                StatusTextBlock.Text = $"NFC disconnected: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                PlayErrorAlert();
-            }
-        }
-
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-                if (!line.StartsWith("UID=")) return;
-
-                string uid = line.Substring(4).Trim();
-
-                DispatcherQueue.TryEnqueue(async () =>
-                {
-                    if (_isAwaitingStaffNfcReplacementScan)
-                    {
-                        await HandleStaffNfcReplacementScanAsync(uid);
-                        return;
-                    }
-
-                    if (_isAwaitingAdminAuth)
-                    {
-                        var details = await _database.GetStaffDetailsAsync(uid);
-
-                        bool isAuthorized = false;
-                        string failReason = "";
-
-                        if (_pendingAdminSeverity == "CRITICAL")
-                        {
-                            if (details.Role == "Master Administrator")
-                            {
-                                isAuthorized = true;
-                            }
-                            else
-                            {
-                                failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
-                            }
-                        }
-                        else if (_pendingAdminSeverity == "HIGH")
-                        {
-                            if (details.Role == "Administrator" || details.Role == "Master Administrator")
-                            {
-                                string enteredPin = AdminPinBox.Password.Trim();
-
-                                if (string.IsNullOrEmpty(enteredPin))
-                                {
-                                    failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
-                                }
-                                else if (string.IsNullOrEmpty(details.PinHash))
-                                {
-                                    failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
-                                }
-                                else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
-                                {
-                                    failReason = "Authorization Denied: Invalid PIN.";
-                                }
-                                else
-                                {
-                                    isAuthorized = true;
-                                }
-                            }
-                            else
-                            {
-                                failReason = "Authorization Denied: Tapped card is not an Administrator.";
-                            }
-                        }
-                        else if (_pendingAdminSeverity == "MODERATE")
-                        {
-                            if (details.Role == "Security Personnel" || details.Role == "Administrator" || details.Role == "Master Administrator")
-                            {
-                                string enteredPin = AdminPinBox.Password.Trim();
-
-                                if (string.IsNullOrEmpty(enteredPin))
-                                {
-                                    failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
-                                }
-                                else if (string.IsNullOrEmpty(details.PinHash))
-                                {
-                                    failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
-                                }
-                                else if (!PinHasher.VerifyPin(enteredPin, details.PinSalt, details.PinHash))
-                                {
-                                    failReason = "Authorization Denied: Invalid PIN.";
-                                }
-                                else
-                                {
-                                    isAuthorized = true;
-                                }
-                            }
-                            else
-                            {
-                                failReason = "Authorization Denied: Tapped card must belong to a valid staff member.";
-                            }
-                        }
-
-                        if (isAuthorized)
-                        {
-                            _isAwaitingAdminAuth = false;
-                            AdminAuthDialog.Hide();
-
-                            PlaySuccessPing();
-
-                            string authorizedByName = details.FullName ?? "Staff";
-                            string actionToRun = _pendingAdminAction;
-                            _pendingAdminAction = "";
-
-                            switch (actionToRun)
-                            {
-                                case "REGISTER_STAFF":
-                                    await ExecuteStaffRegistration(_pendingStaffUid, _pendingStaffName, _pendingStaffRole, authorizedByName, _pendingStaffPin);
-                                    break;
-                                case "UPLOAD_DATA":
-                                    await ExecuteUploadDataAsync(authorizedByName);
-                                    break;
-                                case "DOWNLOAD_DATA":
-                                    await ExecuteDownloadDataAsync(authorizedByName);
-                                    break;
-                                case "EXIT_SYNC":
-                                    await PerformCloudPushAndExit();
-                                    break;
-                                case "HEAL_STATE":
-                                    await ExecuteHealStateAsync(authorizedByName);
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            AuthStatusText.Text = failReason;
-                            AuthStatusText.Visibility = Visibility.Visible;
-                            PlayErrorAlert();
-                        }
-                    }
-                    else
-                    {
-                        StaffNfcUidTextBox.Text = uid;
-                        StatusTextBlock.Text = "Card scanned. Ready to register staff.";
-                        StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
-                        PlaySuccessPing();
-                    }
-                });
-            }
-            catch { }
-        }
-
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
-        }
-
-        private void Window_Closed(object sender, WindowEventArgs args)
-        {
-            DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
-            CloseSerialPort();
         }
 
         private void UpdateOfflineBanner(bool isOnline)
@@ -583,6 +544,139 @@ namespace NFC_System
             {
                 StatusTextBlock.Text = $"State correction failed: {ex.Message}";
                 StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
+        }
+
+        // ====================================================================
+        // THE FIX: SYSTEM MAINTENANCE (PURGING) LOGIC
+        // ====================================================================
+        private async void PurgeLogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            int days = 30;
+            string selection = (LogPurgeDaysComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+            if (selection.Contains("60")) days = 60;
+            else if (selection.Contains("90")) days = 90;
+            else if (selection.Contains("365")) days = 365;
+
+            ContentDialog confirmDialog = new ContentDialog
+            {
+                Title = "Confirm Log Purge",
+                Content = $"Are you absolutely sure you want to PERMANENTLY delete all audit logs older than {days} days?\n\nOnly logs that have already been synced to the cloud will be deleted. This action cannot be undone.",
+                PrimaryButtonText = "Yes, Purge Data",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close
+            };
+
+            var confirmResult = await EnqueueDialogAsync(confirmDialog);
+            if (confirmResult != ContentDialogResult.Primary) return;
+
+            _pendingPurgeDays = days;
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecutePurgeLogsAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _pendingAdminAction = "PURGE_LOGS";
+                _pendingAdminSeverity = "CRITICAL";
+
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To permanently delete audit records, a Master Administrator must verify this action.";
+                AdminAuthTapPromptText.Text = "Awaiting Master Administrator NFC identification card...";
+
+                _isAwaitingAdminAuth = true;
+                var authResult = await EnqueueDialogAsync(AdminAuthDialog);
+
+                if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+                }
+            }
+        }
+
+        private async void PurgeStudentsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ContentDialog confirmDialog = new ContentDialog
+            {
+                Title = "Confirm Roster Purge",
+                Content = "Are you absolutely sure you want to PERMANENTLY delete all student profiles currently marked as 'Graduated', 'Inactive', or 'Expelled'?\n\nThis action cannot be undone.",
+                PrimaryButtonText = "Yes, Purge Students",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close
+            };
+
+            var confirmResult = await EnqueueDialogAsync(confirmDialog);
+            if (confirmResult != ContentDialogResult.Primary) return;
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                await ExecutePurgeStudentsAsync(AppSession.CurrentStaffName);
+            }
+            else
+            {
+                _pendingAdminAction = "PURGE_STUDENTS";
+                _pendingAdminSeverity = "CRITICAL";
+
+                AdminPinBox.Visibility = Visibility.Collapsed;
+                AdminPinBox.Password = "";
+                AuthStatusText.Visibility = Visibility.Collapsed;
+                AdminAuthDescriptionText.Text = "To permanently delete student profiles, a Master Administrator must verify this action.";
+                AdminAuthTapPromptText.Text = "Awaiting Master Administrator NFC identification card...";
+
+                _isAwaitingAdminAuth = true;
+                var authResult = await EnqueueDialogAsync(AdminAuthDialog);
+
+                if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                {
+                    _isAwaitingAdminAuth = false;
+                    _pendingAdminAction = "";
+                }
+            }
+        }
+
+        private async Task ExecutePurgeLogsAsync(string authorizedBy)
+        {
+            try
+            {
+                int deleted = await _database.PurgeOldLogsAsync(_pendingPurgeDays);
+
+                StatusTextBlock.Text = $"Log Purge Complete: {deleted} old record(s) permanently deleted.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+
+                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Master Administrator permanently purged {deleted} logs older than {_pendingPurgeDays} days.");
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Log purge failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+            }
+        }
+
+        private async Task ExecutePurgeStudentsAsync(string authorizedBy)
+        {
+            try
+            {
+                int deleted = await _database.PurgeInactiveStudentsAsync();
+
+                StatusTextBlock.Text = $"Roster Purge Complete: {deleted} inactive student profile(s) permanently deleted.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+
+                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Master Administrator permanently purged {deleted} inactive/graduated student profiles.");
+                await RefreshDashboardAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Student purge failed: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
             }
         }
@@ -1186,7 +1280,6 @@ namespace NFC_System
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();

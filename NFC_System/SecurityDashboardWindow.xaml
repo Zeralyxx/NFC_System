@@ -219,6 +219,37 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- System Maintenance (Data Purge) -->
+                            <Border x:Name="MaintenancePanel" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="System Maintenance" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Permanently delete outdated audit logs or remove inactive students to maintain system performance. Master Admin required." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox x:Name="LogPurgeDaysComboBox" Grid.Column="0" HorizontalAlignment="Stretch" SelectedIndex="0">
+                                            <ComboBoxItem Content="Older than 30 Days"/>
+                                            <ComboBoxItem Content="Older than 60 Days"/>
+                                            <ComboBoxItem Content="Older than 90 Days"/>
+                                            <ComboBoxItem Content="Older than 365 Days"/>
+                                        </ComboBox>
+                                        <Button x:Name="PurgeLogsButton" Grid.Column="1" Content="Purge Logs" Click="PurgeLogsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#EF4444" Foreground="White" BorderThickness="0" Width="120"/>
+                                    </Grid>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Delete Graduated, Inactive, and Expelled students." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <Button x:Name="PurgeStudentsButton" Grid.Column="1" Content="Purge Roster" Click="PurgeStudentsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#EF4444" Foreground="White" BorderThickness="0" Width="120"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

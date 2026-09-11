@@ -4,11 +4,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
-using System.IO.Ports;
-using WinRT.Interop;
-using Windows.Devices.Enumeration;
 using System.Linq;
 using System.Threading.Tasks;
+using WinRT.Interop;
+using Windows.Devices.Enumeration;
 
 namespace NFC_System
 {
@@ -20,9 +19,7 @@ namespace NFC_System
 
         private readonly DispatcherTimer _liveFeedTimer = new();
 
-        // THE FIX: State variables for Exit Interceptor and Serial Port
-        private SerialPort? _serialPort;
-        private string _currentPort = "COM3";
+        // THE FIX: State variables for Exit Interceptor
         private bool _isForceClosing = false;
         private bool _isAwaitingAdminAuth = false;
         private string _pendingAdminAction = "";
@@ -36,6 +33,9 @@ namespace NFC_System
             _engine = new VerificationEngine(_database);
 
             MaximizeWindow();
+
+            // THE FIX: Subscribe to the global hardware manager
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
 
             // Hook into native window closing event to intercept exit
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
@@ -53,6 +53,20 @@ namespace NFC_System
             };
 
             _ = InitializeAsync();
+        }
+
+        // ====================================================================
+        // THE FIX: SHARED HARDWARE SERVICE EVENT HANDLER
+        // ====================================================================
+        private void HardwareService_OnUidScanned(string uid)
+        {
+            // SMART ROUTING: Ignore scans if the Kiosk is actively tracking attendance
+            if (AppSession.IsKioskRunning) return;
+
+            if (_isAwaitingAdminAuth)
+            {
+                DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
+            }
         }
 
         // ====================================================================
@@ -166,43 +180,9 @@ namespace NFC_System
                 try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
             }
 
+            HardwareService.Disconnect();
             _isForceClosing = true;
             Application.Current.Exit();
-        }
-
-        // ====================================================================
-        // SERIAL PORT & AUTHORIZATION HANDLING
-        // ====================================================================
-        private void TryConnectSerial(string portName)
-        {
-            if (_serialPort != null && _serialPort.IsOpen) return;
-
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-            }
-            catch { }
-        }
-
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-                if (!line.StartsWith("UID=")) return;
-
-                string uid = line.Substring(4).Trim();
-
-                if (_isAwaitingAdminAuth)
-                {
-                    DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
-                }
-            }
-            catch { }
         }
 
         private async Task HandleAdminAuthScanAsync(string uid)
@@ -263,25 +243,12 @@ namespace NFC_System
             }
         }
 
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
-        }
-
         private void Window_Closed(object sender, WindowEventArgs args)
         {
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
-            CloseSerialPort();
+
+            // THE FIX: Unhook the hardware listener to prevent memory leaks
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
         }
 
         // ====================================================================
@@ -296,15 +263,6 @@ namespace NFC_System
 
             try
             {
-                // Retrieve COM port to establish background serial monitor for Admin Overrides
-                string nfcPort = "COM3";
-                if (DatabaseMonitor.IsOnline)
-                {
-                    try { nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
-                }
-                _currentPort = nfcPort;
-                TryConnectSerial(_currentPort);
-
                 var cameras = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
                 CameraComboBox.ItemsSource = cameras;
 
@@ -357,7 +315,6 @@ namespace NFC_System
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
@@ -388,9 +345,6 @@ namespace NFC_System
 
         private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
         {
-            // THE FIX: Explicitly yield the COM port to the new Kiosk Window so it doesn't get Access Denied
-            CloseSerialPort();
-
             var mode = (SecurityModeComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Standard";
             var type = (DirectionComboBox.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Entry";
 
@@ -406,9 +360,6 @@ namespace NFC_System
             {
                 KioskModeWindow.OnKioskOutcome -= ApplyOutcomeFromKiosk;
                 KioskModeWindow.OnKioskLog -= AddKioskLog;
-
-                // Reclaim the COM port when the Kiosk is closed so the Exit Interceptor works again
-                TryConnectSerial(_currentPort);
             };
 
             kiosk.Activate();
@@ -486,7 +437,6 @@ namespace NFC_System
                 VerificationLogListView.Items.Insert(0, outcome.LogLine);
             }
 
-            // THE FIX: Added "ACCOUNT_LOCKED" and "IRREGULAR_EXIT_SEQUENCE" so the hardware siren triggers during offline violations
             string[] severeErrors = { "PIN_LOCKED", "ACCOUNT_LOCKED", "ANTI_TAILGATING_VIOLATION", "IRREGULAR_EXIT_SEQUENCE", "UNAUTHORIZED_EVENT_ACCESS", "NOT_REGISTERED", "CREDENTIAL_MISMATCH", "INACTIVE_STUDENT" };
             if (severeErrors.Contains(outcome.ErrorCategory))
             {

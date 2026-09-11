@@ -2938,6 +2938,41 @@ public sealed class DatabaseService
         return list;
     }
 
+    public async Task<int> PurgeOldLogsAsync(int olderThanDays)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // Calculate the cutoff date
+        string cutoffDate = DateTime.Now.AddDays(-olderThanDays).ToString("yyyy-MM-dd HH:mm:ss");
+        int totalDeleted = 0;
+
+        string[] tables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance", "alerts" };
+
+        foreach (var table in tables)
+        {
+            // Only purge logs that are older than the cutoff AND have already been safely synced to the cloud
+            string sql = $"DELETE FROM {table} WHERE timestamp < @cutoff AND synced_to_cloud = 1";
+            using var cmd = new MySqlCommand(sql, connection);
+            cmd.Parameters.AddWithValue("@cutoff", cutoffDate);
+            totalDeleted += await cmd.ExecuteNonQueryAsync();
+        }
+
+        return totalDeleted;
+    }
+
+    public async Task<int> PurgeInactiveStudentsAsync()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        // Delete students who are no longer active in the university
+        string sql = "DELETE FROM students WHERE status IN ('Inactive', 'Graduated', 'Expelled')";
+        using var cmd = new MySqlCommand(sql, connection);
+
+        return await cmd.ExecuteNonQueryAsync();
+    }
+
     private static object NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
     private static string Value(object? value) => value == null || value == DBNull.Value ? "" : value.ToString() ?? "";
     public static string ToStorageValue(VerificationMode mode) => mode switch { VerificationMode.Fast => "Fast", VerificationMode.Standard => "Standard", VerificationMode.HighSecurity => "HighSecurity", _ => "Standard" };

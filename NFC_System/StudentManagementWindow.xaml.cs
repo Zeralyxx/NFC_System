@@ -6,7 +6,6 @@ using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
@@ -24,7 +23,6 @@ namespace NFC_System
         private int _currentPage = 1;
         private const int PageSize = 10;
 
-        private SerialPort? _serialPort;
         private bool _isAwaitingAdminAuth = false;
         private bool _isAwaitingNfcReplacementScan = false;
         private StudentRecord? _editingStudent = null;
@@ -45,8 +43,12 @@ namespace NFC_System
         private bool _origIsTemporary = false;
         private AdminActionType _pendingAction = AdminActionType.None;
 
+        private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
-        private string _pendingNfcReplacementReason = ""; // THE FIX: Add this line
+        private string _pendingNfcReplacementReason = "";
+
+        private bool _isForceClosing = false;
+        private byte[]? _currentPhotoData = null;
 
         public StudentManagementWindow()
         {
@@ -54,9 +56,19 @@ namespace NFC_System
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
             UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
+
+            // THE FIX: Subscribe to the global hardware manager
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
+
             this.Closed += Window_Closed;
             StudentListView.DoubleTapped += StudentListView_DoubleTapped;
             PopupStudentListView.DoubleTapped += PopupStudentListView_DoubleTapped;
+
+            // Hook into native window closing event to intercept exit
+            IntPtr hWnd = WindowNative.GetWindowHandle(this);
+            WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+            AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.Closing += AppWindow_Closing;
 
             EditDialogStudentIdBox.TextChanged += EditDialog_FieldChanged;
             EditDialogFullNameBox.TextChanged += EditDialog_FieldChanged;
@@ -82,6 +94,231 @@ namespace NFC_System
             _ = LoadDataAsync();
         }
 
+        // ====================================================================
+        // THE FIX: SHARED HARDWARE SERVICE EVENT HANDLER
+        // ====================================================================
+        private void HardwareService_OnUidScanned(string uid)
+        {
+            // SMART ROUTING: Ignore scans if the Kiosk is actively tracking attendance
+            if (AppSession.IsKioskRunning) return;
+
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (_isAwaitingNfcReplacementScan)
+                {
+                    await HandleNfcReplacementScanAsync(uid);
+                    return;
+                }
+
+                if (_isAwaitingAdminAuth)
+                {
+                    await HandleAdminAuthScanAsync(uid);
+                }
+            });
+        }
+
+        // ====================================================================
+        // RBAC SEVERITY-AWARE EXIT INTERCEPTOR
+        // ====================================================================
+        private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (_isForceClosing) return;
+            args.Cancel = true;
+
+            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            {
+                ContentDialog masterDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You may have unsynced offline data. Would you like to push it to the cloud before exiting?",
+                    PrimaryButtonText = "Push to Cloud & Exit",
+                    SecondaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await masterDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
+                else if (result == ContentDialogResult.Secondary) ForceExit();
+            }
+            else if (AppSession.IsAdmin)
+            {
+                ContentDialog adminDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "You have unsynced offline data. Pushing this to the cloud requires High-Severity authorization (PIN + NFC Tap).",
+                    PrimaryButtonText = "Authorize Sync & Exit",
+                    SecondaryButtonText = "Exit Without Syncing",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await adminDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    _pendingAdminAction = "EXIT_SYNC";
+                    _pendingAdminSeverity = "HIGH";
+
+                    AdminPinBox.Visibility = Visibility.Visible;
+                    AdminPinBox.Password = "";
+                    AuthStatusText.Visibility = Visibility.Collapsed;
+                    AdminAuthDescriptionText.Text = "To confirm this cloud upload, enter your 4-digit PIN and tap your Admin NFC card.";
+
+                    _isAwaitingAdminAuth = true;
+                    AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
+                    var authResult = await AdminAuthDialog.ShowAsync();
+
+                    if (authResult == ContentDialogResult.None && _isAwaitingAdminAuth)
+                    {
+                        _isAwaitingAdminAuth = false;
+                        _pendingAdminAction = "";
+                    }
+                }
+                else if (result == ContentDialogResult.Secondary)
+                {
+                    ForceExit();
+                }
+            }
+            else
+            {
+                ContentDialog restrictedDialog = new ContentDialog
+                {
+                    Title = "Exit Application",
+                    Content = "Warning: There may be unsynced offline data. You do not have Administrator privileges to push this data to the cloud. If you exit now, the data will remain safely stored locally.",
+                    PrimaryButtonText = "Exit Anyway",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                restrictedDialog.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+
+                var result = await restrictedDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary) ForceExit();
+            }
+        }
+
+        private async Task PerformCloudPushAndExit()
+        {
+            try
+            {
+                if (await _database.TestConnectionAsync())
+                {
+                    await _database.SyncOfflineLogsToServerAsync();
+                    await _database.PushStudentsToCloudAsync();
+                    await _database.PushStaffToCloudAsync();
+                    await _database.PushCoursesToCloudAsync();
+                    await _database.PushEventsToCloudAsync();
+                    await _database.PushEventApprovedStudentsToCloudAsync();
+                    await _database.PushLogsToCloudAsync();
+                    await _database.PushEventAttendanceToCloudAsync();
+                    await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_ACTION", "Authorized Cloud Push on Application Exit.");
+                }
+            }
+            catch { }
+
+            ForceExit();
+        }
+
+        private void ForceExit()
+        {
+            if (DatabaseMonitor.IsOnline && AppSession.IsLoggedIn)
+            {
+                try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
+            }
+
+            HardwareService.Disconnect();
+            _isForceClosing = true;
+            Application.Current.Exit();
+        }
+
+        private async Task HandleAdminAuthScanAsync(string uid)
+        {
+            string? role = null;
+            string? fullName = null;
+            string? pinHash = null;
+            string? pinSalt = null;
+
+            if (DatabaseMonitor.IsOnline)
+            {
+                try
+                {
+                    var details = await _database.GetStaffDetailsAsync(uid);
+                    role = details.Role;
+                    fullName = details.FullName;
+                    pinHash = details.PinHash;
+                    pinSalt = details.PinSalt;
+                }
+                catch { }
+            }
+
+            if (role == null && uid == "04:A1:B2:C3")
+            {
+                role = "Master Administrator";
+                fullName = "Master Admin";
+            }
+
+            bool isAuthorized = false;
+            string failReason = "";
+
+            if (_pendingAdminSeverity == "CRITICAL")
+            {
+                if (role == "Master Administrator")
+                {
+                    isAuthorized = true;
+                }
+                else
+                {
+                    failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
+                }
+            }
+            else if (_pendingAdminSeverity == "HIGH")
+            {
+                if (role == "Administrator" || role == "Master Administrator")
+                {
+                    string enteredPin = AdminPinBox.Password.Trim();
+                    if (string.IsNullOrEmpty(enteredPin)) failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
+                    else if (string.IsNullOrEmpty(pinHash)) failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
+                    else if (!PinHasher.VerifyPin(enteredPin, pinSalt!, pinHash)) failReason = "Authorization Denied: Invalid PIN.";
+                    else isAuthorized = true;
+                }
+                else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+            }
+            else if (_pendingAdminSeverity == "MODERATE")
+            {
+                if (role == "Administrator" || role == "Master Administrator")
+                {
+                    isAuthorized = true;
+                }
+                else failReason = "Authorization Denied: Tapped card is not an Administrator.";
+            }
+
+            if (isAuthorized)
+            {
+                _isAwaitingAdminAuth = false;
+                AdminAuthDialog.Hide();
+                PlaySuccessPing();
+
+                string authorizedByName = fullName ?? "Administrator";
+
+                if (_pendingAdminAction == "EXIT_SYNC")
+                {
+                    _pendingAdminAction = "";
+                    await PerformCloudPushAndExit();
+                }
+                else
+                {
+                    // THE FIX: Added the execution hook so standard Admins actually complete their actions!
+                    await ExecutePendingAdminAction(authorizedByName);
+                }
+            }
+            else
+            {
+                AuthStatusText.Text = failReason;
+                AuthStatusText.Visibility = Visibility.Visible;
+                PlayErrorAlert();
+            }
+        }
+
         private async Task LoadDataAsync()
         {
             try
@@ -91,11 +328,9 @@ namespace NFC_System
                     ConfigPanelContainer.Visibility = Visibility.Collapsed;
                 }
 
-                // THE FIX: Snapshot active UI selections to prevent wiping filters
                 string activeMainCourse = CourseFilterComboBox?.SelectedItem?.ToString() ?? "All Courses";
                 string activePopupCourse = PopupCourseFilter?.SelectedItem?.ToString() ?? "All Courses";
 
-                // THE FIX: Detach the event temporarily so rebuilding the list doesn't trigger _currentPage = 1
                 if (CourseFilterComboBox != null)
                     CourseFilterComboBox.SelectionChanged -= Filter_SelectionChanged;
 
@@ -142,11 +377,9 @@ namespace NFC_System
                     BatchCourseComboBox?.Items.Add("All Courses");
                 }
 
-                // THE FIX: Safely restore the previous selections without resetting the page
                 if (CourseFilterComboBox != null)
                 {
                     CourseFilterComboBox.SelectedItem = CourseFilterComboBox.Items.Contains(activeMainCourse) ? activeMainCourse : "All Courses";
-                    // Re-attach the listener once it's safe
                     CourseFilterComboBox.SelectionChanged += Filter_SelectionChanged;
                 }
 
@@ -156,14 +389,6 @@ namespace NFC_System
                 }
 
                 if (BatchCourseComboBox != null) BatchCourseComboBox.SelectedIndex = 0;
-
-                string nfcPort = "COM3";
-                if (DatabaseMonitor.IsOnline)
-                {
-                    try { nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
-                }
-
-                TryConnectSerial(nfcPort);
 
                 RefreshDataGrid();
 
@@ -309,123 +534,6 @@ namespace NFC_System
             });
         }
 
-        private void TryConnectSerial(string portName)
-        {
-            if (_serialPort != null && _serialPort.IsOpen) return;
-
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-            }
-            catch { }
-        }
-
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-                if (!line.StartsWith("UID=")) return;
-
-                string uid = line.Substring(4).Trim();
-
-                if (_isAwaitingNfcReplacementScan)
-                {
-                    DispatcherQueue.TryEnqueue(async () => await HandleNfcReplacementScanAsync(uid));
-                    return;
-                }
-
-                if (_isAwaitingAdminAuth)
-                {
-                    DispatcherQueue.TryEnqueue(async () =>
-                    {
-                        string? role = null;
-                        string? fullName = null;
-                        string? pinHash = null;
-                        string? pinSalt = null;
-
-                        if (DatabaseMonitor.IsOnline)
-                        {
-                            try
-                            {
-                                var details = await _database.GetStaffDetailsAsync(uid);
-                                role = details.Role;
-                                fullName = details.FullName;
-                                pinHash = details.PinHash;
-                                pinSalt = details.PinSalt;
-                            }
-                            catch { }
-                        }
-
-                        if (role == null && uid == "04:A1:B2:C3")
-                        {
-                            role = "Master Administrator";
-                            fullName = "Master Admin";
-                        }
-
-                        bool isAuthorized = false;
-                        string failReason = "";
-
-                        if (_pendingAdminSeverity == "CRITICAL")
-                        {
-                            if (role == "Master Administrator") isAuthorized = true;
-                            else failReason = "Authorization Denied: This action strictly requires a Master Administrator.";
-                        }
-                        else if (_pendingAdminSeverity == "HIGH")
-                        {
-                            if (role == "Administrator" || role == "Master Administrator")
-                            {
-                                string enteredPin = AdminPinBox.Password.Trim();
-                                if (string.IsNullOrEmpty(enteredPin)) failReason = "Authorization Denied: A 4-digit Staff PIN is required.";
-                                else if (string.IsNullOrEmpty(pinHash)) failReason = "Authorization Denied: Tapped account does not have a PIN configured.";
-                                else if (!PinHasher.VerifyPin(enteredPin, pinSalt!, pinHash)) failReason = "Authorization Denied: Invalid PIN.";
-                                else isAuthorized = true;
-                            }
-                            else failReason = "Authorization Denied: Tapped card is not an Administrator.";
-                        }
-                        else if (_pendingAdminSeverity == "MODERATE")
-                        {
-                            if (role == "Administrator" || role == "Master Administrator") isAuthorized = true;
-                            else failReason = "Authorization Denied: Tapped card is not an Administrator.";
-                        }
-
-                        if (isAuthorized)
-                        {
-                            _isAwaitingAdminAuth = false;
-                            AdminAuthDialog.Hide();
-                            await ExecutePendingAdminAction(fullName ?? "Admin");
-                        }
-                        else
-                        {
-                            AuthStatusText.Text = failReason;
-                            AuthStatusText.Visibility = Visibility.Visible;
-                            PlayErrorAlert();
-                        }
-                    });
-                }
-            }
-            catch { }
-        }
-
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
-        }
-
         private async void StudentListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
             if (AppSession.IsEventOrganizer) return;
@@ -500,8 +608,6 @@ namespace NFC_System
             EditStudentDialog.XamlRoot = this.Content.XamlRoot;
             await EditStudentDialog.ShowAsync();
         }
-
-        private byte[]? _currentPhotoData = null;
 
         private async void EditDialogUploadPhoto_Click(object sender, RoutedEventArgs e)
         {
@@ -685,7 +791,6 @@ namespace NFC_System
                 return;
             }
 
-            // THE FIX: Save the reason into memory before the dialog hides and wipes the UI!
             _pendingNfcReplacementReason = NfcReplacementReasonBox.Text.Trim();
             EditStudentDialog.Hide();
 
@@ -712,7 +817,9 @@ namespace NFC_System
         private void Window_Closed(object sender, WindowEventArgs args)
         {
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
-            CloseSerialPort();
+
+            // THE FIX: Unhook the hardware listener to prevent memory leaks
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
         }
 
         private void UpdateOfflineBanner(bool isOnline)
@@ -1118,7 +1225,6 @@ namespace NFC_System
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
             new MainWindow().Activate();
             this.Close();
         }

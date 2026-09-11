@@ -4,7 +4,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
 using System.IO;
-using System.IO.Ports;
 using System.Threading.Tasks;
 using WinRT.Interop;
 using MySqlConnector;
@@ -21,11 +20,13 @@ namespace NFC_System
         public static bool IsEventOrganizer { get; set; } = false;
         public static string CurrentStaffName { get; set; } = "";
         public static string CurrentStaffRoleLabel { get; set; } = "";
+
+        // THE FIX: Global tracker to know if the autonomous gate is active
+        public static bool IsKioskRunning { get; set; } = false;
     }
 
     public sealed partial class MainWindow : Window
     {
-        private SerialPort? _serialPort;
         private readonly DatabaseService _database = new();
         private string _currentPort = "COM3";
         private bool _isAuthenticating = false;
@@ -56,6 +57,9 @@ namespace NFC_System
             appWindow.Closing += AppWindow_Closing;
 
             this.Closed += MainWindow_Closed;
+
+            // THE FIX: Subscribe to the global hardware service
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
 
             DatabaseService.LoadConfig();
 
@@ -111,7 +115,7 @@ namespace NFC_System
 
                     _isAwaitingAdminAuth = true;
 
-                    TryConnectSerial(_currentPort);
+                    HardwareService.Connect(_currentPort);
 
                     AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
                     var authResult = await AdminAuthDialog.ShowAsync();
@@ -120,8 +124,6 @@ namespace NFC_System
                     {
                         _isAwaitingAdminAuth = false;
                         _pendingAdminAction = "";
-
-                        CloseSerialPort();
                     }
                 }
                 else if (result == ContentDialogResult.Secondary)
@@ -196,6 +198,9 @@ namespace NFC_System
             {
                 try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
             }
+
+            // Close the global hardware service completely before exit
+            HardwareService.Disconnect();
 
             _isForceClosing = true;
             Application.Current.Exit();
@@ -273,7 +278,8 @@ namespace NFC_System
                     _currentPort = "COM3";
                 }
 
-                bool isConnected = TryConnectSerial(_currentPort);
+                // THE FIX: Use the shared hardware manager
+                bool isConnected = HardwareService.Connect(_currentPort);
 
                 LoginLoadingRing.IsActive = false;
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
@@ -337,7 +343,7 @@ namespace NFC_System
                     LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
                     _currentPort = "COM3";
-                    TryConnectSerial(_currentPort);
+                    HardwareService.Connect(_currentPort);
                 }
             }
         }
@@ -406,46 +412,23 @@ namespace NFC_System
             }
         }
 
-        private bool TryConnectSerial(string portName)
+        // THE FIX: Listen to the global hardware manager for NFC taps
+        private void HardwareService_OnUidScanned(string uid)
         {
-            try
+            if (_isAwaitingAdminAuth)
             {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-                return true;
+                DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
+                return;
             }
-            catch
-            {
-                return false;
-            }
-        }
 
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
+            // SMART ROUTING: If the guard is logged in AND the Kiosk is running, 
+            // the Dashboard ignores the scan entirely so the Kiosk can process the student!
+            if (AppSession.IsLoggedIn && AppSession.IsKioskRunning) return;
 
-                if (line.StartsWith("UID="))
-                {
-                    string uid = line.Substring(4).Trim();
-
-                    if (_isAwaitingAdminAuth)
-                    {
-                        DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
-                        return;
-                    }
-
-                    if (_isAuthenticating || AppSession.IsLoggedIn) return;
-
-                    _isAuthenticating = true;
-                    DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
-                }
-            }
-            catch { }
+            // If we are logged OUT, or the Kiosk isn't running, process it as a staff login
+            if (_isAuthenticating) return;
+            _isAuthenticating = true;
+            DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
         }
 
         private async Task HandleAdminAuthScanAsync(string uid)
@@ -638,8 +621,6 @@ namespace NFC_System
 
         private void ApplyRoleBasedAccess()
         {
-            CloseSerialPort();
-
             LoginLoadingRing.IsActive = false;
             LoginLoadingRing.Visibility = Visibility.Collapsed;
             LoginStatusText.Text = "Please tap your Staff or Admin NFC ID to log in.";
@@ -740,8 +721,6 @@ namespace NFC_System
             LoginLoadingRing.IsActive = false;
             LoginLoadingRing.Visibility = Visibility.Collapsed;
             LoginOverlay.Visibility = Visibility.Visible;
-
-            TryConnectSerial(_currentPort);
         }
 
         private void SimulateAdminLogin_Click(object sender, RoutedEventArgs e) => ProcessLoginScan("04:A1:B2:C3");
@@ -779,12 +758,8 @@ namespace NFC_System
             this.Close();
         }
 
-        // ====================================================================
-        // THE FIX: SETTINGS DIALOG LAUNCHER & LOGIC
-        // ====================================================================
         private async void DashboardSettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            // Populate the dialog with current config before showing it
             SettingsIpBox.Text = DatabaseService.ServerIp;
             SettingsStatusText.Visibility = Visibility.Collapsed;
 
@@ -800,10 +775,8 @@ namespace NFC_System
 
             SettingsDialog.XamlRoot = this.Content.XamlRoot;
 
-            // THE FIX: Wait for the dialog to close, capture the result
             var result = await SettingsDialog.ShowAsync();
 
-            // Only show the success dialog AFTER the settings dialog has safely closed
             if (result == ContentDialogResult.Primary)
             {
                 ContentDialog successDialog = new ContentDialog
@@ -819,7 +792,6 @@ namespace NFC_System
 
         private async void SettingsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
         {
-            // We use a deferral so we can perform async operations and cancel the close if validation fails
             var deferral = args.GetDeferral();
             try
             {
@@ -829,26 +801,22 @@ namespace NFC_System
                 {
                     SettingsStatusText.Text = "Please enter a valid IP address.";
                     SettingsStatusText.Visibility = Visibility.Visible;
-                    args.Cancel = true; // Stops the dialog from closing
+                    args.Cancel = true;
                     return;
                 }
 
-                // Save Local IP Text File
                 DatabaseService.SaveConfig(newIp);
 
-                // Save Policy to MySQL if online
                 if (DatabaseMonitor.IsOnline)
                 {
                     await _database.SetSettingAsync("strict_entry_policy", StrictEntryToggle.IsOn.ToString());
                 }
-
-                // THE FIX: The success popup was removed from here to prevent the crash!
             }
             catch (Exception ex)
             {
                 SettingsStatusText.Text = $"Failed to save: {ex.Message}";
                 SettingsStatusText.Visibility = Visibility.Visible;
-                args.Cancel = true; // Stops the dialog from closing
+                args.Cancel = true;
             }
             finally
             {
@@ -865,7 +833,9 @@ namespace NFC_System
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
-            CloseSerialPort();
+
+            // THE FIX: Unhook the event when leaving the dashboard so we don't cause memory leaks
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
         }
 
         private void UpdateOfflineBanner(bool isOnline)
@@ -879,26 +849,6 @@ namespace NFC_System
             });
         }
 
-        private void CloseSerialPort()
-        {
-            SerialPort? portToClose = _serialPort;
-            _serialPort = null;
-
-            if (portToClose != null)
-            {
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        portToClose.DataReceived -= SerialPort_DataReceived;
-                        if (portToClose.IsOpen) portToClose.Close();
-                        portToClose.Dispose();
-                    }
-                    catch { }
-                });
-            }
-        }
-
         private async void RefreshComPort_Click(object sender, RoutedEventArgs e)
         {
             LoginStatusText.Text = "Reconnecting NFC Terminal...";
@@ -906,21 +856,7 @@ namespace NFC_System
             LoginLoadingRing.IsActive = true;
             LoginLoadingRing.Visibility = Visibility.Visible;
 
-            if (_serialPort != null)
-            {
-                try
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    if (_serialPort.IsOpen) _serialPort.Close();
-                    _serialPort.Dispose();
-                }
-                catch { }
-                finally
-                {
-                    _serialPort = null;
-                }
-            }
-
+            HardwareService.Disconnect();
             await Task.Delay(500);
 
             if (DatabaseMonitor.IsOnline)
@@ -928,7 +864,7 @@ namespace NFC_System
                 try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
             }
 
-            bool isConnected = TryConnectSerial(_currentPort);
+            bool isConnected = HardwareService.Connect(_currentPort);
 
             LoginLoadingRing.IsActive = false;
             LoginLoadingRing.Visibility = Visibility.Collapsed;
