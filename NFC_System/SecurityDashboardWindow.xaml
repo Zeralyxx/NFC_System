@@ -231,10 +231,9 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <ComboBox x:Name="LogPurgeDaysComboBox" Grid.Column="0" HorizontalAlignment="Stretch" SelectedIndex="0">
-                                            <ComboBoxItem Content="Older than 30 Days"/>
-                                            <ComboBoxItem Content="Older than 60 Days"/>
-                                            <ComboBoxItem Content="Older than 90 Days"/>
-                                            <ComboBoxItem Content="Older than 365 Days"/>
+                                            <ComboBoxItem Content="Older than 1 Year" Tag="365"/>
+                                            <ComboBoxItem Content="Older than 5 Years" Tag="1825"/>
+                                            <ComboBoxItem Content="Older than 10 Years" Tag="3650"/>
                                         </ComboBox>
                                         <Button x:Name="PurgeLogsButton" Grid.Column="1" Content="Purge Logs" Click="PurgeLogsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#EF4444" Foreground="White" BorderThickness="0" Width="120"/>
                                     </Grid>

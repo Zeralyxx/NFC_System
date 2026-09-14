@@ -38,7 +38,8 @@ namespace NFC_System
 
         private string _pendingHealStudentId = "";
         private string _pendingHealState = "";
-        private int _pendingPurgeDays = 30; // THE FIX: State for Log Purging
+        private int _pendingPurgeDays = 365;
+        private string _pendingPurgeLabel = "1 year";
 
         private bool _isForceClosing = false;
         private readonly DispatcherTimer _searchDebounceTimer = new();
@@ -553,16 +554,21 @@ namespace NFC_System
         // ====================================================================
         private async void PurgeLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            int days = 30;
-            string selection = (LogPurgeDaysComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
-            if (selection.Contains("60")) days = 60;
-            else if (selection.Contains("90")) days = 90;
-            else if (selection.Contains("365")) days = 365;
+            int days = 365;
+            var selectedItem = LogPurgeDaysComboBox.SelectedItem as ComboBoxItem;
+            string retentionLabel = (selectedItem?.Content?.ToString() ?? "Older than 1 Year")
+                .Replace("Older than ", "", StringComparison.OrdinalIgnoreCase)
+                .ToLowerInvariant();
+
+            if (int.TryParse(selectedItem?.Tag?.ToString(), out int selectedDays))
+            {
+                days = selectedDays;
+            }
 
             ContentDialog confirmDialog = new ContentDialog
             {
                 Title = "Confirm Log Purge",
-                Content = $"Are you absolutely sure you want to PERMANENTLY delete all audit logs older than {days} days?\n\nOnly logs that have already been synced to the cloud will be deleted. This action cannot be undone.",
+                Content = $"Are you absolutely sure you want to PERMANENTLY delete all audit logs older than {retentionLabel}?\n\nOnly logs that have already been synced to the cloud will be deleted. This action cannot be undone.",
                 PrimaryButtonText = "Yes, Purge Data",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close
@@ -572,6 +578,7 @@ namespace NFC_System
             if (confirmResult != ContentDialogResult.Primary) return;
 
             _pendingPurgeDays = days;
+            _pendingPurgeLabel = retentionLabel;
 
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
@@ -649,7 +656,7 @@ namespace NFC_System
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                 PlaySuccessPing();
 
-                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Master Administrator permanently purged {deleted} logs older than {_pendingPurgeDays} days.");
+                await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Master Administrator permanently purged {deleted} logs older than {_pendingPurgeLabel}.");
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)

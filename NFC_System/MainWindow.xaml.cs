@@ -421,33 +421,14 @@ namespace NFC_System
                 return;
             }
 
-            if (_isAuthenticating || AppSession.IsLoggedIn) return;
+            // SMART ROUTING: If the guard is logged in AND the Kiosk is running, 
+            // the Dashboard ignores the scan entirely so the Kiosk can process the student!
+            if (AppSession.IsLoggedIn && AppSession.IsKioskRunning) return;
 
+            // If we are logged OUT, or the Kiosk isn't running, process it as a staff login
+            if (_isAuthenticating) return;
             _isAuthenticating = true;
-
-            // SMART FILTER: Run DB check on a background thread to prevent UI lockups!
-            Task.Run(async () =>
-            {
-                string? staffRole = null;
-                if (DatabaseMonitor.IsOnline)
-                {
-                    try { staffRole = await _database.GetStaffRoleAsync(uid); } catch { }
-                }
-
-                if (uid == "04:A1:B2:C3" || uid == "VALID_ADMIN_CARD" || uid == "VALID_STAFF_CARD" || uid == "VALID_EVENT_CARD")
-                    staffRole = "Simulated Staff";
-
-                if (!string.IsNullOrEmpty(staffRole))
-                {
-                    // It is a staff card. Send to Dashboard UI thread for login!
-                    DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
-                }
-                else
-                {
-                    // It's a student card. Silently drop it so the Kiosk can handle it.
-                    _isAuthenticating = false;
-                }
-            });
+            DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
         }
 
         private async Task HandleAdminAuthScanAsync(string uid)
