@@ -380,6 +380,7 @@ namespace NFC_System
             {
                 await _database.EnsureSchemaAsync();
                 await RefreshDashboardAsync();
+                await UpdatePurgeMaintenanceStatusAsync();
             }
             catch (Exception ex)
             {
@@ -439,6 +440,17 @@ namespace NFC_System
 
                 if (UploadDataButton != null) UploadDataButton.IsEnabled = isOnline;
                 if (GetNewDataButton != null) GetNewDataButton.IsEnabled = isOnline;
+                if (PurgeLogsButton != null) PurgeLogsButton.IsEnabled = isOnline;
+
+                if (CloudBackupStatusText != null)
+                {
+                    CloudBackupStatusText.Text = isOnline
+                        ? "Cloud backup: connected"
+                        : "Cloud backup: unavailable - local cleanup is paused";
+                    CloudBackupStatusText.Foreground = new SolidColorBrush(isOnline
+                        ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
+                        : Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                }
             });
         }
 
@@ -462,6 +474,46 @@ namespace NFC_System
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             _ = RefreshDashboardAsync();
+        }
+
+        private async void PurgeRetention_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            await UpdatePurgeMaintenanceStatusAsync();
+        }
+
+        private async Task UpdatePurgeMaintenanceStatusAsync()
+        {
+            if (MaintenancePanel == null || LocalCleanupPreviewText == null || LastCleanupText == null) return;
+
+            if (!DatabaseMonitor.IsOnline)
+            {
+                LocalCleanupPreviewText.Text = "Connect to the cloud backup to check which records can be safely removed.";
+                return;
+            }
+
+            int days = 365;
+            if (LogPurgeDaysComboBox.SelectedItem is ComboBoxItem selectedItem &&
+                int.TryParse(selectedItem.Tag?.ToString(), out int selectedDays))
+            {
+                days = selectedDays;
+            }
+
+            try
+            {
+                int eligibleRecords = await _database.GetPurgeableLogCountAsync(days);
+                LocalCleanupPreviewText.Text = eligibleRecords == 0
+                    ? "No cloud-backed records are eligible for local cleanup."
+                    : $"{eligibleRecords:N0} cloud-backed record(s) are eligible for local cleanup.";
+
+                string lastCleanup = await _database.GetSettingAsync("last_local_log_cleanup", "");
+                LastCleanupText.Text = string.IsNullOrWhiteSpace(lastCleanup)
+                    ? "No local cleanup has been recorded."
+                    : $"Last local cleanup: {lastCleanup}";
+            }
+            catch (Exception ex)
+            {
+                LocalCleanupPreviewText.Text = $"Unable to check local cleanup status: {ex.Message}";
+            }
         }
 
         // ====================================================================
@@ -556,20 +608,38 @@ namespace NFC_System
         {
             int days = 365;
             var selectedItem = LogPurgeDaysComboBox.SelectedItem as ComboBoxItem;
-            string retentionLabel = (selectedItem?.Content?.ToString() ?? "Older than 1 Year")
-                .Replace("Older than ", "", StringComparison.OrdinalIgnoreCase)
-                .ToLowerInvariant();
+            string retentionLabel = selectedItem?.Content?.ToString() ?? "1 year";
 
             if (int.TryParse(selectedItem?.Tag?.ToString(), out int selectedDays))
             {
                 days = selectedDays;
             }
 
+            int eligibleRecords;
+            try
+            {
+                eligibleRecords = await _database.GetPurgeableLogCountAsync(days);
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"Unable to check purge eligibility: {ex.Message}";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
+                return;
+            }
+
+            if (eligibleRecords == 0)
+            {
+                StatusTextBlock.Text = $"No cloud-synced audit records older than {retentionLabel} are eligible for local cleanup.";
+                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250));
+                return;
+            }
+
             ContentDialog confirmDialog = new ContentDialog
             {
-                Title = "Confirm Log Purge",
-                Content = $"Are you absolutely sure you want to PERMANENTLY delete all audit logs older than {retentionLabel}?\n\nOnly logs that have already been synced to the cloud will be deleted. This action cannot be undone.",
-                PrimaryButtonText = "Yes, Purge Data",
+                Title = "Confirm Local Cleanup",
+                Content = $"{eligibleRecords} audit record(s) older than {retentionLabel} are eligible for local cleanup.\n\nOnly records already confirmed in the cloud backup will be deleted from this device. The cloud history will not be changed.",
+                PrimaryButtonText = "Clean Local Storage",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close
             };
@@ -657,6 +727,10 @@ namespace NFC_System
                 PlaySuccessPing();
 
                 await _database.AddAlertAsync(authorizedBy, "ADMIN_OVERRIDE", $"Master Administrator permanently purged {deleted} logs older than {_pendingPurgeLabel}.");
+                await _database.SetSettingAsync(
+                    "last_local_log_cleanup",
+                    $"{DateTime.Now:MMM d, yyyy h:mm tt} by {authorizedBy} ({deleted:N0} record(s))");
+                await UpdatePurgeMaintenanceStatusAsync();
                 await RefreshDashboardAsync();
             }
             catch (Exception ex)

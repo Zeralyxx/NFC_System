@@ -50,6 +50,8 @@ namespace NFC_System
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
         private readonly DispatcherTimer _inactivityTimer = new();
+        private static readonly TimeSpan ResultDisplayDuration = TimeSpan.FromSeconds(10);
+        private int _stateChangeVersion;
 
         private MediaFrameReader? _frameReader;
         private readonly SoftwareBitmapSource _previewSource = new();
@@ -108,6 +110,8 @@ namespace NFC_System
             AppSession.IsKioskRunning = true;
             HardwareService.OnUidScanned += HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput += HardwareService_OnKeypadInput;
+            DatabaseMonitor.ConnectionStatusChanged += DatabaseMonitor_ConnectionStatusChanged;
+            UpdateKioskHealthStatus();
 
             _originatingMode = originatingMode;
             _contextDetails = contextDetails;
@@ -187,7 +191,13 @@ namespace NFC_System
         // ====================================================================
         private async void HardwareService_OnUidScanned(string uid)
         {
-            if (_currentStage != AuthenticationStage.Idle) return;
+            // A new student may replace a visible result, but cannot interrupt PIN or QR verification.
+            if (_currentStage != AuthenticationStage.Idle &&
+                _currentStage != AuthenticationStage.AccessGranted &&
+                _currentStage != AuthenticationStage.AccessDenied)
+            {
+                return;
+            }
 
             if (await IsStaffCredentialAsync(uid)) return;
 
@@ -342,6 +352,24 @@ namespace NFC_System
             SetState(AuthenticationStage.Idle);
         }
 
+        private void DatabaseMonitor_ConnectionStatusChanged(bool isOnline)
+        {
+            DispatcherQueue.TryEnqueue(UpdateKioskHealthStatus);
+        }
+
+        private void UpdateKioskHealthStatus()
+        {
+            if (KioskHealthText == null) return;
+
+            bool readerConnected = HardwareService.IsConnected;
+            bool cloudConnected = DatabaseMonitor.IsOnline;
+            KioskHealthText.Text = $"READER {(readerConnected ? "READY" : "OFFLINE")}   CLOUD {(cloudConnected ? "CONNECTED" : "OFFLINE")}";
+            KioskHealthText.Foreground = new SolidColorBrush(
+                readerConnected && cloudConnected
+                    ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
+                    : Windows.UI.Color.FromArgb(255, 248, 113, 113));
+        }
+
         private void KioskStateController_ModeChanged(VerificationMode newMode, TransactionType newType)
         {
             DispatcherQueue.TryEnqueue(() =>
@@ -374,11 +402,13 @@ namespace NFC_System
 
                 string nfcPort = await _database.GetSettingAsync("nfc_com_port", "COM3");
                 HardwareService.Connect(nfcPort);
+                UpdateKioskHealthStatus();
             }
             catch
             {
                 _currentMode = KioskStateController.CurrentMode;
                 HardwareService.Connect("COM3");
+                UpdateKioskHealthStatus();
             }
 
             try
@@ -400,6 +430,7 @@ namespace NFC_System
 
             // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
+            DatabaseMonitor.ConnectionStatusChanged -= DatabaseMonitor_ConnectionStatusChanged;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
 
@@ -419,6 +450,7 @@ namespace NFC_System
 
             // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
+            DatabaseMonitor.ConnectionStatusChanged -= DatabaseMonitor_ConnectionStatusChanged;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
 
@@ -465,6 +497,7 @@ namespace NFC_System
 
         private async void ExecuteStateChange(AuthenticationStage newState)
         {
+            int stateChangeVersion = ++_stateChangeVersion;
             _currentStage = newState;
             UpdateUiForState(newState);
 
@@ -485,14 +518,14 @@ namespace NFC_System
 
             if (newState == AuthenticationStage.AccessGranted)
             {
-                await Task.Delay(400);
-                if (_currentStage == AuthenticationStage.AccessGranted)
+                await Task.Delay(ResultDisplayDuration);
+                if (_currentStage == AuthenticationStage.AccessGranted && stateChangeVersion == _stateChangeVersion)
                     SetState(AuthenticationStage.Idle);
             }
             else if (newState == AuthenticationStage.AccessDenied)
             {
-                await Task.Delay(1200);
-                if (_currentStage == AuthenticationStage.AccessDenied)
+                await Task.Delay(ResultDisplayDuration);
+                if (_currentStage == AuthenticationStage.AccessDenied && stateChangeVersion == _stateChangeVersion)
                     SetState(AuthenticationStage.Idle);
             }
         }
@@ -558,7 +591,19 @@ namespace NFC_System
 
         public async void ProcessNfcScan(string uid)
         {
-            if (_currentStage != AuthenticationStage.Idle) return;
+            if (_currentStage != AuthenticationStage.Idle &&
+                _currentStage != AuthenticationStage.AccessGranted &&
+                _currentStage != AuthenticationStage.AccessDenied)
+            {
+                return;
+            }
+
+            // A fresh student scan replaces the currently visible result immediately.
+            if (_currentStage == AuthenticationStage.AccessGranted ||
+                _currentStage == AuthenticationStage.AccessDenied)
+            {
+                ExecuteStateChange(AuthenticationStage.Idle);
+            }
 
             if (uid == _lastScannedNfcUid && (DateTime.Now - _lastNfcScanTime).TotalSeconds < 3)
                 return;

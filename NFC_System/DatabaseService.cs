@@ -2938,24 +2938,51 @@ public sealed class DatabaseService
         return list;
     }
 
-    public async Task<int> PurgeOldLogsAsync(int olderThanDays)
+    public async Task<int> GetPurgeableLogCountAsync(int olderThanDays)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        // Calculate the cutoff date
-        string cutoffDate = DateTime.Now.AddDays(-olderThanDays).ToString("yyyy-MM-dd HH:mm:ss");
-        int totalDeleted = 0;
+        DateTime cutoffDate = DateTime.Now.AddDays(-olderThanDays);
+        int totalRecords = 0;
 
         string[] tables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance", "alerts" };
 
         foreach (var table in tables)
         {
-            // Only purge logs that are older than the cutoff AND have already been safely synced to the cloud
-            string sql = $"DELETE FROM {table} WHERE timestamp < @cutoff AND synced_to_cloud = 1";
+            string sql = $"SELECT COUNT(*) FROM {table} WHERE timestamp < @cutoff AND synced_to_cloud = 1";
             using var cmd = new MySqlCommand(sql, connection);
             cmd.Parameters.AddWithValue("@cutoff", cutoffDate);
-            totalDeleted += await cmd.ExecuteNonQueryAsync();
+            totalRecords += Convert.ToInt32(await cmd.ExecuteScalarAsync());
+        }
+
+        return totalRecords;
+    }
+
+    public async Task<int> PurgeOldLogsAsync(int olderThanDays)
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+
+        DateTime cutoffDate = DateTime.Now.AddDays(-olderThanDays);
+        int totalDeleted = 0;
+        const int batchSize = 1000;
+
+        string[] tables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance", "alerts" };
+
+        foreach (var table in tables)
+        {
+            int deletedInBatch;
+            do
+            {
+                // The cloud is the system of record: only locally remove rows confirmed as synced.
+                string sql = $"DELETE FROM {table} WHERE timestamp < @cutoff AND synced_to_cloud = 1 LIMIT {batchSize}";
+                using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@cutoff", cutoffDate);
+                deletedInBatch = await cmd.ExecuteNonQueryAsync();
+                totalDeleted += deletedInBatch;
+            }
+            while (deletedInBatch == batchSize);
         }
 
         return totalDeleted;

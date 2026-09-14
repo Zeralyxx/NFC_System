@@ -222,21 +222,31 @@
                             <!-- System Maintenance (Data Purge) -->
                             <Border x:Name="MaintenancePanel" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
-                                    <TextBlock Text="System Maintenance" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                    <TextBlock Text="Permanently delete outdated audit logs or remove inactive students to maintain system performance. Master Admin required." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Local Storage Cleanup" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Your cloud backup retains the complete audit history. Remove only cloud-backed records from this device to keep local storage responsive." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
 
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <ComboBox x:Name="LogPurgeDaysComboBox" Grid.Column="0" HorizontalAlignment="Stretch" SelectedIndex="0">
-                                            <ComboBoxItem Content="Older than 1 Year" Tag="365"/>
-                                            <ComboBoxItem Content="Older than 5 Years" Tag="1825"/>
-                                            <ComboBoxItem Content="Older than 10 Years" Tag="3650"/>
-                                        </ComboBox>
-                                        <Button x:Name="PurgeLogsButton" Grid.Column="1" Content="Purge Logs" Click="PurgeLogsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#EF4444" Foreground="White" BorderThickness="0" Width="120"/>
-                                    </Grid>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="CLOUD BACKUP" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="CloudBackupStatusText" Text="Checking backup connection..." Foreground="#60A5FA" FontSize="13" FontWeight="SemiBold"/>
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Keep local logs for" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox x:Name="LogPurgeDaysComboBox" Grid.Column="0" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="PurgeRetention_SelectionChanged">
+                                                <ComboBoxItem Content="1 year" Tag="365"/>
+                                                <ComboBoxItem Content="5 years" Tag="1825"/>
+                                                <ComboBoxItem Content="10 years" Tag="3650"/>
+                                            </ComboBox>
+                                            <Button x:Name="PurgeLogsButton" Grid.Column="1" Content="Clean Local Storage" Click="PurgeLogsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#D97706" Foreground="White" BorderThickness="0" Width="158"/>
+                                        </Grid>
+                                        <TextBlock x:Name="LocalCleanupPreviewText" Text="Checking eligible cloud-backed records..." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="LastCleanupText" Text="No local cleanup has been recorded." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                    </StackPanel>
 
                                     <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>

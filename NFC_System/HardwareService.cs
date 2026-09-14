@@ -8,6 +8,8 @@ namespace NFC_System
     {
         private static SerialPort? _serialPort;
 
+        public static bool IsConnected => _serialPort?.IsOpen == true;
+
         // Global events that any window can listen to
         public static event Action<string>? OnUidScanned;
         public static event Action<string>? OnKeypadInput;
