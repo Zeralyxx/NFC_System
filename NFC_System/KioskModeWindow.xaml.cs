@@ -104,7 +104,6 @@ namespace NFC_System
         {
             this.InitializeComponent();
 
-            // THE FIX: Take control of the hardware flow globally
             AppSession.IsKioskRunning = true;
             HardwareService.OnUidScanned += HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput += HardwareService_OnKeypadInput;
@@ -135,30 +134,27 @@ namespace NFC_System
             // OFFLINE CACHE CONFIGURATION (100% BACKGROUNDED)
             // --------------------------------------------------------
 
-            // Force an instant download right when the app opens!
             Task.Run(async () => {
                 if (DatabaseMonitor.IsOnline)
                 {
-                    await _database.SyncServerTimeOffsetAsync(); // <--- SYNCS CLOCK SKEW
+                    await _database.SyncServerTimeOffsetAsync();
                     await _database.UpdateShadowCacheAsync();
                 }
             });
 
-            // 1. Silent Background Pull (Every 5 Minutes)
             _shadowCacheTimer.Interval = TimeSpan.FromMinutes(5);
             _shadowCacheTimer.Tick += (s, e) =>
             {
                 Task.Run(async () => {
                     if (DatabaseMonitor.IsOnline)
                     {
-                        await _database.SyncServerTimeOffsetAsync(); // <--- RECALCULATES CLOCK SKEW
+                        await _database.SyncServerTimeOffsetAsync();
                         await _database.UpdateShadowCacheAsync();
                     }
                 });
             };
             _shadowCacheTimer.Start();
 
-            // 2. Silent Recovery Push (Checks Every 5 Seconds)
             _syncRecoveryTimer.Interval = TimeSpan.FromSeconds(5);
             _syncRecoveryTimer.Tick += (s, e) =>
             {
@@ -187,10 +183,33 @@ namespace NFC_System
         // ====================================================================
         private void HardwareService_OnUidScanned(string uid)
         {
-            if (_currentStage == AuthenticationStage.Idle)
+            if (_currentStage != AuthenticationStage.Idle) return;
+
+            DispatcherQueue.TryEnqueue(async () =>
             {
-                DispatcherQueue.TryEnqueue(() => ProcessNfcScan(uid));
-            }
+                // SMART FILTER: Check if this UID belongs to a Guard/Admin first
+                string? staffRole = null;
+
+                if (DatabaseMonitor.IsOnline)
+                {
+                    try { staffRole = await _database.GetStaffRoleAsync(uid); } catch { }
+                }
+
+                // Check for simulation/debug buttons from MainWindow
+                if (uid == "04:A1:B2:C3" || uid == "VALID_ADMIN_CARD" || uid == "VALID_STAFF_CARD" || uid == "VALID_EVENT_CARD")
+                {
+                    staffRole = "Simulated Staff";
+                }
+
+                // If it IS a staff member, completely ignore the scan so MainWindow can use it to log them in!
+                if (!string.IsNullOrEmpty(staffRole))
+                {
+                    return;
+                }
+
+                // If not staff, process normally as a student scan
+                ProcessNfcScan(uid);
+            });
         }
 
         private void HardwareService_OnKeypadInput(string key)
@@ -244,11 +263,11 @@ namespace NFC_System
                     }
                     else
                     {
-                        Console.Beep(1046, 75);  // C6
+                        Console.Beep(1046, 75);
                         System.Threading.Thread.Sleep(15);
-                        Console.Beep(1318, 75);  // E6
+                        Console.Beep(1318, 75);
                         System.Threading.Thread.Sleep(15);
-                        Console.Beep(1568, 200); // G6
+                        Console.Beep(1568, 200);
                     }
                 }
                 catch { }
@@ -371,7 +390,6 @@ namespace NFC_System
         {
             _isClosing = true;
 
-            // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
@@ -390,7 +408,6 @@ namespace NFC_System
         {
             _isClosing = true;
 
-            // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
