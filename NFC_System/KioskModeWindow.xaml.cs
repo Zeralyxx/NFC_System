@@ -384,15 +384,18 @@ namespace NFC_System
 
         private void UpdateKioskHealthStatus(bool? readerStatus = null)
         {
-            if (KioskHealthText == null) return;
+            if (ReaderStatusText == null || DatabaseStatusText == null) return;
 
             bool readerConnected = readerStatus ?? HardwareService.IsConnected;
             bool databaseConnected = DatabaseMonitor.IsOnline;
-            KioskHealthText.Text = $"READER {(readerConnected ? "READY" : "OFFLINE")}   DATABASE {(databaseConnected ? "CONNECTED" : "OFFLINE")}";
-            KioskHealthText.Foreground = new SolidColorBrush(
-                readerConnected && databaseConnected
-                    ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
-                    : Windows.UI.Color.FromArgb(255, 248, 113, 113));
+            ReaderStatusText.Text = $"READER {(readerConnected ? "READY" : "OFFLINE")}";
+            DatabaseStatusText.Text = $"DATABASE {(databaseConnected ? "CONNECTED" : "OFFLINE")}";
+            ReaderStatusText.Foreground = new SolidColorBrush(readerConnected
+                ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
+                : Windows.UI.Color.FromArgb(255, 248, 113, 113));
+            DatabaseStatusText.Foreground = new SolidColorBrush(databaseConnected
+                ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
+                : Windows.UI.Color.FromArgb(255, 248, 113, 113));
         }
 
         private void KioskStateController_ModeChanged(VerificationMode newMode, TransactionType newType)
