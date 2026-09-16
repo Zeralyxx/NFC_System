@@ -50,7 +50,7 @@ namespace NFC_System
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
         private readonly DispatcherTimer _inactivityTimer = new();
-        private readonly DispatcherTimer _hardwareStatusTimer = new();
+        private readonly System.Threading.Timer _hardwareStatusTimer;
         private static readonly TimeSpan ResultDisplayDuration = TimeSpan.FromSeconds(10);
         private int _stateChangeVersion;
 
@@ -133,9 +133,15 @@ namespace NFC_System
             _inactivityTimer.Interval = TimeSpan.FromSeconds(30);
             _inactivityTimer.Tick += InactivityTimer_Tick;
 
-            _hardwareStatusTimer.Interval = TimeSpan.FromSeconds(1);
-            _hardwareStatusTimer.Tick += HardwareStatusTimer_Tick;
-            _hardwareStatusTimer.Start();
+            _hardwareStatusTimer = new System.Threading.Timer(
+                _ =>
+                {
+                    bool readerConnected = HardwareService.RefreshConnectionStatus();
+                    DispatcherQueue.TryEnqueue(() => UpdateKioskHealthStatus(readerConnected));
+                },
+                null,
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(1));
 
             Closed += KioskModeWindow_Closed;
             _ = InitializeCameraAsync();
@@ -362,25 +368,19 @@ namespace NFC_System
 
         private void DatabaseMonitor_ConnectionStatusChanged(bool isOnline)
         {
-            DispatcherQueue.TryEnqueue(UpdateKioskHealthStatus);
+            DispatcherQueue.TryEnqueue(() => UpdateKioskHealthStatus());
         }
 
         private void HardwareService_ConnectionStatusChanged(bool isConnected)
         {
-            DispatcherQueue.TryEnqueue(UpdateKioskHealthStatus);
+            DispatcherQueue.TryEnqueue(() => UpdateKioskHealthStatus());
         }
 
-        private void HardwareStatusTimer_Tick(object? sender, object e)
-        {
-            HardwareService.RefreshConnectionStatus();
-            UpdateKioskHealthStatus();
-        }
-
-        private void UpdateKioskHealthStatus()
+        private void UpdateKioskHealthStatus(bool? readerStatus = null)
         {
             if (KioskHealthText == null) return;
 
-            bool readerConnected = HardwareService.IsConnected;
+            bool readerConnected = readerStatus ?? HardwareService.IsConnected;
             bool databaseConnected = DatabaseMonitor.IsOnline;
             KioskHealthText.Text = $"READER {(readerConnected ? "READY" : "OFFLINE")}   DATABASE {(databaseConnected ? "CONNECTED" : "OFFLINE")}";
             KioskHealthText.Foreground = new SolidColorBrush(
@@ -455,7 +455,7 @@ namespace NFC_System
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
 
             _inactivityTimer.Stop();
-            _hardwareStatusTimer.Stop();
+            _hardwareStatusTimer.Dispose();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
@@ -477,7 +477,7 @@ namespace NFC_System
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
 
             _inactivityTimer.Stop();
-            _hardwareStatusTimer.Stop();
+            _hardwareStatusTimer.Dispose();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
