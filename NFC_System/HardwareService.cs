@@ -1,7 +1,6 @@
 using System;
 using System.IO.Ports;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace NFC_System
 {
@@ -9,6 +8,8 @@ namespace NFC_System
     {
         private static SerialPort? _serialPort;
         private static bool _lastConnectionStatus;
+        private static string? _configuredPortName;
+        private static readonly object SyncRoot = new();
 
         public static bool IsConnected => GetConnectionStatus();
 
@@ -22,6 +23,17 @@ namespace NFC_System
             bool isConnected = GetConnectionStatus();
             PublishConnectionStatus(isConnected);
             return isConnected;
+        }
+
+        public static bool TryReconnect()
+        {
+            string? portName;
+            lock (SyncRoot)
+            {
+                portName = _configuredPortName;
+            }
+
+            return string.IsNullOrWhiteSpace(portName) ? false : Connect(portName);
         }
 
         private static bool GetConnectionStatus()
@@ -41,59 +53,68 @@ namespace NFC_System
 
         public static bool Connect(string portName)
         {
-            // If already connected to the same port, do nothing
-            if (_serialPort != null && _serialPort.IsOpen)
+            lock (SyncRoot)
             {
-                if (_serialPort.PortName == portName)
+                _configuredPortName = portName;
+
+                // Reuse the existing port only when it is still physically present.
+                if (_serialPort != null && _serialPort.IsOpen &&
+                    string.Equals(_serialPort.PortName, portName, StringComparison.OrdinalIgnoreCase) &&
+                    IsConnected)
                 {
                     RefreshConnectionStatus();
                     return IsConnected;
                 }
-                Disconnect();
-            }
 
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.ErrorReceived += SerialPort_ErrorReceived;
-                _serialPort.Open();
-                RefreshConnectionStatus();
-                return IsConnected;
-            }
-            catch
-            {
-                PublishConnectionStatus(false);
-                return false;
+                DisposeCurrentPort();
+
+                try
+                {
+                    _serialPort = new SerialPort(portName, 115200)
+                    {
+                        NewLine = "\n"
+                    };
+                    _serialPort.DataReceived += SerialPort_DataReceived;
+                    _serialPort.ErrorReceived += SerialPort_ErrorReceived;
+                    _serialPort.Open();
+                    RefreshConnectionStatus();
+                    return IsConnected;
+                }
+                catch
+                {
+                    DisposeCurrentPort();
+                    return false;
+                }
             }
         }
 
         public static void Disconnect()
         {
-            if (_serialPort != null)
+            lock (SyncRoot)
             {
-                Task.Run(() =>
+                _configuredPortName = null;
+                DisposeCurrentPort();
+            }
+        }
+
+        private static void DisposeCurrentPort()
+        {
+            SerialPort? port = _serialPort;
+            _serialPort = null;
+
+            if (port != null)
+            {
+                try
                 {
-                    try
-                    {
-                        _serialPort.DataReceived -= SerialPort_DataReceived;
-                        _serialPort.ErrorReceived -= SerialPort_ErrorReceived;
-                        if (_serialPort.IsOpen) _serialPort.Close();
-                        _serialPort.Dispose();
-                    }
-                    catch { }
-                    finally
-                    {
-                        _serialPort = null;
-                        PublishConnectionStatus(false);
-                    }
-                });
+                    port.DataReceived -= SerialPort_DataReceived;
+                    port.ErrorReceived -= SerialPort_ErrorReceived;
+                    if (port.IsOpen) port.Close();
+                    port.Dispose();
+                }
+                catch { }
             }
-            else
-            {
-                PublishConnectionStatus(false);
-            }
+
+            PublishConnectionStatus(false);
         }
 
         public static void SendCommand(string command)

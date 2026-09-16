@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -100,6 +101,7 @@ namespace NFC_System
         private string _tempStudentName = "";
         private string _tempStudentId = "";
         private byte[]? _tempStudentPhoto = null;
+        private DateTime? _currentScanTimestamp;
         private string _outcomeTitle = "";
         private string _outcomeMessage = "";
 
@@ -137,6 +139,10 @@ namespace NFC_System
                 _ =>
                 {
                     bool readerConnected = HardwareService.RefreshConnectionStatus();
+                    if (!readerConnected)
+                    {
+                        readerConnected = HardwareService.TryReconnect();
+                    }
                     DispatcherQueue.TryEnqueue(() => UpdateKioskHealthStatus(readerConnected));
                 },
                 null,
@@ -566,6 +572,7 @@ namespace NFC_System
                     _tempStudentName = "";
                     _tempStudentId = "";
                     _tempStudentPhoto = null;
+                    _currentScanTimestamp = null;
                     _activeSession = null;
 
                     TogglePanels(showStatus: true, showPin: false, showQr: false);
@@ -633,6 +640,7 @@ namespace NFC_System
 
             _lastScannedNfcUid = uid;
             _lastNfcScanTime = DateTime.Now;
+            _currentScanTimestamp = DatabaseService.GetNetworkAdjustedTime();
 
             Stopwatch nfcTimer = Stopwatch.StartNew();
 
@@ -870,6 +878,8 @@ namespace NFC_System
         {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
 
+            _currentScanTimestamp ??= DatabaseService.GetNetworkAdjustedTime();
+
             _qrScanTimer.Stop();
 
             _inactivityTimer.Stop();
@@ -1074,6 +1084,9 @@ namespace NFC_System
             ProfileBorder.Opacity = 1.0;
             StudentNameText.Text = name;
             StudentIdText.Text = id;
+            StudentScanTimeText.Text = _currentScanTimestamp.HasValue
+                ? _currentScanTimestamp.Value.ToString("M/d/yyyy - h:mmtt", CultureInfo.InvariantCulture)
+                : "---";
             StudentNameText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
             StudentIdText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
 
@@ -1088,6 +1101,7 @@ namespace NFC_System
             ProfileBorder.Opacity = 0.3;
             StudentNameText.Text = "---";
             StudentIdText.Text = "---";
+            StudentScanTimeText.Text = "---";
 
             StudentPhotoDisplay.ProfilePicture = null;
             StudentPhotoDisplay.DisplayName = "";
