@@ -50,6 +50,7 @@ namespace NFC_System
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
         private readonly DispatcherTimer _inactivityTimer = new();
+        private readonly DispatcherTimer _hardwareStatusTimer = new();
         private static readonly TimeSpan ResultDisplayDuration = TimeSpan.FromSeconds(10);
         private int _stateChangeVersion;
 
@@ -110,6 +111,7 @@ namespace NFC_System
             AppSession.IsKioskRunning = true;
             HardwareService.OnUidScanned += HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput += HardwareService_OnKeypadInput;
+            HardwareService.ConnectionStatusChanged += HardwareService_ConnectionStatusChanged;
             DatabaseMonitor.ConnectionStatusChanged += DatabaseMonitor_ConnectionStatusChanged;
             UpdateKioskHealthStatus();
 
@@ -130,6 +132,10 @@ namespace NFC_System
 
             _inactivityTimer.Interval = TimeSpan.FromSeconds(30);
             _inactivityTimer.Tick += InactivityTimer_Tick;
+
+            _hardwareStatusTimer.Interval = TimeSpan.FromSeconds(1);
+            _hardwareStatusTimer.Tick += HardwareStatusTimer_Tick;
+            _hardwareStatusTimer.Start();
 
             Closed += KioskModeWindow_Closed;
             _ = InitializeCameraAsync();
@@ -201,7 +207,9 @@ namespace NFC_System
 
             if (await IsStaffCredentialAsync(uid)) return;
 
-            if (_currentStage == AuthenticationStage.Idle)
+            if (_currentStage == AuthenticationStage.Idle ||
+                _currentStage == AuthenticationStage.AccessGranted ||
+                _currentStage == AuthenticationStage.AccessDenied)
             {
                 DispatcherQueue.TryEnqueue(() => ProcessNfcScan(uid));
             }
@@ -357,15 +365,26 @@ namespace NFC_System
             DispatcherQueue.TryEnqueue(UpdateKioskHealthStatus);
         }
 
+        private void HardwareService_ConnectionStatusChanged(bool isConnected)
+        {
+            DispatcherQueue.TryEnqueue(UpdateKioskHealthStatus);
+        }
+
+        private void HardwareStatusTimer_Tick(object? sender, object e)
+        {
+            HardwareService.RefreshConnectionStatus();
+            UpdateKioskHealthStatus();
+        }
+
         private void UpdateKioskHealthStatus()
         {
             if (KioskHealthText == null) return;
 
             bool readerConnected = HardwareService.IsConnected;
-            bool cloudConnected = DatabaseMonitor.IsOnline;
-            KioskHealthText.Text = $"READER {(readerConnected ? "READY" : "OFFLINE")}   CLOUD {(cloudConnected ? "CONNECTED" : "OFFLINE")}";
+            bool databaseConnected = DatabaseMonitor.IsOnline;
+            KioskHealthText.Text = $"READER {(readerConnected ? "READY" : "OFFLINE")}   DATABASE {(databaseConnected ? "CONNECTED" : "OFFLINE")}";
             KioskHealthText.Foreground = new SolidColorBrush(
-                readerConnected && cloudConnected
+                readerConnected && databaseConnected
                     ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
                     : Windows.UI.Color.FromArgb(255, 248, 113, 113));
         }
@@ -430,11 +449,13 @@ namespace NFC_System
 
             // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
+            HardwareService.ConnectionStatusChanged -= HardwareService_ConnectionStatusChanged;
             DatabaseMonitor.ConnectionStatusChanged -= DatabaseMonitor_ConnectionStatusChanged;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
 
             _inactivityTimer.Stop();
+            _hardwareStatusTimer.Stop();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 
@@ -450,11 +471,13 @@ namespace NFC_System
 
             // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
+            HardwareService.ConnectionStatusChanged -= HardwareService_ConnectionStatusChanged;
             DatabaseMonitor.ConnectionStatusChanged -= DatabaseMonitor_ConnectionStatusChanged;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
             HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
 
             _inactivityTimer.Stop();
+            _hardwareStatusTimer.Stop();
             _shadowCacheTimer.Stop();
             _syncRecoveryTimer.Stop();
 

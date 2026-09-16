@@ -1,5 +1,6 @@
 using System;
 using System.IO.Ports;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NFC_System
@@ -7,19 +8,47 @@ namespace NFC_System
     public static class HardwareService
     {
         private static SerialPort? _serialPort;
+        private static bool _lastConnectionStatus;
 
-        public static bool IsConnected => _serialPort?.IsOpen == true;
+        public static bool IsConnected => GetConnectionStatus();
 
         // Global events that any window can listen to
         public static event Action<string>? OnUidScanned;
         public static event Action<string>? OnKeypadInput;
+        public static event Action<bool>? ConnectionStatusChanged;
+
+        public static bool RefreshConnectionStatus()
+        {
+            bool isConnected = GetConnectionStatus();
+            PublishConnectionStatus(isConnected);
+            return isConnected;
+        }
+
+        private static bool GetConnectionStatus()
+        {
+            try
+            {
+                string? portName = _serialPort?.PortName;
+                return _serialPort?.IsOpen == true &&
+                    !string.IsNullOrWhiteSpace(portName) &&
+                    SerialPort.GetPortNames().Contains(portName, StringComparer.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         public static bool Connect(string portName)
         {
             // If already connected to the same port, do nothing
             if (_serialPort != null && _serialPort.IsOpen)
             {
-                if (_serialPort.PortName == portName) return true;
+                if (_serialPort.PortName == portName)
+                {
+                    RefreshConnectionStatus();
+                    return IsConnected;
+                }
                 Disconnect();
             }
 
@@ -28,11 +57,14 @@ namespace NFC_System
                 _serialPort = new SerialPort(portName, 115200);
                 _serialPort.NewLine = "\n";
                 _serialPort.DataReceived += SerialPort_DataReceived;
+                _serialPort.ErrorReceived += SerialPort_ErrorReceived;
                 _serialPort.Open();
-                return true;
+                RefreshConnectionStatus();
+                return IsConnected;
             }
             catch
             {
+                PublishConnectionStatus(false);
                 return false;
             }
         }
@@ -46,12 +78,21 @@ namespace NFC_System
                     try
                     {
                         _serialPort.DataReceived -= SerialPort_DataReceived;
+                        _serialPort.ErrorReceived -= SerialPort_ErrorReceived;
                         if (_serialPort.IsOpen) _serialPort.Close();
                         _serialPort.Dispose();
                     }
                     catch { }
-                    finally { _serialPort = null; }
+                    finally
+                    {
+                        _serialPort = null;
+                        PublishConnectionStatus(false);
+                    }
                 });
+            }
+            else
+            {
+                PublishConnectionStatus(false);
             }
         }
 
@@ -64,7 +105,20 @@ namespace NFC_System
                     _serialPort.WriteLine(command);
                 }
             }
-            catch { }
+            catch { RefreshConnectionStatus(); }
+        }
+
+        private static void SerialPort_ErrorReceived(object sender, SerialErrorReceivedEventArgs e)
+        {
+            RefreshConnectionStatus();
+        }
+
+        private static void PublishConnectionStatus(bool isConnected)
+        {
+            if (_lastConnectionStatus == isConnected) return;
+
+            _lastConnectionStatus = isConnected;
+            ConnectionStatusChanged?.Invoke(isConnected);
         }
 
         private static void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
@@ -85,7 +139,7 @@ namespace NFC_System
                     OnKeypadInput?.Invoke(key);
                 }
             }
-            catch { }
+            catch { RefreshConnectionStatus(); }
         }
     }
 }
