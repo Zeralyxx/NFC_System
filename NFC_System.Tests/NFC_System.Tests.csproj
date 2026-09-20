@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../NFC_System/AttendanceTracking.cs" Link="Production/AttendanceTracking.cs" />
+    <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs" />
+    <Compile Include="../NFC_System/QrCredentialService.cs" Link="Production/QrCredentialService.cs" />
+    <Compile Include="../NFC_System/VerificationEngine.cs" Link="Production/VerificationEngine.cs" />
+    <Compile Include="../NFC_System/SecurityModels.cs" Link="Production/SecurityModels.cs" />
+    <Compile Include="../NFC_System/PinHasher.cs" Link="Production/PinHasher.cs" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+  </ItemGroup>
+</Project>

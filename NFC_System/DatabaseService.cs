@@ -60,7 +60,7 @@ public sealed class AttendanceLog
     public string Status { get; set; } = "";
 }
 
-public sealed class DatabaseService
+public sealed partial class DatabaseService
 {
     public static string ServerIp { get; private set; } = "127.0.0.1";
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
@@ -119,6 +119,7 @@ public sealed class DatabaseService
         }
 
         await connection.ChangeDatabaseAsync("nfc_system");
+        await EnsureAttendanceSchemaAsync(connection);
 
         string schemaSql = @"
             CREATE TABLE IF NOT EXISTS students (
@@ -132,7 +133,7 @@ public sealed class DatabaseService
                 nfc_uid VARCHAR(50) UNIQUE,
                 pin_salt VARCHAR(255),
                 pin_hash VARCHAR(255),
-                qr_credential VARCHAR(255),
+                qr_credential TEXT,
                 entry_state VARCHAR(20) DEFAULT 'OUTSIDE',
                 failed_pin_attempts INT DEFAULT 0,
                 pin_locked BOOLEAN DEFAULT FALSE,
@@ -268,6 +269,15 @@ public sealed class DatabaseService
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
+        using (var typeCommand = new MySqlCommand("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'students' AND COLUMN_NAME = 'qr_credential'", connection))
+        {
+            if (Convert.ToString(await typeCommand.ExecuteScalarAsync()) == "varchar")
+            {
+                using var widenQr = new MySqlCommand("ALTER TABLE students MODIFY COLUMN qr_credential TEXT NULL", connection);
+                await widenQr.ExecuteNonQueryAsync();
+            }
+        }
+
         try
         {
             using var alterStaffCmd = new MySqlCommand(@"
@@ -380,7 +390,7 @@ public sealed class DatabaseService
                     (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo, @temp, @state)
                     ON DUPLICATE KEY UPDATE 
                     full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
-                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp, entry_state=@state";
+                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp";
 
                 using var cmd = new MySqlCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@id", studentId);
@@ -556,15 +566,7 @@ public sealed class DatabaseService
                     await cmd.ExecuteNonQueryAsync();
                     updatedCount++;
 
-                    if (isGranted && !string.IsNullOrWhiteSpace(transactionType) && transactionType != "EventAttendance")
-                    {
-                        string stateToSet = transactionType.Equals("Entry", StringComparison.OrdinalIgnoreCase) ? "INSIDE" : "OUTSIDE";
-                        using var stateCmd = new MySqlCommand("UPDATE students SET entry_state = @state WHERE student_id = @sid OR (nfc_uid = @nfc AND nfc_uid != '')", connection);
-                        stateCmd.Parameters.AddWithValue("@state", stateToSet);
-                        stateCmd.Parameters.AddWithValue("@sid", studentId);
-                        stateCmd.Parameters.AddWithValue("@nfc", nfcUid);
-                        await stateCmd.ExecuteNonQueryAsync();
-                    }
+                    // Archive import is not a live attendance transition. Arrival order is not event order.
                 }
             }
             catch { }
@@ -1200,6 +1202,8 @@ public sealed class DatabaseService
         }
         catch (Exception ex) { throw new Exception($"Log Upload Error: {ex.Message}"); }
 
+        await PushAttendanceBackupToCloudAsync();
+
         return pushedCount;
     }
 
@@ -1320,8 +1324,27 @@ public sealed class DatabaseService
 
     public async Task UpdateShadowCacheAsync()
     {
+        await AttendanceLock.WaitAsync();
+        try
+        {
+            OfflineCacheService.AttendanceQueue.RequireCacheRefresh();
+            if (_attendanceActive)
+            {
+                using var connection = new MySqlConnection(ConnectionString);
+                await connection.OpenAsync();
+                await EnsureAttendanceSchemaAsync(connection);
+                await ReportDeviceAsync(connection, OfflineCacheService.AttendanceQueue.Snapshot(), false);
+            }
+            if (await UpdateShadowCacheCoreAsync()) OfflineCacheService.AttendanceQueue.MarkCacheRefreshed();
+        }
+        catch (Exception ex) { AttendanceSyncError = ex.Message; }
+        finally { AttendanceLock.Release(); }
+    }
+
+    private async Task<bool> UpdateShadowCacheCoreAsync()
+    {
         // THE FIX: Protect local cache from being overwritten by stale cloud data before offline sync completes
-        if (OfflineCacheService.HasPendingLogs()) return;
+        if (OfflineCacheService.HasPendingLogs()) return false;
 
         try
         {
@@ -1349,7 +1372,6 @@ public sealed class DatabaseService
                     });
                 }
             }
-            OfflineCacheService.UpdateStudentCache(students);
 
             var events = new List<CachedEvent>();
             using (var cmd = new MySqlCommand("SELECT event_id, event_name, verification_mode, is_restricted, is_active FROM events WHERE is_active = 1", connection))
@@ -1390,114 +1412,23 @@ public sealed class DatabaseService
                 ApprovedStudentIds = kvp.Value
             }).ToList();
 
+            if (!OfflineCacheService.UpdateStudentCache(students)) return false;
             OfflineCacheService.UpdateEventCache(events, rosters);
+            return !OfflineCacheService.HasPendingLogs();
         }
-        catch { }
+        catch (Exception ex) { throw new InvalidOperationException("Offline cache refresh failed. Device remains unready.", ex); }
     }
 
     public async Task SyncOfflineLogsToServerAsync()
     {
-        if (!OfflineCacheService.HasPendingLogs()) return;
-
-        var gateLogs = OfflineCacheService.ExtractPendingGateLogs();
-        var eventLogs = OfflineCacheService.ExtractPendingEventLogs();
-
-        if (gateLogs.Count == 0 && eventLogs.Count == 0) return;
-
-        var failedGateLogs = new List<PendingGateLog>();
-        var failedEventLogs = new List<PendingEventAttendance>();
-
-        using var connection = new MySqlConnection(ConnectionString);
+        await AttendanceLock.WaitAsync();
         try
         {
-            await connection.OpenAsync();
+            _attendanceActive = true;
+            do { await RecoverAttendanceCoreAsync(); }
+            while (OfflineCacheService.HasPendingLogs());
         }
-        catch
-        {
-            OfflineCacheService.RestoreFailedGateLogs(gateLogs);
-            OfflineCacheService.RestoreFailedEventLogs(eventLogs);
-            return;
-        }
-
-        foreach (var log in gateLogs)
-        {
-            try
-            {
-                string targetTable = log.VerificationMode switch
-                {
-                    "Fast" => "fast_mode_logs",
-                    "HighSecurity" => "high_security_mode_logs",
-                    _ => "standard_mode_logs"
-                };
-
-                using var cmd = new MySqlCommand($@"
-                    INSERT INTO {targetTable} 
-                    (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms) 
-                    VALUES (@ts, @sid, @sname, @nfc, @ttype, @vmode, @granted, @err, @rem, @nfcSys, @pinWf, @pinSys, @qrWf, @qrSys, @totWf, @totSys, @dbSpeed)", connection);
-
-                cmd.Parameters.AddWithValue("@ts", log.Timestamp);
-                cmd.Parameters.AddWithValue("@sid", NullIfEmpty(log.StudentId));
-                cmd.Parameters.AddWithValue("@sname", NullIfEmpty(log.StudentName));
-                cmd.Parameters.AddWithValue("@nfc", NullIfEmpty(log.NfcUid));
-                cmd.Parameters.AddWithValue("@ttype", log.TransactionType);
-                cmd.Parameters.AddWithValue("@vmode", log.VerificationMode);
-                cmd.Parameters.AddWithValue("@granted", log.IsGranted ? 1 : 0);
-                cmd.Parameters.AddWithValue("@err", NullIfEmpty(log.ErrorCode));
-                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
-
-                cmd.Parameters.AddWithValue("@nfcSys", log.NfcSystemMs);
-                cmd.Parameters.AddWithValue("@pinWf", log.PinWorkflowMs);
-                cmd.Parameters.AddWithValue("@pinSys", log.PinSystemMs);
-                cmd.Parameters.AddWithValue("@qrWf", log.QrWorkflowMs);
-                cmd.Parameters.AddWithValue("@qrSys", log.QrSystemMs);
-                cmd.Parameters.AddWithValue("@totWf", log.TotalWorkflowMs);
-                cmd.Parameters.AddWithValue("@totSys", log.TotalSystemMs);
-                cmd.Parameters.AddWithValue("@dbSpeed", log.DbQuerySpeedMs);
-
-                await cmd.ExecuteNonQueryAsync();
-
-                // THE FIX: Sync the physical state changes made during offline mode back to the online database!
-                if (log.IsGranted && !string.IsNullOrWhiteSpace(log.TransactionType) && log.TransactionType != "EventAttendance")
-                {
-                    string stateToSet = log.TransactionType.Equals("Entry", StringComparison.OrdinalIgnoreCase) ? "INSIDE" : "OUTSIDE";
-                    using var stateCmd = new MySqlCommand("UPDATE students SET entry_state = @state WHERE student_id = @sid OR (nfc_uid = @nfc AND nfc_uid != '')", connection);
-                    stateCmd.Parameters.AddWithValue("@state", stateToSet);
-                    stateCmd.Parameters.AddWithValue("@sid", log.StudentId);
-                    stateCmd.Parameters.AddWithValue("@nfc", log.NfcUid);
-                    await stateCmd.ExecuteNonQueryAsync();
-                }
-            }
-            catch
-            {
-                failedGateLogs.Add(log);
-            }
-        }
-
-        foreach (var log in eventLogs)
-        {
-            try
-            {
-                using var cmd = new MySqlCommand(@"
-                    INSERT INTO event_attendance (timestamp, event_id, student_id, verification_mode, status, remarks) 
-                    VALUES (@ts, @eid, @sid, @vmode, @status, @rem)", connection);
-
-                cmd.Parameters.AddWithValue("@ts", log.Timestamp);
-                cmd.Parameters.AddWithValue("@eid", log.EventId);
-                cmd.Parameters.AddWithValue("@sid", log.StudentId);
-                cmd.Parameters.AddWithValue("@vmode", log.VerificationMode);
-                cmd.Parameters.AddWithValue("@status", log.Status);
-                cmd.Parameters.AddWithValue("@rem", NullIfEmpty(log.Remarks));
-
-                await cmd.ExecuteNonQueryAsync();
-            }
-            catch
-            {
-                failedEventLogs.Add(log);
-            }
-        }
-
-        if (failedGateLogs.Count > 0) OfflineCacheService.RestoreFailedGateLogs(failedGateLogs);
-        if (failedEventLogs.Count > 0) OfflineCacheService.RestoreFailedEventLogs(failedEventLogs);
+        finally { AttendanceLock.Release(); }
     }
 
     public async Task<IReadOnlyList<SystemAuditLog>> GetMasterAuditLogsAsync(
@@ -1941,6 +1872,7 @@ public sealed class DatabaseService
 
     public async Task SaveStudentAsync(StudentRecord student, string? pin)
     {
+        ValidateIssuedQr(student);
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
@@ -1973,6 +1905,7 @@ public sealed class DatabaseService
 
         using var command = new MySqlCommand(sql, connection);
         AddStudentParameters(command, student, salt, hash);
+        AppSession.RequireQrIssuancePermission();
         await command.ExecuteNonQueryAsync();
 
         await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered new student profile for {student.FullName}.");
@@ -2008,6 +1941,14 @@ public sealed class DatabaseService
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
+
+        bool changesQr;
+        using (var existingQr = new MySqlCommand("SELECT qr_credential FROM students WHERE student_id = @id", connection))
+        {
+            existingQr.Parameters.AddWithValue("@id", originalStudentId);
+            changesQr = !string.Equals(Convert.ToString(await existingQr.ExecuteScalarAsync()), student.QrCredential, StringComparison.Ordinal) || originalStudentId != student.StudentId;
+            if (changesQr) ValidateIssuedQr(student);
+        }
 
         bool isRename = !string.Equals(originalStudentId, student.StudentId, StringComparison.Ordinal);
 
@@ -2049,7 +1990,17 @@ public sealed class DatabaseService
         using var cmd = new MySqlCommand(sql, connection);
         AddStudentParameters(cmd, student, salt, hash);
         cmd.Parameters.AddWithValue("@original_id", originalStudentId);
+        if (changesQr) AppSession.RequireQrIssuancePermission();
         await cmd.ExecuteNonQueryAsync();
+        OfflineCacheService.UpdateCachedCredential(originalStudentId, student);
+    }
+
+    private static void ValidateIssuedQr(StudentRecord student)
+    {
+        AppSession.RequireQrIssuancePermission();
+        if (!new QrCredentialService().TryVerify(student.QrCredential, out var payload, out _) ||
+            !QrCredentialService.MatchesCurrent(student.QrCredential, payload!, student))
+            throw new InvalidOperationException("A valid signed QR for this student is required.");
     }
 
     public async Task<StudentRecord?> GetStudentByUidAsync(string uid)
@@ -2256,16 +2207,7 @@ public sealed class DatabaseService
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task UpdateEntryStateAsync(string studentId, string state)
-    {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand("UPDATE students SET entry_state = @state WHERE student_id = @student_id", connection);
-        command.Parameters.AddWithValue("@state", state);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-    }
+    public Task UpdateEntryStateAsync(string studentId, string state) => SetAttendanceStateManuallyAsync(studentId, state);
 
     public async Task UpdateLastScanTimestampAsync(string studentId, DateTime timestamp)
     {

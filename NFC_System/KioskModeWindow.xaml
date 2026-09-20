@@ -222,8 +222,8 @@
                         <Rectangle Height="1" Fill="#15FFFFFF" Margin="32,4"/>
 
                         <StackPanel Spacing="6">
-                            <TextBlock Text="SCAN TIME" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" CharacterSpacing="100"/>
-                            <TextBlock x:Name="StudentScanTimeText" Text="---" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#A0A0A0" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="StudentScanTimeLabel" Text="SCAN TIME" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" CharacterSpacing="100"/>
+                            <TextBlock x:Name="StudentScanTimeText" Text="---" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" Foreground="#A0A0A0" TextWrapping="Wrap"/>
                         </StackPanel>
                     </StackPanel>
                 </Grid>

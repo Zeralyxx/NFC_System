@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace NFC_System;
@@ -11,10 +10,13 @@ namespace NFC_System;
 public sealed class VerificationEngine
 {
     private readonly DatabaseService _database;
+    private readonly QrCredentialService _qrCredentials;
 
-    public VerificationEngine(DatabaseService database)
+    public VerificationEngine(DatabaseService database, QrCredentialService? qrCredentials = null)
     {
         _database = database;
+        _database.ActivateAttendanceDevice();
+        _qrCredentials = qrCredentials ?? new QrCredentialService();
     }
 
     private void LogPerformanceMetric(string operation, double elapsedMs, string result)
@@ -50,14 +52,22 @@ public sealed class VerificationEngine
         });
     }
 
-    public async Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null, bool isQrFallback = false)
+    public Task<VerificationOutcome> BeginNfcVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType, string? eventId = null) =>
+        BeginStudentVerificationAsync(uid, mode, transactionType, eventId);
+
+    private async Task<VerificationOutcome> BeginStudentVerificationAsync(string uid, VerificationMode mode, TransactionType transactionType,
+        string? eventId, string? verifiedQr = null, QrCredentialPayload? qrPayload = null, bool forceOffline = false)
     {
+        if (!OfflineCacheService.IsAttendanceStorageAvailable())
+            return Denied(uid, null, "UNABLE TO RECORD ACCESS", "Please contact security personnel. Attendance storage needs attention.",
+                "ATTENDANCE_STORAGE_UNAVAILABLE", "Attendance outbox could not be read; access denied.");
+        bool isQrFallback = verifiedQr != null;
         Stopwatch authTimer = Stopwatch.StartNew();
         Stopwatch dbTimer = new Stopwatch();
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         StudentRecord? student = null;
-        bool isOffline = !DatabaseMonitor.IsOnline;
+        bool isOffline = forceOffline || !DatabaseMonitor.IsOnline;
 
         if (!isOffline)
         {
@@ -66,13 +76,13 @@ public sealed class VerificationEngine
             catch { isOffline = true; }
             dbTimer.Stop();
 
-            // THE FIX (HYBRID CACHE MERGE): Prevent tailgating race-conditions when switching from Offline to Online
+            // Pending local admissions take precedence while recovering, not a stale five-minute cache.
             if (student != null)
             {
+                student.EntryState = OfflineCacheService.GetPendingStudentEntryState(student.StudentId) ?? student.EntryState;
                 var localCache = OfflineCacheService.GetCachedStudents().FirstOrDefault(s => s.StudentId == student.StudentId);
                 if (localCache != null)
                 {
-                    student.EntryState = localCache.EntryState;
                     student.FailedPinAttempts = localCache.FailedPinAttempts;
                     student.PinLocked = localCache.PinLocked;
                 }
@@ -193,6 +203,13 @@ public sealed class VerificationEngine
             }
         }
 
+        if (isQrFallback && (student == null || qrPayload == null || !QrCredentialService.MatchesCurrent(verifiedQr!, qrPayload, student)))
+        {
+            await SafeLogGateAsync(student, uid, transactionType, mode, false, "QR_REPLACED_OR_MISMATCH",
+                "QR fallback credential is not the student's current credential.", 0, 0, 0, 0, authTimer.Elapsed.TotalMilliseconds, dbQueryMs, isOffline);
+            return Denied(uid, student, "INVALID CREDENTIAL", "QR credential has been replaced or does not match.", "QR_REPLACED_OR_MISMATCH", "QR fallback denied: credential mismatch.");
+        }
+
         authTimer.Stop();
         var session = new VerificationSession
         {
@@ -202,6 +219,7 @@ public sealed class VerificationEngine
             TransactionType = transactionType,
             EventId = eventId,
             IsQrFallback = isQrFallback,
+            FallbackQrCredential = verifiedQr,
             NfcSystemMs = isQrFallback ? 0 : authTimer.Elapsed.TotalMilliseconds,
             TotalDbQueryMs = dbQueryMs,
             IsOffline = isOffline
@@ -249,6 +267,9 @@ public sealed class VerificationEngine
 
     public async Task<VerificationOutcome> SubmitPinAsync(VerificationSession session, string pin, double uiPinTimeMs = 0)
     {
+        if (session.NextStep != VerificationStep.RequiresPin || session.Student.PinLocked)
+            return Denied(session.Uid, session.Student, "ACCESS DENIED", "Start a new verification attempt.", "INVALID_SEQUENCE", "PIN denied: inactive or locked session.");
+        session.NextStep = VerificationStep.Completed;
         Stopwatch authTimer = Stopwatch.StartNew();
         Stopwatch dbTimer = new Stopwatch();
         double dbQueryMs = 0;
@@ -258,6 +279,7 @@ public sealed class VerificationEngine
 
         if (!PinHasher.VerifyPin(pin, student.PinSalt, student.PinHash))
         {
+            session.NextStep = VerificationStep.Completed;
             int failedAttempts = student.FailedPinAttempts + 1;
             bool locked = failedAttempts >= 3;
 
@@ -318,6 +340,7 @@ public sealed class VerificationEngine
         // 3. EVALUATING HIGH-SECURITY MODE (3FA: Demands QR Code after PIN)
         if (session.Mode == VerificationMode.HighSecurity && !session.IsQrFallback)
         {
+            session.NextStep = VerificationStep.RequiresQr;
             return new VerificationOutcome
             {
                 Step = VerificationStep.RequiresQr,
@@ -330,16 +353,37 @@ public sealed class VerificationEngine
             };
         }
 
-        return await GrantAsync(session, session.IsQrFallback ? "QR and PIN authentication passed." : "NFC and PIN authentication passed.");
+        if (session.IsQrFallback)
+        {
+            var current = await GetCurrentQrStudentAsync(session);
+            if (!_qrCredentials.TryVerify(session.FallbackQrCredential, out var payload, out _) || current == null ||
+                !current.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ||
+                !QrCredentialService.MatchesCurrent(session.FallbackQrCredential!, payload!, current))
+            {
+                session.NextStep = VerificationStep.Completed;
+                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, "QR_REPLACED_OR_MISMATCH",
+                    "QR fallback credential is no longer current or trusted.", 0, session.PinWorkflowMs, session.PinSystemMs,
+                    session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, session.IsOffline);
+                return Denied(session.Uid, student, "ACCESS DENIED", "QR credential is no longer valid.", "QR_REPLACED_OR_MISMATCH", "QR fallback denied: credential changed.");
+            }
+        }
+        return await GrantAsync(session, session.IsQrFallback ? "Signed QR fallback and PIN authentication passed." : "NFC and PIN authentication passed.");
     }
 
     public async Task<VerificationOutcome> SubmitQrAsync(VerificationSession session, string qrCredential, double uiQrTimeMs = 0)
     {
+        if (session.NextStep != VerificationStep.RequiresQr)
+            return Denied(session.Uid, session.Student, "ACCESS DENIED", "Complete PIN verification first.", "INVALID_SEQUENCE", "QR denied: unexpected verification step.");
+        session.NextStep = VerificationStep.Completed;
         Stopwatch authTimer = Stopwatch.StartNew();
 
         StudentRecord student = session.Student;
         string normalizedInput = qrCredential.Trim();
-        string normalizedStored = student.QrCredential?.Trim() ?? "";
+        bool valid = _qrCredentials.TryVerify(normalizedInput, out var payload, out string qrError);
+        var current = valid ? await GetCurrentQrStudentAsync(session) : null;
+        bool matches = valid && current != null && current.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(current.NfcUid, session.Uid, StringComparison.OrdinalIgnoreCase) &&
+            QrCredentialService.MatchesCurrent(normalizedInput, payload!, current);
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
         authTimer.Stop();
@@ -347,9 +391,10 @@ public sealed class VerificationEngine
         session.QrWorkflowMs = uiQrTimeMs;
         session.QrSystemMs = authTimer.Elapsed.TotalMilliseconds;
 
-        if (string.IsNullOrWhiteSpace(normalizedStored) || !normalizedStored.Equals(normalizedInput, StringComparison.OrdinalIgnoreCase))
+        if (!matches)
         {
-            string error = "CREDENTIAL_MISMATCH";
+            session.NextStep = VerificationStep.Completed;
+            string error = valid ? "QR_REPLACED_OR_MISMATCH" : qrError;
             await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, "QR credential did not match the NFC-linked student record.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, session.IsOffline);
             return Denied(session.Uid, student, "ACCESS DENIED", "QR credential mismatch detected", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | QR MISMATCH");
         }
@@ -359,59 +404,62 @@ public sealed class VerificationEngine
 
     public async Task<VerificationOutcome> BeginQrFallbackVerificationAsync(string qrPayload, VerificationMode mode, TransactionType transactionType, string? eventId, double uiQrTimeMs = 0)
     {
-        string extractedStudentId = qrPayload.Trim();
-
-        if (string.IsNullOrWhiteSpace(extractedStudentId))
-            return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "QR payload is empty or unreadable." };
+        if (!OfflineCacheService.IsAttendanceStorageAvailable())
+            return Denied("", null, "UNABLE TO RECORD ACCESS", "Please contact security personnel. Attendance storage needs attention.",
+                "ATTENDANCE_STORAGE_UNAVAILABLE", "Attendance outbox could not be read; access denied.");
+        qrPayload = qrPayload.Trim();
+        if (!_qrCredentials.TryVerify(qrPayload, out var signedPayload, out string error))
+        {
+            await SafeLogGateAsync(null, "", transactionType, mode, false, error, "Signed QR fallback validation failed.",
+                0, 0, 0, uiQrTimeMs, 0, 0, !DatabaseMonitor.IsOnline);
+            return Denied("", null, "INVALID CREDENTIAL", "QR signature could not be verified.", error, "QR fallback denied: invalid signature or unavailable verification key.");
+        }
+        string extractedStudentId = signedPayload!.StudentId;
+        bool isOffline = !DatabaseMonitor.IsOnline;
 
         StudentRecord? student = null;
         Stopwatch dbTimer = Stopwatch.StartNew();
 
         try
         {
-            if (DatabaseMonitor.IsOnline)
+            if (!isOffline)
             {
                 student = await _database.GetStudentByIdAsync(extractedStudentId);
             }
         }
-        catch { }
+        catch { isOffline = true; }
 
-        if (student == null)
+        if (isOffline)
         {
-            string cacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NFC_System", "Cache", "local_students.json");
-            if (File.Exists(cacheFile))
+            var cached = OfflineCacheService.GetCachedStudents().FirstOrDefault(s => s.StudentId.Equals(extractedStudentId, StringComparison.Ordinal));
+            if (cached != null)
             {
-                try
+                student = new StudentRecord
                 {
-                    var list = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(cacheFile));
-                    var cached = list?.FirstOrDefault(s => s.StudentId.Equals(extractedStudentId, StringComparison.OrdinalIgnoreCase));
-                    if (cached != null)
-                    {
-                        student = new StudentRecord
-                        {
-                            StudentId = cached.StudentId,
-                            FullName = cached.FullName,
-                            NfcUid = cached.NfcUid,
-                            PinHash = cached.PinHash,
-                            PinSalt = cached.PinSalt,
-                            Status = cached.Status,
-                            PinLocked = cached.PinLocked,
-                            EntryState = cached.EntryState,
-                            FailedPinAttempts = cached.FailedPinAttempts,
-                            QrCredential = cached.QrCredential
-                        };
-                    }
-                }
-                catch { }
+                    StudentId = cached.StudentId,
+                    FullName = cached.FullName,
+                    NfcUid = cached.NfcUid,
+                    PinHash = cached.PinHash,
+                    PinSalt = cached.PinSalt,
+                    Status = cached.Status,
+                    PinLocked = cached.PinLocked,
+                    EntryState = cached.EntryState,
+                    FailedPinAttempts = cached.FailedPinAttempts,
+                    QrCredential = cached.QrCredential
+                };
             }
         }
 
         dbTimer.Stop();
 
         if (student == null)
-            return new VerificationOutcome { IsGranted = false, Step = VerificationStep.Completed, ResultTitle = "INVALID CREDENTIAL", ResultMessage = "Student ID not found in database or offline cache." };
+        {
+            await SafeLogGateAsync(null, "", transactionType, mode, false, "NOT_REGISTERED", "Signed QR student not found.",
+                0, 0, 0, uiQrTimeMs, 0, dbTimer.Elapsed.TotalMilliseconds, isOffline);
+            return Denied("", null, "INVALID CREDENTIAL", "Student ID not found in database or offline cache.", "NOT_REGISTERED", "QR fallback denied: student not found.");
+        }
 
-        var outcome = await BeginNfcVerificationAsync(student.NfcUid, mode, transactionType, eventId, isQrFallback: true);
+        var outcome = await BeginStudentVerificationAsync(student.NfcUid, mode, transactionType, eventId, qrPayload, signedPayload, isOffline);
 
         if (outcome.Session != null)
         {
@@ -423,114 +471,76 @@ public sealed class VerificationEngine
         return outcome;
     }
 
+    private async Task<StudentRecord?> GetCurrentQrStudentAsync(VerificationSession session)
+    {
+        if (!session.IsOffline)
+        {
+            var timer = Stopwatch.StartNew();
+            try { return await _database.GetStudentByIdAsync(session.Student.StudentId); }
+            catch { session.IsOffline = true; }
+            finally { session.TotalDbQueryMs += timer.Elapsed.TotalMilliseconds; }
+        }
+        var cached = OfflineCacheService.GetCachedStudents().FirstOrDefault(s => s.StudentId == session.Student.StudentId);
+        return cached == null ? null : new StudentRecord
+        {
+            StudentId = cached.StudentId,
+            NfcUid = cached.NfcUid,
+            Status = cached.Status,
+            QrCredential = cached.QrCredential
+        };
+    }
+
     private async Task<VerificationOutcome> GrantAsync(VerificationSession session, string remarks)
     {
+        session.NextStep = VerificationStep.Completed;
         StudentRecord student = session.Student;
-        string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
-
+        AttendanceCommitResult result;
+        try
+        {
+            result = await _database.RecordAttendanceTransactionAsync(session, remarks);
+        }
+        catch (Exception ex)
+        {
+            // Do not grant an unrecorded admission when durable local storage is unavailable.
+            return new VerificationOutcome
+            {
+                Student = student, Session = session, IsGranted = false,
+                ErrorCategory = "ATTENDANCE_STORAGE_UNAVAILABLE",
+                ResultTitle = "UNABLE TO RECORD ACCESS",
+                ResultMessage = "Please contact security personnel. Attendance storage needs attention.",
+                LogLine = $"Attendance storage failed: {ex.Message}"
+            };
+        }
+        session.IsOffline = !result.Committed;
+        if (result.ConfirmationPending)
+        {
+            return new VerificationOutcome
+            {
+                Student = student, Session = session, Timestamp = result.Timestamp, IsGranted = false,
+                ErrorCategory = "ATTENDANCE_CONFIRMATION_PENDING", ResultTitle = "CONFIRMATION PENDING",
+                ResultMessage = "Please wait for security personnel to confirm this attempt before entering.",
+                LogLine = $"{result.Timestamp:yyyy-MM-dd HH:mm:ss} | {student.StudentId} | UNCONFIRMED | {result.TransactionId}"
+            };
+        }
+        if (!result.IsGranted)
+        {
+            return new VerificationOutcome
+            {
+                Student = student, Session = session, Timestamp = result.Timestamp, IsGranted = false,
+                ErrorCategory = "ATTENDANCE_SEQUENCE_CONFLICT", ResultTitle = "PLEASE SCAN AGAIN",
+                ResultMessage = "Attendance changed during verification. Please ask security personnel if this continues.",
+                LogLine = $"{result.Timestamp:yyyy-MM-dd HH:mm:ss} | {student.StudentId} | DENIED | ATTENDANCE_SEQUENCE_CONFLICT"
+            };
+        }
         bool isOffline = session.IsOffline;
-        Stopwatch updateTimer = new Stopwatch();
-
-        // 1. UNCONDITIONAL LOCAL CACHE UPDATE (Instant Truth)
-        // We do this immediately so the RAM cache is NEVER out of sync with physical reality,
-        // preventing tailgating vulnerabilities if the server crashes a millisecond later.
-        if (session.TransactionType == TransactionType.Entry)
-        {
-            OfflineCacheService.UpdateCachedStudentStateLocally(student.StudentId, "INSIDE");
-            student.EntryState = "INSIDE";
-        }
-        else if (session.TransactionType == TransactionType.Exit)
-        {
-            if (string.IsNullOrWhiteSpace(session.EventId))
-            {
-                OfflineCacheService.UpdateCachedStudentStateLocally(student.StudentId, "OUTSIDE");
-                student.EntryState = "OUTSIDE";
-            }
-        }
-        else if (session.TransactionType == TransactionType.EventAttendance)
-        {
-            OfflineCacheService.UpdateCachedStudentStateLocally(student.StudentId, "INSIDE");
-            student.EntryState = "INSIDE";
-        }
-
-        // 2. REMOTE DB UPDATE (If Online)
-        if (!isOffline)
-        {
-            try
-            {
-                updateTimer.Start();
-                if (session.TransactionType == TransactionType.Entry)
-                {
-                    await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
-                }
-                else if (session.TransactionType == TransactionType.Exit)
-                {
-                    if (!string.IsNullOrWhiteSpace(session.EventId))
-                        await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "DEPARTED", "Event check-out recorded.");
-                    else
-                        await _database.UpdateEntryStateAsync(student.StudentId, "OUTSIDE");
-                }
-                else if (session.TransactionType == TransactionType.EventAttendance)
-                {
-                    await _database.RecordAttendanceAsync(session.EventId, student.StudentId, session.Mode, "PRESENT", remarks);
-                    await _database.UpdateEntryStateAsync(student.StudentId, "INSIDE");
-                }
-                updateTimer.Stop();
-                session.TotalDbQueryMs += updateTimer.Elapsed.TotalMilliseconds;
-
-                await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, true, "VERIFIED", remarks, session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, isOffline);
-            }
-            catch
-            {
-                isOffline = true;
-                session.IsOffline = true;
-            }
-        }
-
-        // 3. FALLBACK JSON LOGGING (If Offline or Remote DB Failed)
-        if (isOffline)
-        {
-            if (session.TransactionType == TransactionType.EventAttendance && !string.IsNullOrWhiteSpace(session.EventId))
-            {
-                OfflineCacheService.SaveOfflineEventLog(session.EventId, student.StudentId, session.Mode.ToString(), "PRESENT", remarks);
-            }
-            else
-            {
-                double totalWorkflowMs = session.PinWorkflowMs + session.QrWorkflowMs;
-                double totalSystemMs = session.NfcSystemMs + session.PinSystemMs + session.QrSystemMs;
-
-                OfflineCacheService.SaveOfflineGateLog(
-                    student.StudentId,
-                    student.FullName,
-                    session.Uid,
-                    session.TransactionType.ToString(),
-                    session.Mode.ToString(),
-                    true,
-                    "VERIFIED",
-                    remarks,
-                    session.NfcSystemMs,
-                    session.PinWorkflowMs,
-                    session.PinSystemMs,
-                    session.QrWorkflowMs,
-                    session.QrSystemMs,
-                    totalWorkflowMs,
-                    totalSystemMs,
-                    session.TotalDbQueryMs
-                );
-            }
-        }
-
         string nameForLog = student.IsTemporary ? $"[TEMP] {student.FullName}" : student.FullName;
-
         return new VerificationOutcome
         {
-            Step = VerificationStep.Completed,
-            IsGranted = true,
+            Step = VerificationStep.Completed, IsGranted = true,
             ResultTitle = session.TransactionType == TransactionType.EventAttendance ? (isOffline ? "OFFLINE ATTENDANCE" : "ATTENDANCE RECORDED") : (isOffline ? "OFFLINE: ACCESS GRANTED" : "ACCESS GRANTED"),
             ResultMessage = session.TransactionType == TransactionType.Exit && !string.IsNullOrWhiteSpace(session.EventId) ? "Event Check-Out Recorded" : remarks,
-            Student = student,
-            Session = session,
-            LogLine = $"{scanTime} | {student.StudentId} | {nameForLog} | {(isOffline ? "OFFLINE GRANTED" : "GRANTED")} | {DatabaseService.ToStorageValue(session.TransactionType)} | {DatabaseService.ToStorageValue(session.Mode)}"
+            Student = student, Session = session, Timestamp = result.Timestamp, Visit = result.Visit,
+            LogLine = $"{result.Timestamp:yyyy-MM-dd hh:mm:ss tt} | {student.StudentId} | {nameForLog} | {(isOffline ? "OFFLINE GRANTED" : "GRANTED")} | {DatabaseService.ToStorageValue(session.TransactionType)} | {DatabaseService.ToStorageValue(session.Mode)}"
         };
     }
 

@@ -486,6 +486,8 @@
 
                         <CheckBox x:Name="EditDialogIsTemporaryCheckBox" Content="Flag as Temporary Credential" Foreground="#60A5FA" FontWeight="SemiBold" Margin="0,4,0,0"/>
                     </StackPanel>
+                    <CheckBox x:Name="ReissueQrCheckBox" Content="Replace QR credential" Checked="EditDialog_FieldChanged" Unchecked="EditDialog_FieldChanged"/>
+                    <Button Content="View / Export QR" Click="ViewStudentQr_Click"/>
                     <PasswordBox x:Name="EditDialogNewPinBox" Header="Reset PIN (leave blank to keep current)" MaxLength="4" PlaceholderText="****"/>
 
                     <Button x:Name="EditDialogSaveButton" Content="Save Changes" Click="EditDialogSaveButton_Click"

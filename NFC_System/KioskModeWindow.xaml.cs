@@ -102,6 +102,9 @@ namespace NFC_System
         private string _tempStudentId = "";
         private byte[]? _tempStudentPhoto = null;
         private DateTime? _currentScanTimestamp;
+        private AttendanceVisit? _displayVisit;
+        private string _timestampLabel = "SCAN TIME";
+        private int _profileImageVersion;
         private string _outcomeTitle = "";
         private string _outcomeMessage = "";
 
@@ -182,21 +185,16 @@ namespace NFC_System
 
             // 2. Silent Recovery Push (Checks Every 5 Seconds)
             _syncRecoveryTimer.Interval = TimeSpan.FromSeconds(5);
-            _syncRecoveryTimer.Tick += (s, e) =>
+            _syncRecoveryTimer.Tick += async (s, e) =>
             {
-                if (OfflineCacheService.HasPendingLogs())
+                _syncRecoveryTimer.Stop();
+                try
                 {
-                    _syncRecoveryTimer.Stop();
-
-                    Task.Run(async () =>
-                    {
-                        if (DatabaseMonitor.IsOnline && await _database.TestConnectionAsync())
-                        {
-                            await _database.SyncOfflineLogsToServerAsync();
-                        }
-
-                        DispatcherQueue.TryEnqueue(() => _syncRecoveryTimer.Start());
-                    });
+                    if (DatabaseMonitor.IsOnline) await _database.PulseAttendanceAsync();
+                }
+                finally
+                {
+                    if (!_isClosing) _syncRecoveryTimer.Start();
                 }
             };
             _syncRecoveryTimer.Start();
@@ -611,6 +609,7 @@ namespace NFC_System
 
                 case AuthenticationStage.AccessGranted:
                     TogglePanels(showStatus: true, showPin: false, showQr: false);
+                    LoadProfileData(_tempStudentName, _tempStudentId, _tempStudentPhoto, _activeSession?.Student.IsTemporary ?? false);
                     ApplyStatusStyle(Colors.Green, "\uE73E", _outcomeTitle, _outcomeMessage);
                     break;
 
@@ -716,6 +715,7 @@ namespace NFC_System
 
             if (outcome.Session != null) _activeSession = outcome.Session;
 
+            CaptureAttendanceResult(outcome);
             OnKioskOutcome?.Invoke(outcome);
 
             DispatcherQueue.TryEnqueue(async () =>
@@ -820,6 +820,7 @@ namespace NFC_System
                     if (outcome.Session != null)
                         _activeSession = outcome.Session;
 
+                    CaptureAttendanceResult(outcome);
                     OnKioskOutcome?.Invoke(outcome);
 
                     if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
@@ -827,7 +828,7 @@ namespace NFC_System
                         _currentPinBuffer = "";
                         UpdatePinDots();
 
-                        if (outcome.ErrorCategory == "PIN_LOCKED")
+                        if (outcome.ErrorCategory == "PIN_LOCKED" || outcome.ErrorCategory == "ATTENDANCE_STORAGE_UNAVAILABLE" || outcome.ErrorCategory == "ATTENDANCE_SEQUENCE_CONFLICT" || outcome.ErrorCategory == "ATTENDANCE_CONFIRMATION_PENDING")
                         {
                             PlaySecurityAlert();
                             _outcomeTitle = outcome.ResultTitle;
@@ -877,9 +878,29 @@ namespace NFC_System
             }
         }
 
+        private bool _processingQr;
+
         public async void ProcessQrScan(string payload)
         {
+            if (_processingQr || _currentStage != AuthenticationStage.WaitingForQR) return;
+            _processingQr = true;
+            int scanVersion = _stateChangeVersion;
+            try { await ProcessQrScanAsync(payload); }
+            catch (Exception)
+            {
+                if (_isClosing || scanVersion != _stateChangeVersion) return;
+                _outcomeTitle = "VERIFICATION UNAVAILABLE";
+                _outcomeMessage = "Please try again or contact personnel.";
+                SetState(AuthenticationStage.AccessDenied);
+            }
+            finally { _processingQr = false; }
+        }
+
+        private async Task ProcessQrScanAsync(string payload)
+        {
             if (_currentStage != AuthenticationStage.WaitingForQR) return;
+            int scanVersion = _stateChangeVersion;
+            var scanSession = _activeSession;
 
             _currentScanTimestamp ??= DatabaseService.GetNetworkAdjustedTime();
 
@@ -896,33 +917,37 @@ namespace NFC_System
                 transType = TransactionType.EventAttendance;
             }
 
-            if (transType == TransactionType.EventAttendance && _eventAttendanceCache.Contains(payload.Trim()))
+            string? qrStudentId = new QrCredentialService().TryVerify(payload.Trim(), out var signedQr, out _) ? signedQr!.StudentId : null;
+
+            if (transType == TransactionType.EventAttendance && qrStudentId != null && _eventAttendanceCache.Contains(qrStudentId))
             {
                 PlaySecurityAlert();
                 _outcomeTitle = "ANTI-PROXY TRIGGERED";
                 _outcomeMessage = "This credential has already checked into this event.";
 
-                LoadProfileData("UNKNOWN USER", payload.Trim(), null, false);
+                LoadProfileData("UNKNOWN USER", qrStudentId, null, false);
                 ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                 string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
-                OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | DOUBLE ENTRY");
+                OnKioskLog?.Invoke($"{logTime} | ID {qrStudentId} | DENIED | DOUBLE ENTRY");
 
-                _ = Task.Run(() => _database.LogVerificationAsync(null, null, payload.Trim(), transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
+                _ = Task.Run(() => _database.LogVerificationAsync(null, null, qrStudentId, transType, _currentMode, false, "DOUBLE_ENTRY", "ANTI_PROXY_VIOLATION", "Blocked attempt to scan into the same event multiple times.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
 
                 LogPerformanceMetric("QR Credential Validation Timer", _qrScanTimer.ElapsedMilliseconds, "DENIED / DOUBLE ENTRY");
                 _qrScanTimer.Restart();
                 return;
             }
 
-            if (transType == TransactionType.EventAttendance && !string.IsNullOrEmpty(_eventId))
+            if (transType == TransactionType.EventAttendance && !string.IsNullOrEmpty(_eventId) && qrStudentId != null && DatabaseMonitor.IsOnline)
             {
                 try
                 {
-                    var student = await _database.GetStudentByIdAsync(payload.Trim());
+                    var student = await _database.GetStudentByIdAsync(qrStudentId);
+                    if (_isClosing || scanVersion != _stateChangeVersion) return;
                     if (student != null)
                     {
                         bool isAllowed = await _database.IsStudentAllowedForEventAsync(_eventId, student.StudentId);
+                        if (_isClosing || scanVersion != _stateChangeVersion) return;
                         if (!isAllowed)
                         {
                             PlaySecurityAlert();
@@ -933,9 +958,9 @@ namespace NFC_System
                             ExecuteStateChange(AuthenticationStage.AccessDenied);
 
                             string logTime = DatabaseService.GetNetworkAdjustedTime().ToString("MMM dd, yyyy - hh:mm:ss tt");
-                            OnKioskLog?.Invoke($"{logTime} | ID {payload.Trim()} | DENIED | UNINVITED");
+                            OnKioskLog?.Invoke($"{logTime} | ID {qrStudentId} | DENIED | UNINVITED");
 
-                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, payload.Trim(), transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
+                            _ = Task.Run(() => _database.LogVerificationAsync(student, student.FullName, qrStudentId, transType, _currentMode, false, "UNAUTHORIZED_EVENT_ACCESS", "RESTRICTED_EVENT", "Student not on the restricted event roster.", _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0, _qrScanTimer.Elapsed.TotalMilliseconds, 0, 0));
 
                             LogPerformanceMetric("QR Credential Validation Timer", _qrScanTimer.ElapsedMilliseconds, "DENIED / UNINVITED");
                             _qrScanTimer.Restart();
@@ -946,11 +971,13 @@ namespace NFC_System
                 catch { }
             }
 
-            if (_activeSession == null)
+            if (scanSession == null)
             {
                 outcome = await _engine.BeginQrFallbackVerificationAsync(payload, _currentMode, transType, _eventId, _qrScanTimer.Elapsed.TotalMilliseconds);
+                if (_isClosing || scanVersion != _stateChangeVersion) return;
                 if (outcome.Session != null) _activeSession = outcome.Session;
 
+                CaptureAttendanceResult(outcome);
                 OnKioskOutcome?.Invoke(outcome);
 
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
@@ -982,9 +1009,11 @@ namespace NFC_System
                 return;
             }
 
-            outcome = await _engine.SubmitQrAsync(_activeSession, payload, _qrScanTimer.Elapsed.TotalMilliseconds);
+            outcome = await _engine.SubmitQrAsync(scanSession, payload, _qrScanTimer.Elapsed.TotalMilliseconds);
+            if (_isClosing || scanVersion != _stateChangeVersion) return;
             if (outcome.Session != null) _activeSession = outcome.Session;
 
+            CaptureAttendanceResult(outcome);
             OnKioskOutcome?.Invoke(outcome);
 
             _outcomeTitle = outcome.ResultTitle;
@@ -1082,25 +1111,54 @@ namespace NFC_System
             }
         }
 
+        private void CaptureAttendanceResult(VerificationOutcome outcome)
+        {
+            _displayVisit = outcome.IsGranted ? outcome.Visit : null;
+            if (!outcome.IsGranted) return;
+            _currentScanTimestamp = outcome.Timestamp;
+            _timestampLabel = outcome.Session?.TransactionType switch
+            {
+                TransactionType.Entry => "TIME IN",
+                TransactionType.Exit => string.IsNullOrWhiteSpace(outcome.Session.EventId) ? "TIME OUT" : "EVENT CHECK-OUT",
+                TransactionType.EventAttendance => "EVENT CHECK-IN",
+                _ => "SCAN TIME"
+            };
+        }
+
         private async void LoadProfileData(string name, string id, byte[]? photoData, bool isTemp)
         {
             ProfileBorder.Opacity = 1.0;
             StudentNameText.Text = name;
             StudentIdText.Text = id;
+            StudentScanTimeLabel.Text = _timestampLabel;
             StudentScanTimeText.Text = _currentScanTimestamp.HasValue
                 ? _currentScanTimestamp.Value.ToString("M/d/yyyy - h:mmtt", CultureInfo.InvariantCulture)
                 : "---";
+            if (_displayVisit != null && DatabaseMonitor.IsOnline && !OfflineCacheService.HasPendingLogs())
+            {
+                StudentScanTimeLabel.Text = "ATTENDANCE";
+                string timeIn = _displayVisit.TimeIn.ToString("M/d/yyyy - h:mmtt", CultureInfo.InvariantCulture);
+                string timeOut = _displayVisit.TimeOut?.ToString("M/d/yyyy - h:mmtt", CultureInfo.InvariantCulture) ?? "Not yet recorded";
+                StudentScanTimeText.Text = $"IN   {timeIn}\nOUT   {timeOut}";
+            }
             StudentNameText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
             StudentIdText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 160, 160, 160));
 
             StudentPhotoDisplay.DisplayName = name == "UNKNOWN USER" || name == "---" ? "" : name;
-            StudentPhotoDisplay.ProfilePicture = await ImageHelper.GetBitmapAsync(photoData);
+            int version = ++_profileImageVersion;
+            var image = await ImageHelper.GetBitmapAsync(photoData);
+            if (_isClosing || version != _profileImageVersion || StudentIdText.Text != id) return;
+            StudentPhotoDisplay.ProfilePicture = image;
 
             TempBadgeBorder.Visibility = isTemp ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ResetProfileData()
         {
+            ++_profileImageVersion;
+            _displayVisit = null;
+            _timestampLabel = "SCAN TIME";
+            StudentScanTimeLabel.Text = _timestampLabel;
             ProfileBorder.Opacity = 0.3;
             StudentNameText.Text = "---";
             StudentIdText.Text = "---";

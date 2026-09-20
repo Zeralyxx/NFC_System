@@ -295,7 +295,7 @@ namespace NFC_System
             if (isAuthorized)
             {
                 _isAwaitingAdminAuth = false;
-                AdminAuthDialog.Hide();
+                await QrCredentialDisplay.HideAsync(AdminAuthDialog);
                 PlaySuccessPing();
 
                 string authorizedByName = fullName ?? "Administrator";
@@ -556,6 +556,8 @@ namespace NFC_System
         private async Task OpenEditDialogAsync(StudentRecord student)
         {
             _editingStudent = student;
+            ReissueQrCheckBox.IsEnabled = AppSession.CanIssueQrCredentials;
+            ReissueQrCheckBox.IsChecked = AppSession.CanIssueQrCredentials && !student.QrCredential.StartsWith("NFC1.", StringComparison.Ordinal);
             EditDialogStatusText.Visibility = Visibility.Collapsed;
 
             EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(student.PhotoData);
@@ -603,7 +605,7 @@ namespace NFC_System
             NfcScanStatusText.Visibility = Visibility.Collapsed;
             NfcReplacementReasonBox.Visibility = Visibility.Collapsed;
             NfcReplacementReasonBox.Text = "";
-            EditDialogSaveButton.IsEnabled = false;
+            EditDialogSaveButton.IsEnabled = ReissueQrCheckBox.IsChecked == true;
 
             EditStudentDialog.XamlRoot = this.Content.XamlRoot;
             await EditStudentDialog.ShowAsync();
@@ -741,6 +743,7 @@ namespace NFC_System
                 curNfcUid != _origNfcUid ||
                 curIsTemporary != _origIsTemporary ||
                 hasPinChange ||
+                ReissueQrCheckBox.IsChecked == true ||
                 _currentPhotoData != _editingStudent.PhotoData;
 
             EditDialogSaveButton.IsEnabled = isDirty;
@@ -750,6 +753,20 @@ namespace NFC_System
         {
             EditDialogStatusText.Text = message;
             EditDialogStatusText.Visibility = Visibility.Visible;
+        }
+
+        private async void ViewStudentQr_Click(object sender, RoutedEventArgs e)
+        {
+            if (_editingStudent == null) return;
+            var student = _editingStudent;
+            if (!new QrCredentialService().TryVerify(student.QrCredential, out _, out _))
+            {
+                ShowEditDialogError("This QR cannot be verified. Replace it or check the installed verification keys.");
+                return;
+            }
+            await QrCredentialDisplay.HideAsync(EditStudentDialog);
+            await QrCredentialDisplay.ShowAsync(this, student.StudentId, student.QrCredential);
+            await EditStudentDialog.ShowAsync();
         }
 
         private void NumberOnly_TextChanging(TextBox sender, TextBoxTextChangingEventArgs args)
@@ -772,6 +789,13 @@ namespace NFC_System
             string nfcUid = EditDialogNfcUidBox.Text.Trim();
             string pin = EditDialogNewPinBox.Password.Trim();
 
+            bool replacesQr = ReissueQrCheckBox.IsChecked == true || newId != _editingStudent.StudentId || nfcUid != _editingStudent.NfcUid;
+            if (replacesQr && !AppSession.CanIssueQrCredentials)
+            {
+                ShowEditDialogError(AppSession.QrIssuanceDeniedMessage);
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(newId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
             {
                 ShowEditDialogError("Student ID, Full Name, and NFC UID cannot be empty.");
@@ -792,7 +816,7 @@ namespace NFC_System
             }
 
             _pendingNfcReplacementReason = NfcReplacementReasonBox.Text.Trim();
-            EditStudentDialog.Hide();
+            await QrCredentialDisplay.HideAsync(EditStudentDialog);
 
             _pendingAction = AdminActionType.EditFullProfile;
             _pendingAdminSeverity = "MODERATE";
@@ -914,12 +938,18 @@ namespace NFC_System
                             SectionName = EditDialogSectionBox.Text.Trim(),
                             Status = ((ComboBoxItem)EditDialogStatusComboBox.SelectedItem).Content.ToString() ?? "Active",
                             NfcUid = EditDialogNfcUidBox.Text.Trim(),
-                            QrCredential = EditDialogStudentIdBox.Text.Trim(),
+                            QrCredential = _editingStudent.QrCredential,
                             PhotoData = _currentPhotoData,
                             IsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true
                         };
 
                         List<string> changes = new List<string>();
+                        bool replaceQr = ReissueQrCheckBox.IsChecked == true || originalId != updated.StudentId || oldUid != updated.NfcUid;
+                        if (replaceQr)
+                        {
+                            updated.QrCredential = new QrCredentialService().Issue(updated.StudentId);
+                            changes.Add("Reissued signed QR");
+                        }
                         if (_origStudentId != updated.StudentId) changes.Add($"Student ID ({_origStudentId} → {updated.StudentId})");
                         if (_origFullName != updated.FullName) changes.Add("Name");
                         if (_origEmail != updated.Email) changes.Add("Email");
@@ -944,6 +974,7 @@ namespace NFC_System
                         }
 
                         _editingStudent = null;
+                        if (replaceQr) await QrCredentialDisplay.ShowAsync(this, updated.StudentId, updated.QrCredential);
                     }
                 }
 
@@ -955,8 +986,8 @@ namespace NFC_System
             {
                 ContentDialog errorDialog = new ContentDialog
                 {
-                    Title = "Action Failed",
-                    Content = $"The database rejected the change.\n\nDetails: {ex.Message}",
+                    Title = ex is UnauthorizedAccessException ? "Permission Required" : "Action Failed",
+                    Content = ex is UnauthorizedAccessException ? ex.Message : $"The change could not be completed.\n\nDetails: {ex.Message}",
                     CloseButtonText = "OK",
                     XamlRoot = this.Content.XamlRoot
                 };

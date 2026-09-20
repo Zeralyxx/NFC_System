@@ -1132,7 +1132,7 @@ namespace NFC_System
             ContentDialog confirmDialog = new ContentDialog
             {
                 Title = "Confirm Download",
-                Content = "This will pull the latest students, staff, courses, events, and rosters from the cloud database into this local terminal. Continue?",
+                Content = "This will download cloud profiles, events, rosters, and logs. If attendance tables are empty, it will also restore the latest completed attendance snapshot. Existing attendance will not be overwritten. Stop other attendance devices before a disaster restore. Continue?",
                 PrimaryButtonText = "Yes, Download",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close
@@ -1184,10 +1184,11 @@ namespace NFC_System
                 int pulledCourses = await _database.PullCoursesFromCloudAsync();
                 int pulledEvents = await _database.PullEventsFromCloudAsync();
                 int pulledApproved = await _database.PullEventApprovedStudentsFromCloudAsync();
+                int restoredAttendance = await _database.RestoreAttendanceBackupIfEmptyAsync();
                 int pulledLogs = await _database.PullLogsFromCloudAsync();
                 int pulledEventLogs = await _database.PullEventAttendanceFromCloudAsync();
 
-                int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved + pulledLogs + pulledEventLogs;
+                int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved + pulledLogs + pulledEventLogs + restoredAttendance;
 
                 if (totalPulled > 0)
                 {
@@ -1199,6 +1200,7 @@ namespace NFC_System
                     if (pulledApproved > 0) additions.Add($"{pulledApproved} Roster Entry(ies)");
                     if (pulledLogs > 0) additions.Add($"{pulledLogs} Gate Log(s)");
                     if (pulledEventLogs > 0) additions.Add($"{pulledEventLogs} Event Log(s)");
+                    if (restoredAttendance > 0) additions.Add($"{restoredAttendance} Attendance snapshot row(s)");
 
                     string formattedList = "• " + string.Join("\n• ", additions);
                     string message = $"Download complete. The following new updates were synced locally:\n\n{formattedList}";

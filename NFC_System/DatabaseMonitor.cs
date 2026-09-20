@@ -11,6 +11,7 @@ namespace NFC_System
         private static bool _isOnline = true;
         private static DispatcherTimer? _pollTimer;
         private static readonly DatabaseService _db = new();
+        private static bool _checking;
 
         public static bool IsOnline => _isOnline;
 
@@ -28,13 +29,20 @@ namespace NFC_System
 
         private static async Task CheckConnectionAsync()
         {
-            bool currentlyOnline = await _db.TestConnectionAsync();
-
-            if (currentlyOnline != _isOnline)
+            if (_checking) return;
+            _checking = true;
+            try
             {
-                _isOnline = currentlyOnline;
-                ConnectionStatusChanged?.Invoke(_isOnline);
+                bool currentlyOnline = await _db.TestConnectionAsync();
+
+                if (currentlyOnline != _isOnline)
+                {
+                    _isOnline = currentlyOnline;
+                    ConnectionStatusChanged?.Invoke(_isOnline);
+                }
+                if (currentlyOnline) _ = _db.PulseAttendanceAsync();
             }
+            finally { _checking = false; }
         }
     }
 }

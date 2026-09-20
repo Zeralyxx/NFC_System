@@ -56,6 +56,8 @@ public sealed class VerificationSession
     public TransactionType TransactionType { get; init; }
     public string? EventId { get; init; }
     public bool IsQrFallback { get; init; } = false;
+    public string? FallbackQrCredential { get; init; }
+    public VerificationStep NextStep { get; set; } = VerificationStep.RequiresPin;
 
     // THE FIX: Explicit Separation of Human vs System Performance
     public double NfcSystemMs { get; set; }
@@ -71,6 +73,7 @@ public sealed class VerificationSession
 
 public sealed class VerificationOutcome
 {
+    public AttendanceVisit? Visit { get; init; }
     public VerificationStep Step { get; init; } = VerificationStep.Completed;
     public bool IsGranted { get; init; }
     public string ResultTitle { get; init; } = "";

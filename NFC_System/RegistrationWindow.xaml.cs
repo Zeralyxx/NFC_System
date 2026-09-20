@@ -102,23 +102,13 @@ namespace NFC_System
                         UidLogListView.Items.Insert(0, $"[INFO] New unassigned card scanned: {uid}");
 
                         string currentId = StudentIdTextBox.Text.Trim();
-                        string generatedQr = BuildQrCredential(currentId);
-                        QrCredentialTextBox.Text = generatedQr;
+                        QrCredentialTextBox.Text = "";
+                        QrCodeImage.Source = null;
+                        QrCodeImage.Visibility = Visibility.Collapsed;
+                        QrPlaceholderPanel.Visibility = Visibility.Visible;
+                        UidLogListView.Items.Insert(0, "[INFO] The signed QR will be issued when registration is saved.");
 
-                        if (!string.IsNullOrEmpty(generatedQr))
-                        {
-                            QrCodeImage.Source = GenerateQrBitmap(generatedQr);
-                            QrCodeImage.Visibility = Visibility.Visible;
-                            QrPlaceholderPanel.Visibility = Visibility.Collapsed;
-                        }
-                        else
-                        {
-                            QrCodeImage.Visibility = Visibility.Collapsed;
-                            QrPlaceholderPanel.Visibility = Visibility.Visible;
-                            UidLogListView.Items.Insert(0, "[INFO] Type a Student ID to generate the QR code.");
-                        }
-
-                        PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}\nQR Credential: {generatedQr}";
+                        PreviewTextBlock.Text = $"Student ID: {currentId}\nFull Name: {FullNameTextBox.Text}\nCourse: {CourseComboBox.SelectedItem?.ToString()}\nYear Level: {YearLevelTextBox.Text}\nSection: {SectionTextBox.Text}\nNFC UID: {uid}";
                     }
 
                     _isScanning = false;
@@ -473,6 +463,11 @@ namespace NFC_System
 
         private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!AppSession.CanIssueQrCredentials)
+            {
+                UidLogListView.Items.Insert(0, $"[ERROR] {AppSession.QrIssuanceDeniedMessage}");
+                return;
+            }
             string studentId = StudentIdTextBox.Text.Trim();
             string fullName = FullNameTextBox.Text.Trim();
             string email = EmailTextBox.Text.Trim();
@@ -521,14 +516,9 @@ namespace NFC_System
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(qrCredential))
-            {
-                qrCredential = BuildQrCredential(studentId);
-                QrCredentialTextBox.Text = qrCredential;
-            }
-
             try
             {
+                qrCredential = new QrCredentialService().Issue(studentId);
                 var student = new StudentRecord
                 {
                     StudentId = studentId,
@@ -552,6 +542,16 @@ namespace NFC_System
 
                 PlaySuccessPing();
                 ClearForm();
+                QrCredentialTextBox.Text = qrCredential;
+                QrCodeImage.Source = GenerateQrBitmap(qrCredential);
+                QrCodeImage.Visibility = Visibility.Visible;
+                QrPlaceholderPanel.Visibility = Visibility.Collapsed;
+                await QrCredentialDisplay.ShowAsync(this, studentId, qrCredential);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                UidLogListView.Items.Insert(0, $"[ERROR] {ex.Message}");
+                PlayErrorAlert();
             }
             catch (InvalidOperationException ex)
             {
@@ -597,7 +597,7 @@ namespace NFC_System
                 {
                     Height = 400,
                     Width = 400,
-                    Margin = 1
+                    Margin = 4
                 }
             };
 
@@ -612,10 +612,5 @@ namespace NFC_System
             return bitmap;
         }
 
-        private static string BuildQrCredential(string studentId)
-        {
-            if (string.IsNullOrWhiteSpace(studentId)) return "";
-            return studentId;
-        }
     }
 }

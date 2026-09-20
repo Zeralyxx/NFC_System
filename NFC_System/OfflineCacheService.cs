@@ -37,38 +37,6 @@ public class CachedEventRoster
     public List<string> ApprovedStudentIds { get; set; } = new();
 }
 
-// --- Pending Offline Log Models ---
-public class PendingGateLog
-{
-    public string Timestamp { get; set; } = "";
-    public string StudentId { get; set; } = "";
-    public string StudentName { get; set; } = "";
-    public string NfcUid { get; set; } = "";
-    public string TransactionType { get; set; } = "";
-    public string VerificationMode { get; set; } = "";
-    public bool IsGranted { get; set; }
-    public string ErrorCode { get; set; } = "";
-    public string Remarks { get; set; } = "";
-
-    public double NfcSystemMs { get; set; }
-    public double PinWorkflowMs { get; set; }
-    public double PinSystemMs { get; set; }
-    public double QrWorkflowMs { get; set; }
-    public double QrSystemMs { get; set; }
-    public double TotalWorkflowMs { get; set; }
-    public double TotalSystemMs { get; set; }
-    public double DbQuerySpeedMs { get; set; }
-}
-
-public class PendingEventAttendance
-{
-    public string Timestamp { get; set; } = "";
-    public string EventId { get; set; } = "";
-    public string StudentId { get; set; } = "";
-    public string VerificationMode { get; set; } = "";
-    public string Status { get; set; } = "";
-    public string Remarks { get; set; } = "";
-}
 
 public static class OfflineCacheService
 {
@@ -82,11 +50,9 @@ public static class OfflineCacheService
     private static readonly string EventsCacheFile = Path.Combine(CacheDirectory, "local_events.json");
     private static readonly string RostersCacheFile = Path.Combine(CacheDirectory, "local_event_rosters.json");
 
-    private static readonly string GateLogsFile = Path.Combine(CacheDirectory, "offline_gate_logs.json");
-    private static readonly string EventLogsFile = Path.Combine(CacheDirectory, "offline_event_logs.json");
-
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly object FileLock = new();
+    public static DurableAttendanceQueue AttendanceQueue { get; } = new(CacheDirectory);
 
     private static List<CachedStudent> _inMemoryStudents = new();
     private static List<CachedEvent> _inMemoryEvents = new();
@@ -119,6 +85,13 @@ public static class OfflineCacheService
                 try { _inMemoryStudents = JsonSerializer.Deserialize<List<CachedStudent>>(File.ReadAllText(StudentsCacheFile)) ?? new(); }
                 catch { }
             }
+            // Replay durable, not-yet-acknowledged admissions after a crash before cache persistence.
+            var pending = AttendanceQueue.Snapshot();
+            foreach (var change in PendingStudentStates(pending).OrderBy(x => x.Sequence))
+            {
+                var student = _inMemoryStudents.FirstOrDefault(x => x.StudentId == change.StudentId);
+                if (student != null) student.EntryState = change.State;
+            }
             _isStudentMemoryLoaded = true;
         }
     }
@@ -141,15 +114,32 @@ public static class OfflineCacheService
         }
     }
 
-    public static void UpdateStudentCache(List<CachedStudent> students)
+    public static bool UpdateStudentCache(List<CachedStudent> students)
     {
         lock (FileLock)
         {
+            if (HasPendingLogs()) return false;
             EnsureDirectoryExists();
+            WriteCacheFile(StudentsCacheFile, students);
             _inMemoryStudents = students;
             _isStudentMemoryLoaded = true;
-            string json = JsonSerializer.Serialize(students, JsonOptions);
-            File.WriteAllText(StudentsCacheFile, json);
+            return true;
+        }
+    }
+
+    public static void UpdateCachedCredential(string originalStudentId, StudentRecord updated)
+    {
+        LoadStudentMemoryCache();
+        lock (FileLock)
+        {
+            var cached = _inMemoryStudents.FirstOrDefault(s => s.StudentId == originalStudentId);
+            if (cached == null) return;
+            // Keep pending entry/PIN progress while replacing the cached credential.
+            cached.StudentId = updated.StudentId;
+            cached.NfcUid = updated.NfcUid;
+            cached.QrCredential = updated.QrCredential;
+            cached.Status = updated.Status;
+            WriteCacheFile(StudentsCacheFile, _inMemoryStudents);
         }
     }
 
@@ -158,11 +148,11 @@ public static class OfflineCacheService
         lock (FileLock)
         {
             EnsureDirectoryExists();
+            WriteCacheFile(EventsCacheFile, events);
+            WriteCacheFile(RostersCacheFile, rosters);
             _inMemoryEvents = events;
             _inMemoryRosters = rosters;
             _isEventMemoryLoaded = true;
-            File.WriteAllText(EventsCacheFile, JsonSerializer.Serialize(events, JsonOptions));
-            File.WriteAllText(RostersCacheFile, JsonSerializer.Serialize(rosters, JsonOptions));
         }
     }
 
@@ -251,134 +241,89 @@ public static class OfflineCacheService
     {
         Task.Run(() =>
         {
-            string json;
-            lock (FileLock) { json = JsonSerializer.Serialize(_inMemoryStudents, JsonOptions); }
-            try { File.WriteAllText(StudentsCacheFile, json); } catch { }
+            lock (FileLock)
+            {
+                try { WriteCacheFile(StudentsCacheFile, _inMemoryStudents); }
+                catch { }
+            }
         });
     }
 
     public static void SaveOfflineGateLog(string studentId, string studentName, string nfcUid, string transactionType, string mode, bool isGranted, string errorCode, string remarks, double nfcSys, double pinWf, double pinSys, double qrWf, double qrSys, double totWf, double totSys, double dbSpeed)
     {
+        AttendanceQueue.Enqueue(new PendingGateLog
+        {
+            Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture),
+            StudentId = studentId, StudentName = studentName, NfcUid = nfcUid,
+            TransactionType = transactionType, VerificationMode = mode, IsGranted = isGranted,
+            ErrorCode = isGranted ? "OFFLINE_MODE" : errorCode, Remarks = remarks, WasOffline = true,
+            NfcSystemMs = nfcSys, PinWorkflowMs = pinWf, PinSystemMs = pinSys,
+            QrWorkflowMs = qrWf, QrSystemMs = qrSys, TotalWorkflowMs = totWf,
+            TotalSystemMs = totSys, DbQuerySpeedMs = dbSpeed
+        });
+    }
+
+    public static void FlushStudentCache()
+    {
+        LoadStudentMemoryCache();
         lock (FileLock)
         {
-            EnsureDirectoryExists();
-            var logs = GetPendingGateLogs();
-            logs.Add(new PendingGateLog
-            {
-                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss.fff"),
-                StudentId = studentId,
-                StudentName = studentName,
-                NfcUid = nfcUid,
-                TransactionType = transactionType,
-                VerificationMode = mode,
-                IsGranted = isGranted,
-
-                ErrorCode = isGranted ? "OFFLINE_MODE" : errorCode,
-                Remarks = remarks,
-
-                NfcSystemMs = nfcSys,
-                PinWorkflowMs = pinWf,
-                PinSystemMs = pinSys,
-                QrWorkflowMs = qrWf,
-                QrSystemMs = qrSys,
-                TotalWorkflowMs = totWf,
-                TotalSystemMs = totSys,
-                DbQuerySpeedMs = dbSpeed
-            });
-            File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
+            WriteCacheFile(StudentsCacheFile, _inMemoryStudents);
         }
+    }
+
+    private static void WriteCacheFile<T>(string path, T value)
+    {
+        string temporary = path + ".tmp";
+        using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(stream, value, JsonOptions);
+            stream.Flush(true);
+        }
+        if (File.Exists(path)) File.Replace(temporary, path, null);
+        else File.Move(temporary, path);
     }
 
     public static void SaveOfflineEventLog(string eventId, string studentId, string mode, string status, string remarks)
     {
-        lock (FileLock)
+        AttendanceQueue.Enqueue(new PendingEventAttendance
         {
-            EnsureDirectoryExists();
-            var logs = GetPendingEventLogs();
-            logs.Add(new PendingEventAttendance
-            {
-                Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss.fff"),
-                EventId = eventId,
-                StudentId = studentId,
-                VerificationMode = mode,
-                Status = status,
-                Remarks = remarks
-            });
-            File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(logs, JsonOptions));
-        }
-    }
-
-    private static List<PendingGateLog> GetPendingGateLogs()
-    {
-        if (!File.Exists(GateLogsFile)) return new();
-        try { return JsonSerializer.Deserialize<List<PendingGateLog>>(File.ReadAllText(GateLogsFile)) ?? new(); }
-        catch { return new(); }
-    }
-
-    private static List<PendingEventAttendance> GetPendingEventLogs()
-    {
-        if (!File.Exists(EventLogsFile)) return new();
-        try { return JsonSerializer.Deserialize<List<PendingEventAttendance>>(File.ReadAllText(EventLogsFile)) ?? new(); }
-        catch { return new(); }
+            Timestamp = DatabaseService.GetNetworkAdjustedTime().ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture),
+            EventId = eventId, StudentId = studentId, VerificationMode = mode,
+            Status = status, Remarks = remarks
+        });
     }
 
     public static bool HasPendingLogs()
     {
-        return (File.Exists(GateLogsFile) && new FileInfo(GateLogsFile).Length > 10) ||
-               (File.Exists(EventLogsFile) && new FileInfo(EventLogsFile).Length > 10);
+        try
+        {
+            var snapshot = AttendanceQueue.Snapshot();
+            return snapshot.GateLogs.Count != 0 || snapshot.EventLogs.Count != 0;
+        }
+        catch { return true; }
     }
 
-    public static List<PendingGateLog> ExtractPendingGateLogs()
+    public static bool IsAttendanceStorageAvailable()
     {
-        lock (FileLock)
-        {
-            if (!File.Exists(GateLogsFile)) return new();
-            try
-            {
-                string json = File.ReadAllText(GateLogsFile);
-                var logs = JsonSerializer.Deserialize<List<PendingGateLog>>(json) ?? new();
-                File.Delete(GateLogsFile);
-                return logs;
-            }
-            catch { return new(); }
-        }
+        try { AttendanceQueue.Snapshot(); return true; }
+        catch { return false; }
     }
 
-    public static List<PendingEventAttendance> ExtractPendingEventLogs()
+    public static string? GetPendingStudentEntryState(string studentId)
     {
-        lock (FileLock)
-        {
-            if (!File.Exists(EventLogsFile)) return new();
-            try
-            {
-                string json = File.ReadAllText(EventLogsFile);
-                var logs = JsonSerializer.Deserialize<List<PendingEventAttendance>>(json) ?? new();
-                File.Delete(EventLogsFile);
-                return logs;
-            }
-            catch { return new(); }
-        }
+        return PendingStudentStates(AttendanceQueue.Snapshot()).Where(x => x.StudentId == studentId)
+            .OrderByDescending(x => x.Sequence).Select(x => x.State).FirstOrDefault();
     }
 
-    public static void RestoreFailedGateLogs(List<PendingGateLog> failedLogs)
+    private static IEnumerable<(string StudentId, long Sequence, string State)> PendingStudentStates(AttendanceQueueSnapshot pending)
     {
-        if (failedLogs.Count == 0) return;
-        lock (FileLock)
-        {
-            var existing = GetPendingGateLogs();
-            existing.InsertRange(0, failedLogs);
-            File.WriteAllText(GateLogsFile, JsonSerializer.Serialize(existing, JsonOptions));
-        }
-    }
-
-    public static void RestoreFailedEventLogs(List<PendingEventAttendance> failedLogs)
-    {
-        if (failedLogs.Count == 0) return;
-        lock (FileLock)
-        {
-            var existing = GetPendingEventLogs();
-            existing.InsertRange(0, failedLogs);
-            File.WriteAllText(EventLogsFile, JsonSerializer.Serialize(existing, JsonOptions));
-        }
+        var gate = pending.GateLogs.Where(x => x.IsGranted && !x.OnlineAttempt &&
+            (x.TransactionType == "Entry" || x.TransactionType == "EventAttendance" ||
+             (x.TransactionType == "Exit" && string.IsNullOrWhiteSpace(x.EventId))))
+            .Select(x => (x.StudentId, Sequence: x.DeviceSequence, State: x.TransactionType == "Exit" ? "OUTSIDE" : "INSIDE"));
+        var events = pending.EventLogs.Where(x => x.Status == "PRESENT")
+            .Select(x => (x.StudentId, Sequence: x.DeviceSequence, State: "INSIDE"));
+        return gate.Concat(events);
     }
 }

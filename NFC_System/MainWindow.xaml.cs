@@ -13,18 +13,6 @@ using System.Text;
 
 namespace NFC_System
 {
-    public static class AppSession
-    {
-        public static bool IsLoggedIn { get; set; } = false;
-        public static bool IsAdmin { get; set; } = false;
-        public static bool IsEventOrganizer { get; set; } = false;
-        public static string CurrentStaffName { get; set; } = "";
-        public static string CurrentStaffRoleLabel { get; set; } = "";
-
-        // THE FIX: Global tracker to know if the autonomous gate is active
-        public static bool IsKioskRunning { get; set; } = false;
-    }
-
     public sealed partial class MainWindow : Window
     {
         private readonly DatabaseService _database = new();
@@ -730,6 +718,7 @@ namespace NFC_System
 
         private void Registration_Click(object sender, RoutedEventArgs e)
         {
+            if (!AppSession.CanIssueQrCredentials) return;
             new RegistrationWindow().Activate();
             this.Close();
         }
