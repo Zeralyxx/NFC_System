@@ -60,6 +60,8 @@ namespace NFC_System
         private MediaCapture? _mediaCapture;
         private bool _isDecoding;
         private bool _isDisposingCamera;
+        private readonly System.Threading.SemaphoreSlim _cameraLock = new(1, 1);
+        private int _cameraVersion;
         private bool _isClosing;
 
         private DateTime _lastFrameProcessTime = DateTime.MinValue;
@@ -153,6 +155,7 @@ namespace NFC_System
                 TimeSpan.FromSeconds(1));
 
             Closed += KioskModeWindow_Closed;
+            KioskStateController.CameraChanged += KioskStateController_CameraChanged;
             _ = InitializeCameraAsync();
             _ = SyncOperationalModeAsync();
 
@@ -207,6 +210,8 @@ namespace NFC_System
         // ====================================================================
         private async void HardwareService_OnUidScanned(string uid)
         {
+            if (_isClosing || !AppSession.IsLoggedIn) return;
+            long loginVersion = AppSession.LoginVersion;
             // A new student may replace a visible result, but cannot interrupt PIN or QR verification.
             if (_currentStage != AuthenticationStage.Idle &&
                 _currentStage != AuthenticationStage.AccessGranted &&
@@ -216,12 +221,17 @@ namespace NFC_System
             }
 
             if (await IsStaffCredentialAsync(uid)) return;
+            if (_isClosing || !AppSession.IsLoggedIn || AppSession.LoginVersion != loginVersion) return;
 
             if (_currentStage == AuthenticationStage.Idle ||
                 _currentStage == AuthenticationStage.AccessGranted ||
                 _currentStage == AuthenticationStage.AccessDenied)
             {
-                DispatcherQueue.TryEnqueue(() => ProcessNfcScan(uid));
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (!_isClosing && AppSession.IsLoggedIn && AppSession.LoginVersion == loginVersion)
+                        ProcessNfcScan(uid);
+                });
             }
         }
 
@@ -409,6 +419,16 @@ namespace NFC_System
             });
         }
 
+        private void KioskStateController_CameraChanged(string cameraId)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_isClosing) return;
+                _cameraVersion++;
+                _ = InitializeCameraAsync();
+            });
+        }
+
         private async Task SyncOperationalModeAsync()
         {
             try
@@ -453,6 +473,8 @@ namespace NFC_System
         private void KioskModeWindow_Closed(object sender, WindowEventArgs args)
         {
             _isClosing = true;
+            _cameraVersion++;
+            KioskStateController.CameraChanged -= KioskStateController_CameraChanged;
 
             // THE FIX: Clean up listeners and return control
             AppSession.IsKioskRunning = false;
@@ -474,23 +496,6 @@ namespace NFC_System
 
         private void ExitKiosk_Click(object sender, RoutedEventArgs e)
         {
-            _isClosing = true;
-
-            // THE FIX: Clean up listeners and return control
-            AppSession.IsKioskRunning = false;
-            HardwareService.ConnectionStatusChanged -= HardwareService_ConnectionStatusChanged;
-            DatabaseMonitor.ConnectionStatusChanged -= DatabaseMonitor_ConnectionStatusChanged;
-            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
-            HardwareService.OnKeypadInput -= HardwareService_OnKeypadInput;
-
-            _inactivityTimer.Stop();
-            _hardwareStatusTimer.Dispose();
-            _shadowCacheTimer.Stop();
-            _syncRecoveryTimer.Stop();
-
-            SetHardwareLeds(false);
-            System.Threading.Thread.Sleep(50);
-            _ = DisposeCameraAsync();
             this.Close();
         }
 
@@ -1232,10 +1237,15 @@ namespace NFC_System
 
         private async Task InitializeCameraAsync()
         {
+            await _cameraLock.WaitAsync();
             try
             {
+                if (_isClosing) return;
+                await DisposeCameraCoreAsync();
+                int version = ++_cameraVersion;
                 var devices = await Windows.Devices.Enumeration.DeviceInformation.FindAllAsync(Windows.Devices.Enumeration.DeviceClass.VideoCapture);
-                if (devices.Count == 0) return;
+                if (_isClosing) return;
+                if (devices.Count == 0) throw new InvalidOperationException("No camera was found.");
 
                 string targetCameraId = string.IsNullOrEmpty(KioskStateController.SelectedCameraId) ? devices[0].Id : KioskStateController.SelectedCameraId;
                 var selectedDevice = devices.FirstOrDefault(d => d.Id == targetCameraId) ?? devices[0];
@@ -1247,6 +1257,11 @@ namespace NFC_System
                     StreamingCaptureMode = StreamingCaptureMode.Video,
                     MemoryPreference = MediaCaptureMemoryPreference.Cpu
                 });
+                if (_isClosing || version != _cameraVersion)
+                {
+                    await DisposeCameraCoreAsync();
+                    return;
+                }
 
                 var focusControl = _mediaCapture.VideoDeviceController.FocusControl;
                 if (focusControl.Supported)
@@ -1262,21 +1277,35 @@ namespace NFC_System
                 }
 
                 var frameSource = _mediaCapture.FrameSources.Values.FirstOrDefault(fs => fs.Info.MediaStreamType == MediaStreamType.VideoPreview) ?? _mediaCapture.FrameSources.Values.FirstOrDefault();
-                if (frameSource == null) return;
+                if (frameSource == null) throw new InvalidOperationException("The selected camera has no usable video stream.");
 
                 _frameReader = await _mediaCapture.CreateFrameReaderAsync(frameSource, MediaEncodingSubtypes.Bgra8);
                 _frameReader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
                 _frameReader.FrameArrived += FrameReader_FrameArrived;
-                await _frameReader.StartAsync();
+                var status = await _frameReader.StartAsync();
+                if (status != MediaFrameReaderStartStatus.Success)
+                    throw new InvalidOperationException($"Camera start failed: {status}.");
+                if (_isClosing || version != _cameraVersion)
+                {
+                    await DisposeCameraCoreAsync();
+                    return;
+                }
 
                 KioskCameraPreview.Source = _previewSource;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                await DisposeCameraCoreAsync();
+                if (!_isClosing) OnKioskLog?.Invoke($"[CAMERA] {ex.Message}");
+            }
+            finally { _cameraLock.Release(); }
         }
 
         private void FrameReader_FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
         {
-            if (_isClosing || _currentStage != AuthenticationStage.WaitingForQR) return;
+            if (_isClosing || _isDisposingCamera || sender != _frameReader ||
+                _currentStage != AuthenticationStage.WaitingForQR) return;
+            int cameraVersion = _cameraVersion;
 
             bool processPreview = !_isUpdatingPreview && (DateTime.Now - _lastPreviewTime).TotalMilliseconds >= 33;
             bool processDecode = !_isDecoding && (DateTime.Now - _lastFrameProcessTime).TotalMilliseconds >= 120;
@@ -1300,11 +1329,11 @@ namespace NFC_System
                 else
                     previewBitmap = SoftwareBitmap.Copy(rawBitmap);
 
-                DispatcherQueue.TryEnqueue(async () =>
+                if (!DispatcherQueue.TryEnqueue(async () =>
                 {
                     try
                     {
-                        if (!_isClosing && _currentStage == AuthenticationStage.WaitingForQR)
+                        if (!_isClosing && cameraVersion == _cameraVersion && _currentStage == AuthenticationStage.WaitingForQR)
                             await _previewSource.SetBitmapAsync(previewBitmap);
                     }
                     catch { }
@@ -1313,7 +1342,11 @@ namespace NFC_System
                         previewBitmap.Dispose();
                         _isUpdatingPreview = false;
                     }
-                });
+                }))
+                {
+                    previewBitmap.Dispose();
+                    _isUpdatingPreview = false;
+                }
             }
 
             if (processDecode)
@@ -1340,7 +1373,11 @@ namespace NFC_System
                             _lastScannedQr = payload;
                             _lastQrScanTime = DateTime.Now;
 
-                            DispatcherQueue.TryEnqueue(() => ProcessQrScan(payload));
+                            DispatcherQueue.TryEnqueue(() =>
+                            {
+                                if (!_isClosing && cameraVersion == _cameraVersion && AppSession.IsLoggedIn)
+                                    ProcessQrScan(payload);
+                            });
                         }
                     }
                     catch { }
@@ -1376,19 +1413,24 @@ namespace NFC_System
 
         private async Task DisposeCameraAsync()
         {
-            if (_isDisposingCamera) return;
+            await _cameraLock.WaitAsync();
+            try { await DisposeCameraCoreAsync(); }
+            finally { _cameraLock.Release(); }
+        }
+
+        private async Task DisposeCameraCoreAsync()
+        {
             _isDisposingCamera = true;
-
-            SetHardwareLeds(false);
-
             try
             {
-                if (_frameReader != null)
+                var reader = _frameReader;
+                _frameReader = null;
+                if (reader != null)
                 {
-                    _frameReader.FrameArrived -= FrameReader_FrameArrived;
-                    await _frameReader.StopAsync();
-                    _frameReader.Dispose();
-                    _frameReader = null;
+                    reader.FrameArrived -= FrameReader_FrameArrived;
+                    try { await reader.StopAsync(); }
+                    catch (Exception ex) { Debug.WriteLine($"Camera stop: {ex.Message}"); }
+                    finally { reader.Dispose(); }
                 }
                 if (_mediaCapture != null)
                 {

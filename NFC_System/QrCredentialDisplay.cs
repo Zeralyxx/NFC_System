@@ -13,6 +13,19 @@ namespace NFC_System;
 
 internal static class QrCredentialDisplay
 {
+    internal static string GetExportFileName(string studentId)
+    {
+        string name = studentId.Trim();
+        foreach (char invalid in Path.GetInvalidFileNameChars()) name = name.Replace(invalid, '_');
+        name = name.TrimEnd('.', ' ');
+        if (string.IsNullOrWhiteSpace(name)) return "Student-QR";
+        string stem = name.Split('.')[0].ToUpperInvariant();
+        if (stem is "CON" or "PRN" or "AUX" or "NUL" ||
+            (stem.Length == 4 && (stem.StartsWith("COM") || stem.StartsWith("LPT")) && char.IsDigit(stem[3])))
+            name = "Student-" + name;
+        return name;
+    }
+
     internal static async Task HideAsync(ContentDialog dialog)
     {
         var closed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,7 +60,7 @@ internal static class QrCredentialDisplay
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         try
         {
-            var picker = new Windows.Storage.Pickers.FileSavePicker { SuggestedFileName = "Student-QR" };
+            var picker = new Windows.Storage.Pickers.FileSavePicker { SuggestedFileName = GetExportFileName(studentId) };
             picker.FileTypeChoices.Add("PNG image", new[] { ".png" });
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(owner));
             var file = await picker.PickSaveFileAsync();

@@ -18,6 +18,7 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private string _currentPort = "COM3";
         private bool _isAuthenticating = false;
+        private bool _isClosed;
 
         private bool _isFirstTimeSetup = false;
         private string _pendingMasterUid = "";
@@ -42,6 +43,7 @@ namespace NFC_System
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Branding", "AppIcon.ico"));
             appWindow.Closing += AppWindow_Closing;
 
             this.Closed += MainWindow_Closed;
@@ -409,13 +411,7 @@ namespace NFC_System
                 return;
             }
 
-            // SMART ROUTING: If the guard is logged in AND the Kiosk is running, 
-            // the Dashboard ignores the scan entirely so the Kiosk can process the student!
-            if (AppSession.IsLoggedIn && AppSession.IsKioskRunning) return;
-
-            // If we are logged OUT, or the Kiosk isn't running, process it as a staff login
-            if (_isAuthenticating) return;
-            _isAuthenticating = true;
+            if (_isClosed || !AppSession.CanAcceptStaffLogin) return;
             DispatcherQueue.TryEnqueue(() => _ = ProcessLoginScanAsync(uid));
         }
 
@@ -480,6 +476,15 @@ namespace NFC_System
 
         private async Task ProcessLoginScanAsync(string uid)
         {
+            if (_isClosed || _isAuthenticating || !AppSession.CanAcceptStaffLogin) return;
+            _isAuthenticating = true;
+            try { await ProcessLoginScanCoreAsync(uid); }
+            finally { _isAuthenticating = false; }
+        }
+
+        private async Task ProcessLoginScanCoreAsync(string uid)
+        {
+            long loginVersion = AppSession.LoginVersion;
             if (_isFirstTimeSetup)
             {
                 if (SetupFormPanel.Visibility == Visibility.Visible)
@@ -541,14 +546,10 @@ namespace NFC_System
                 }
             }
 
-            if (role == "Administrator" || role == "Master Administrator")
+            if (_isClosed || !AppSession.CanAcceptStaffLogin || AppSession.LoginVersion != loginVersion) return;
+            bool signedIn = AppSession.TrySignIn(role, fullName, loginVersion);
+            if (signedIn && (role == "Administrator" || role == "Master Administrator"))
             {
-                AppSession.IsAdmin = true;
-                AppSession.IsEventOrganizer = false;
-                AppSession.IsLoggedIn = true;
-                AppSession.CurrentStaffName = fullName ?? "Administrator";
-                AppSession.CurrentStaffRoleLabel = role == "Master Administrator" ? "Master Admin" : "Admin";
-
                 if (DatabaseMonitor.IsOnline)
                 {
                     try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "ADMIN_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
@@ -557,14 +558,8 @@ namespace NFC_System
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
-            else if (role == "Event Organizer")
+            else if (signedIn && role == "Event Organizer")
             {
-                AppSession.IsAdmin = false;
-                AppSession.IsEventOrganizer = true;
-                AppSession.IsLoggedIn = true;
-                AppSession.CurrentStaffName = fullName ?? "Organizer";
-                AppSession.CurrentStaffRoleLabel = "Event Organizer";
-
                 if (DatabaseMonitor.IsOnline)
                 {
                     try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
@@ -573,14 +568,8 @@ namespace NFC_System
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
-            else if (role == "Security Personnel")
+            else if (signedIn && role == "Security Personnel")
             {
-                AppSession.IsAdmin = false;
-                AppSession.IsEventOrganizer = false;
-                AppSession.IsLoggedIn = true;
-                AppSession.CurrentStaffName = fullName ?? "Guard";
-                AppSession.CurrentStaffRoleLabel = "Personnel";
-
                 if (DatabaseMonitor.IsOnline)
                 {
                     try { await _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGIN", $"{role} logged in: {AppSession.CurrentStaffName} (NFC UID: {uid})"); } catch { }
@@ -602,8 +591,6 @@ namespace NFC_System
 
         private void ProcessLoginScan(string uid)
         {
-            if (_isAuthenticating) return;
-            _isAuthenticating = true;
             _ = ProcessLoginScanAsync(uid);
         }
 
@@ -821,6 +808,7 @@ namespace NFC_System
 
         private void MainWindow_Closed(object sender, WindowEventArgs args)
         {
+            _isClosed = true;
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
 
             // THE FIX: Unhook the event when leaving the dashboard so we don't cause memory leaks

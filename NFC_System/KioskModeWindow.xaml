@@ -68,7 +68,7 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xEA18;" FontSize="24" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <Image Source="ms-appx:///Assets/Branding/Icon.png" Width="40" Height="40" Stretch="Uniform" AutomationProperties.Name="NFC System"/>
                 <TextBlock x:Name="KioskHeaderSubtitle" Text="NFC VERIFICATION TERMINAL" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" CharacterSpacing="150" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </StackPanel>
 

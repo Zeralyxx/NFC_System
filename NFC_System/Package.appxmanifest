@@ -18,7 +18,7 @@
   <Properties>
     <DisplayName>NFC_System</DisplayName>
     <PublisherDisplayName>zera</PublisherDisplayName>
-    <Logo>Assets\StoreLogo.png</Logo>
+    <Logo>Assets\Branding\StoreLogo.png</Logo>
   </Properties>
 
   <Dependencies>
@@ -37,11 +37,11 @@
       <uap:VisualElements
         DisplayName="NFC_System"
         Description="NFC_System"
-        BackgroundColor="transparent"
-        Square150x150Logo="Assets\Square150x150Logo.png"
-        Square44x44Logo="Assets\Square44x44Logo.png">
-        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
-        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+        BackgroundColor="#F5F7FA"
+        Square150x150Logo="Assets\Branding\Square150x150Logo.png"
+        Square44x44Logo="Assets\Branding\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Branding\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Assets\Branding\SplashScreen.png" BackgroundColor="#F5F7FA" />
       </uap:VisualElements>
     </Application>
   </Applications>

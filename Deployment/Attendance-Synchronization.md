@@ -101,6 +101,15 @@ The SQL suite links production queue, transaction, reconciliation, readiness, sn
 
 ## Tester checklist
 
+### Staff-session, camera and export regression checks (2026-09-21)
+
+1. Sign in as Personnel. With the kiosk open, tap a registered Event Organizer card, then verify a valid student. The organizer tap must not replace the operator or become an unknown student result; the student must still follow the selected verification mode. Return to the main menu and confirm the original Personnel name/role remains. Repeat with Admin and another Personnel card, both with and without a kiosk open.
+2. Explicitly sign out, then tap an organizer or personnel card. Normal staff login and its audit record must still work. Authorization taps in administrator confirmation dialogs must authorize only the requested action, not replace the signed-in operator.
+3. With two cameras connected, open the kiosk QR stage and change the camera in the controller. The preview and QR input must switch without reopening the kiosk. Switch back, change rapidly, and close/reopen while switching; confirm no crash or old-camera scan is processed. Repeat from both Gate Verification and Event Attendance controllers. Physical switching remains a hardware acceptance test.
+4. Export student `00-00010` from Student Management and from the registration preview. The default filename must be `00-00010.png`, not `Student-QR.png`. Cancel and retry export; the saved credential must remain unchanged.
+
+### Attendance and recovery checks
+
 1. Online entry: confirm the student's time-in and an unrecorded time-out. Exit: confirm the same visit now contains both timestamps. Re-enter: confirm a new visit, not the previous exit paired with the new entry.
 2. Repeat using Fast, Standard, High Security, and signed-QR fallback. Confirm PIN/QR requirements are unchanged.
 3. At second nine, scan another student. Confirm replacement is immediate, the old timeout does not clear the new card, and the new card remains for its own ten seconds. Repeat with large photos and long names at the deployed screen resolution/scaling.

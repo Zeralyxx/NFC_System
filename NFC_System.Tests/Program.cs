@@ -369,5 +369,71 @@ await Test("Unreadable outbox denies NFC and QR fallback without throwing", asyn
     Assert(!nfc.IsGranted && !qrResult.IsGranted && nfc.ErrorCategory == "ATTENDANCE_STORAGE_UNAVAILABLE");
     Assert(f.Db.ReadCount == 0);
 });
+foreach (bool kioskRunning in new[] { false, true })
+foreach (string accidentalRole in new[] { "Event Organizer", "Administrator", "Master Administrator", "Security Personnel" })
+await Test($"Active personnel cannot be replaced by {accidentalRole}, kiosk={kioskRunning}", () => Check(() =>
+{
+    AppSession.IsLoggedIn = false;
+    Assert(AppSession.TrySignIn("Security Personnel", "Original Guard", AppSession.LoginVersion));
+    AppSession.IsKioskRunning = kioskRunning;
+    Assert(!AppSession.CanAcceptStaffLogin);
+    Assert(!AppSession.TrySignIn(accidentalRole, "Accidental Tap", AppSession.LoginVersion));
+    Assert(AppSession.IsLoggedIn && !AppSession.IsAdmin && !AppSession.IsEventOrganizer);
+    Assert(AppSession.CurrentStaffName == "Original Guard" && AppSession.CurrentStaffRoleLabel == "Personnel");
+}));
+await Test("Explicit logout allows a new staff login even with kiosk still open", () => Check(() =>
+{
+    AppSession.IsLoggedIn = false; AppSession.IsKioskRunning = true;
+    Assert(AppSession.CanAcceptStaffLogin);
+    Assert(AppSession.TrySignIn("Event Organizer", "Organizer", AppSession.LoginVersion));
+    Assert(AppSession.IsEventOrganizer && !AppSession.IsAdmin && AppSession.CurrentStaffName == "Organizer");
+}));
+foreach (bool offline in new[] { false, true })
+await Test($"Valid student remains verifiable after rejected organizer login, offline={offline}", async () =>
+{
+    var f = Fixture(offline);
+    AppSession.IsLoggedIn = false;
+    Assert(AppSession.TrySignIn("Security Personnel", "Original Guard", AppSession.LoginVersion));
+    Assert(!AppSession.TrySignIn("Event Organizer", "Accidental Organizer", AppSession.LoginVersion));
+    Assert((await f.Engine.SubmitQrAsync(await HighSession(f.Engine), qrA)).IsGranted);
+    Assert(AppSession.CurrentStaffName == "Original Guard" && !AppSession.IsEventOrganizer);
+});
+await Test("Delayed login result from before logout cannot change the session", () => Check(() =>
+{
+    AppSession.IsLoggedIn = false; long lookupVersion = AppSession.LoginVersion;
+    AppSession.IsLoggedIn = false;
+    Assert(!AppSession.TrySignIn("Event Organizer", "Delayed Organizer", lookupVersion));
+    Assert(!AppSession.IsLoggedIn);
+}));
+await Test("Concurrent staff lookups commit only one login", async () =>
+{
+    AppSession.IsLoggedIn = false; long version = AppSession.LoginVersion;
+    var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(i => Task.Run(() =>
+        AppSession.TrySignIn(i % 2 == 0 ? "Security Personnel" : "Event Organizer", "Staff " + i, version))));
+    Assert(results.Count(x => x) == 1 && AppSession.IsLoggedIn);
+});
+await Test("Unknown staff role cannot log in", () => Check(() =>
+{
+    AppSession.IsLoggedIn = false;
+    Assert(!AppSession.TrySignIn("Student", "Student", AppSession.LoginVersion));
+    Assert(!AppSession.IsLoggedIn);
+}));
+await Test("Camera changes notify running kiosks only when selection changes", () => Check(() =>
+{
+    KioskStateController.SelectedCameraId = "camera-a";
+    var received = new List<string>();
+    void Changed(string id) => received.Add(id);
+    KioskStateController.CameraChanged += Changed;
+    try
+    {
+        KioskStateController.SelectedCameraId = "camera-b";
+        KioskStateController.SelectedCameraId = "camera-b";
+        KioskStateController.SelectedCameraId = "camera-a";
+        Assert(received.SequenceEqual(new[] { "camera-b", "camera-a" }));
+    }
+    finally { KioskStateController.CameraChanged -= Changed; }
+    KioskStateController.SelectedCameraId = "";
+    Assert(received.Count == 2);
+}));
 Console.WriteLine($"\n{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

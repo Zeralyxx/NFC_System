@@ -29,8 +29,8 @@
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
                         <!-- Login Screen Adjustments -->
-                        <Setter Target="MainLoginTitle.FontSize" Value="28" />
-                        <Setter Target="MainLoginTitle.CharacterSpacing" Value="25" />
+                        <Setter Target="MainLoginTitle.FontSize" Value="22" />
+                        <Setter Target="MainLoginTitle.CharacterSpacing" Value="0" />
                         <Setter Target="MainLoginTitle.Margin" Value="16,0,16,0" />
                         <Setter Target="SetupTitle.FontSize" Value="28" />
                         <Setter Target="SetupTitle.Margin" Value="16,0,16,0" />
@@ -48,7 +48,7 @@
                         <Setter Target="DashboardTitleStack.Margin" Value="0,24,0,0" />
 
                         <!-- Shrink text size for narrow fit -->
-                        <Setter Target="DashboardTitleText.FontSize" Value="24" />
+                        <Setter Target="DashboardTitleText.FontSize" Value="20" />
                         <Setter Target="DashboardSubtitleText.FontSize" Value="13" />
                         <Setter Target="DashboardSubtitleText.TextWrapping" Value="Wrap" />
 
@@ -102,16 +102,12 @@
 
                     <!-- Central Title and Logo -->
                     <StackPanel x:Name="DashboardTitleStack" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Center" Spacing="8">
-                        <Border Width="64" Height="64" CornerRadius="16" Background="#1AFFFFFF" HorizontalAlignment="Center">
-                            <Viewbox Margin="16">
-                                <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                            </Viewbox>
-                        </Border>
+                        <local:BrandLogo HorizontalAlignment="Center" Height="64" />
 
                         <TextBlock x:Name="DashboardTitleText" 
                                    Text="Risk-Based Verification System"
                                    Style="{StaticResource PageTitleStyle}"
-                                   FontSize="36"
+                                   FontSize="20"
                                    HorizontalAlignment="Center"
                                    Margin="0"
                                    TextAlignment="Center"
@@ -341,9 +337,7 @@
             <!-- FIRST TIME SETUP OVERLAY -->
             <Grid x:Name="SetupOverlay" Background="#0A0A0A" Visibility="Collapsed">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24" Width="400">
-                    <Viewbox MaxHeight="80" Margin="0,0,0,8">
-                        <FontIcon Glyph="&#xE713;" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                    </Viewbox>
+                    <local:BrandLogo HorizontalAlignment="Center" Height="64" Margin="0,0,0,8" />
                     <TextBlock x:Name="SetupTitle" Text="System Initialization" FontSize="36" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" TextAlignment="Center"/>
                     <TextBlock x:Name="SetupInstructionText" Text="Please tap an NFC card to register as the Master Administrator." FontSize="16" Foreground="#A0A0A0" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,16"/>
 
@@ -362,11 +356,9 @@
             <Grid x:Name="LoginOverlay" Background="#0A0A0A" Visibility="Visible">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="24">
 
-                    <Viewbox MaxHeight="100" Margin="0,0,0,16">
-                        <FontIcon Glyph="&#xEA18;" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                    </Viewbox>
+                    <local:BrandLogo HorizontalAlignment="Center" Height="64" Margin="0,0,0,16" />
 
-                    <TextBlock x:Name="MainLoginTitle" Text="Risk-Based NFC Verification System" FontSize="48" FontWeight="Black" Foreground="White" HorizontalAlignment="Center" CharacterSpacing="150" TextAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="MainLoginTitle" Text="Risk-Based NFC Verification System" FontSize="26" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" CharacterSpacing="0" TextAlignment="Center" TextWrapping="Wrap"/>
                     <TextBlock x:Name="LoginStatusText" Text="Please tap your Staff or Admin NFC ID to log in." FontSize="18" Foreground="#A0A0A0" HorizontalAlignment="Center" Margin="0,0,0,32" TextAlignment="Center" TextWrapping="Wrap"/>
                     <Button Click="RefreshComPort_Click" 
                             Background="Transparent" 

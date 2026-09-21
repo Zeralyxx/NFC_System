@@ -9,7 +9,19 @@ namespace NFC_System
         public static TransactionType CurrentType { get; private set; } = TransactionType.Entry;
 
         // NEW: Store the Hardware ID of the selected webcam
-        public static string SelectedCameraId { get; set; } = "";
+        private static string _selectedCameraId = "";
+        public static string SelectedCameraId
+        {
+            get => _selectedCameraId;
+            set
+            {
+                string cameraId = value ?? "";
+                if (_selectedCameraId == cameraId) return;
+                _selectedCameraId = cameraId;
+                CameraChanged?.Invoke(cameraId);
+            }
+        }
+        public static event Action<string>? CameraChanged;
 
         // 2. The live event that the Kiosk screen listens to
         public static event Action<VerificationMode, TransactionType>? ModeChanged;
