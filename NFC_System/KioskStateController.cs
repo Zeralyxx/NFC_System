@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace NFC_System
 {
@@ -25,6 +26,33 @@ namespace NFC_System
 
         // 2. The live event that the Kiosk screen listens to
         public static event Action<VerificationMode, TransactionType>? ModeChanged;
+        public static event Action<string, VerificationMode, TransactionType>? EventStateChanged;
+        public static event Action<string, VerificationMode>? EventModeChanged;
+        private static readonly Dictionary<string, (VerificationMode Mode, TransactionType Type)> EventStates = new(StringComparer.Ordinal);
+
+        public static (VerificationMode Mode, TransactionType Type) GetEventState(string eventId)
+        {
+            lock (EventStates)
+                return EventStates.TryGetValue(eventId, out var state) ? state : (VerificationMode.Standard, TransactionType.EventAttendance);
+        }
+
+        public static void BroadcastEventStateChange(string eventId, VerificationMode mode, TransactionType direction)
+        {
+            if (string.IsNullOrWhiteSpace(eventId)) return;
+            lock (EventStates) EventStates[eventId] = (mode, direction);
+            EventStateChanged?.Invoke(eventId, mode, direction);
+        }
+
+        public static void BroadcastEventModeChange(string eventId, VerificationMode mode)
+        {
+            if (string.IsNullOrWhiteSpace(eventId)) return;
+            lock (EventStates)
+            {
+                var current = GetEventState(eventId);
+                EventStates[eventId] = (mode, current.Type);
+            }
+            EventModeChanged?.Invoke(eventId, mode);
+        }
 
         // 3. The method the Guard Window calls to change the state and notify the Kiosk
         public static void BroadcastModeChange(VerificationMode mode, TransactionType type)

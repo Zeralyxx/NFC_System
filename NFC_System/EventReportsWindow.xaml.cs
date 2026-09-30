@@ -32,6 +32,9 @@ namespace NFC_System
     public class EventAttendanceViewModel
     {
         public string Timestamp { get; set; } = "";
+        public DateTime RawTimestamp { get; set; }
+        public string DeviceId { get; set; } = "";
+        public string DeviceName { get; set; } = "Unknown/Legacy";
         public string FullName { get; set; } = "";
         public string StudentId { get; set; } = "";
         public string Course { get; set; } = "";
@@ -788,6 +791,9 @@ namespace NFC_System
                 return new EventAttendanceViewModel
                 {
                     Timestamp = l.Timestamp,
+                    RawTimestamp = l.RawTimestamp,
+                    DeviceId = l.DeviceId,
+                    DeviceName = ReportSpreadsheetTables.DeviceName(l.DeviceName),
                     FullName = l.FullName ?? "Unknown",
                     StudentId = l.StudentId ?? "",
                     Course = l.Course ?? "",
@@ -1065,6 +1071,9 @@ namespace NFC_System
                 return new EventAttendanceViewModel
                 {
                     Timestamp = l.Timestamp,
+                    RawTimestamp = l.RawTimestamp,
+                    DeviceId = l.DeviceId,
+                    DeviceName = ReportSpreadsheetTables.DeviceName(l.DeviceName),
                     FullName = l.FullName ?? "Unknown",
                     StudentId = l.StudentId ?? "",
                     Course = l.Course ?? "",
@@ -1095,181 +1104,64 @@ namespace NFC_System
 
         private async void ExportButton_Click(object sender, RoutedEventArgs e)
         {
-            var rawLogs = AttendanceListView.ItemsSource as IEnumerable<EventAttendanceViewModel>;
-
-            if (rawLogs == null || !rawLogs.Any())
+            try
             {
-                ContentDialog emptyDialog = new ContentDialog
+                var rawLogs = (AttendanceListView.ItemsSource as IEnumerable<EventAttendanceViewModel>)?.ToList();
+                if (rawLogs == null || rawLogs.Count == 0) throw new InvalidOperationException("There are no attendance records matching the current filters.");
+                ExportConfigDialog.XamlRoot = Content.XamlRoot;
+                if (await ExportConfigDialog.ShowAsync() != ContentDialogResult.Primary) return;
+                var logs = rawLogs.GroupBy(l => l.StudentId).Select(g => g.First()).ToList();
+                string sort = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+                logs = sort switch
                 {
-                    Title = "Nothing to Export",
-                    Content = "There are no attendance records to export based on your current filters.",
-                    CloseButtonText = "OK",
-                    XamlRoot = this.Content.XamlRoot
+                    "Group by Course, then Section, then Name" => logs.OrderBy(l => l.Course).ThenBy(l => l.Section).ThenBy(l => l.FullName).ToList(),
+                    "Group by Section, then Name" => logs.OrderBy(l => l.Section).ThenBy(l => l.FullName).ToList(),
+                    "Sort alphabetically by Name only" => logs.OrderBy(l => l.FullName).ToList(),
+                    _ => logs
                 };
-                await emptyDialog.ShowAsync();
-                return;
-            }
-
-            ExportConfigDialog.XamlRoot = this.Content.XamlRoot;
-            var dialogResult = await ExportConfigDialog.ShowAsync();
-
-            if (dialogResult != ContentDialogResult.Primary) return;
-
-            var logsToExport = rawLogs
-                .GroupBy(l => l.StudentId)
-                .Select(g => g.First())
-                .ToList();
-
-            string sortOption = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
-
-            if (sortOption == "Group by Course, then Section, then Name")
-            {
-                logsToExport = logsToExport
-                    .OrderBy(l => l.Course)
-                    .ThenBy(l => l.Section)
-                    .ThenBy(l => l.FullName)
-                    .ToList();
-            }
-            else if (sortOption == "Group by Section, then Name")
-            {
-                logsToExport = logsToExport
-                    .OrderBy(l => l.Section)
-                    .ThenBy(l => l.FullName)
-                    .ToList();
-            }
-            else if (sortOption == "Sort alphabetically by Name only")
-            {
-                logsToExport = logsToExport
-                    .OrderBy(l => l.FullName)
-                    .ToList();
-            }
-
-            var picker = new Windows.Storage.Pickers.FileSavePicker();
-
-            IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-
-            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
-            picker.FileTypeChoices.Add("Excel CSV Document", new List<string>() { ".csv" });
-
-            string stateTag = "_Report";
-            string eventPrefix = "Attendance";
-
-            if (_currentSelectedEvent != null)
-            {
-                eventPrefix = _currentSelectedEvent.Event.EventId;
-                stateTag = _currentSelectedEvent.DisplayText.Contains("🟢 LIVE") ? "_LIVE" : "_CLOSED";
-            }
-
-            picker.SuggestedFileName = $"{eventPrefix}_Attendance{stateTag}_{DateTime.Now:yyyyMMdd}";
-
-            Windows.Storage.StorageFile file = await picker.PickSaveFileAsync();
-
-            if (file != null)
-            {
-                var csvData = new System.Text.StringBuilder();
-
-                var headers = new List<string>();
-                if (ExportColTimestamp.IsChecked == true) headers.Add("Timestamp");
-                if (ExportColStudentId.IsChecked == true) headers.Add("Student ID");
-                if (ExportColName.IsChecked == true) headers.Add("Student Name");
-                if (ExportColCourse.IsChecked == true) headers.Add("Course");
-                if (ExportColSection.IsChecked == true) headers.Add("Section");
-                if (ExportColAction.IsChecked == true) headers.Add("Latest Action");
-                if (ExportColStatus.IsChecked == true) headers.Add("Event Completion Status");
-
-                csvData.AppendLine(string.Join(",", headers));
-
-                foreach (var log in logsToExport)
+                var columns = new List<SpreadsheetColumn>();
+                var selectors = new List<Func<EventAttendanceViewModel, object?>>();
+                void Add(bool? selected, string header, Func<EventAttendanceViewModel, object?> value, SpreadsheetValueKind kind = SpreadsheetValueKind.Text)
                 {
-                    var row = new List<string>();
-
-                    if (ExportColTimestamp.IsChecked == true) row.Add($"\"{log.Timestamp}\"");
-                    if (ExportColStudentId.IsChecked == true) row.Add($"\"{log.StudentId}\"");
-                    if (ExportColName.IsChecked == true) row.Add($"\"{log.FullName}\"");
-                    if (ExportColCourse.IsChecked == true) row.Add($"\"{log.Course}\"");
-                    if (ExportColSection.IsChecked == true) row.Add($"\"{log.Section}\"");
-                    if (ExportColAction.IsChecked == true) row.Add($"\"{log.Action}\"");
-                    if (ExportColStatus.IsChecked == true) row.Add($"\"{log.CompletionStatus}\"");
-
-                    csvData.AppendLine(string.Join(",", row));
+                    if (selected != true) return;
+                    columns.Add(new(header, kind));
+                    selectors.Add(value);
                 }
-
-                Windows.Storage.CachedFileManager.DeferUpdates(file);
-                await Windows.Storage.FileIO.WriteTextAsync(file, csvData.ToString(), Windows.Storage.Streams.UnicodeEncoding.Utf8);
-                Windows.Storage.Provider.FileUpdateStatus status = await Windows.Storage.CachedFileManager.CompleteUpdatesAsync(file);
-
-                if (status == Windows.Storage.Provider.FileUpdateStatus.Complete)
-                {
-                    ContentDialog successDialog = new ContentDialog
-                    {
-                        Title = "Export Complete",
-                        Content = $"Your custom report was successfully exported and saved to:\n\n{file.Path}",
-                        CloseButtonText = "OK",
-                        XamlRoot = this.Content.XamlRoot
-                    };
-                    await successDialog.ShowAsync();
-                }
+                Add(ExportColTimestamp.IsChecked, "Timestamp", l => l.RawTimestamp == DateTime.MinValue ? ReportSpreadsheetTables.EventTimestamp(l.Timestamp) : l.RawTimestamp, SpreadsheetValueKind.DateTime);
+                Add(ExportColStudentId.IsChecked, "Student ID", l => l.StudentId);
+                Add(ExportColName.IsChecked, "Student Name", l => l.FullName);
+                Add(ExportColCourse.IsChecked, "Course", l => l.Course);
+                Add(ExportColSection.IsChecked, "Section", l => l.Section);
+                Add(ExportColAction.IsChecked, "Latest Action", l => l.Action);
+                Add(ExportColStatus.IsChecked, "Event Completion Status", l => l.CompletionStatus);
+                if (columns.Count == 0) throw new InvalidOperationException("Select at least one report column.");
+                Add(true, "Device ID", l => l.DeviceId);
+                Add(true, "Device Name", l => l.DeviceName);
+                var table = new SpreadsheetTable("Event attendance", columns, logs.Select(l => selectors.Select(s => s(l)).ToArray()).ToList());
+                string name = $"{_currentSelectedEvent?.Event.EventId ?? "Attendance"}_Attendance_{DateTime.Now:yyyyMMdd}";
+                if (await SpreadsheetPicker.SaveAsync(this, name, table)) await ShowExportResultAsync("Export complete", "The selected event report was saved.");
             }
+            catch (Exception ex) { await ShowExportResultAsync("Export not completed", ex.Message); }
         }
 
         private async void UnivExportButton_Click(object sender, RoutedEventArgs e)
         {
-            var rawLogs = await _database.GetGeneralLedgerAsync();
-            var logsToExport = rawLogs.ToList();
-
-            if (logsToExport == null || !logsToExport.Any())
+            try
             {
-                ContentDialog emptyDialog = new ContentDialog
-                {
-                    Title = "Nothing to Export",
-                    Content = "There are no campus traffic records to export.",
-                    CloseButtonText = "OK",
-                    XamlRoot = this.Content.XamlRoot
-                };
-                await emptyDialog.ShowAsync();
-                return;
+                // Export the same filtered records as the traffic explorer, without a second unfiltered query.
+                ApplyUnivPopupFilters();
+                var logs = (UnivPopupListView.ItemsSource as IEnumerable<VerificationLogRecord>)?.ToList() ?? _univMasterLogs.ToList();
+                if (logs.Count == 0) throw new InvalidOperationException("There are no campus traffic records matching the current filters.");
+                var table = ReportSpreadsheetTables.Traffic(logs);
+                if (await SpreadsheetPicker.SaveAsync(this, $"Campus_Traffic_Report_{DateTime.Now:yyyyMMdd}", table))
+                    await ShowExportResultAsync("Export complete", "The selected campus traffic report was saved.");
             }
+            catch (Exception ex) { await ShowExportResultAsync("Export not completed", ex.Message); }
+        }
 
-            var picker = new Windows.Storage.Pickers.FileSavePicker();
-
-            IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-
-            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
-            picker.FileTypeChoices.Add("Excel CSV Document", new List<string>() { ".csv" });
-
-            picker.SuggestedFileName = $"Campus_Traffic_Report_{DateTime.Now:yyyyMMdd}";
-
-            Windows.Storage.StorageFile file = await picker.PickSaveFileAsync();
-
-            if (file != null)
-            {
-                var csvData = new System.Text.StringBuilder();
-
-                csvData.AppendLine("Timestamp,Student ID,Student Name,Course,Section,Action,Status,Auth Speed (ms),DB Query Speed (ms)");
-
-                foreach (var log in logsToExport)
-                {
-                    csvData.AppendLine($"\"{log.Timestamp}\",\"{log.StudentId}\",\"{log.FullName}\",\"{log.Course}\",\"{log.Section}\",\"{log.Action}\",\"{log.Status}\",\"{log.AuthSpeedMs}\",\"{log.DbQuerySpeedMs}\"");
-                }
-
-                Windows.Storage.CachedFileManager.DeferUpdates(file);
-                await Windows.Storage.FileIO.WriteTextAsync(file, csvData.ToString(), Windows.Storage.Streams.UnicodeEncoding.Utf8);
-                Windows.Storage.Provider.FileUpdateStatus status = await Windows.Storage.CachedFileManager.CompleteUpdatesAsync(file);
-
-                if (status == Windows.Storage.Provider.FileUpdateStatus.Complete)
-                {
-                    ContentDialog successDialog = new ContentDialog
-                    {
-                        Title = "Export Complete",
-                        Content = $"Your campus traffic report was successfully exported and saved to:\n\n{file.Path}",
-                        CloseButtonText = "OK",
-                        XamlRoot = this.Content.XamlRoot
-                    };
-                    await successDialog.ShowAsync();
-                }
-            }
+        private async Task ShowExportResultAsync(string title, string message)
+        {
+            await new ContentDialog { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = Content.XamlRoot }.ShowAsync();
         }
 
         private void DashboardButton_Click(object sender, RoutedEventArgs e)

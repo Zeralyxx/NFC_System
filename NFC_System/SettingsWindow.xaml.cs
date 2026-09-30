@@ -12,14 +12,63 @@ namespace NFC_System
     public sealed partial class SettingsWindow : Window
     {
         private readonly DatabaseService _database = new();
+        private readonly long _loginVersion = AppSession.LoginVersion;
 
         public SettingsWindow()
         {
             this.InitializeComponent();
             ServerIpConfigTextBox.Text = DatabaseService.ServerIp;
+            LoadDeviceIdentity();
 
             // Fetch the saved database values when window opens
             _ = LoadSettingsAsync();
+        }
+
+        private void LoadDeviceIdentity()
+        {
+            SaveDeviceNameButton.IsEnabled = DeviceIdentity.CanRename;
+            DeviceNameTextBox.IsReadOnly = !DeviceIdentity.CanRename;
+            try
+            {
+                var identity = DeviceIdentity.CaptureCurrent();
+                DeviceIdTextBox.Text = identity.DeviceId;
+                DeviceNameTextBox.Text = identity.DeviceName;
+            }
+            catch (Exception ex)
+            {
+                SaveDeviceNameButton.IsEnabled = false;
+                DeviceNameStatus.Severity = InfoBarSeverity.Error;
+                DeviceNameStatus.Title = "Device identity unavailable";
+                DeviceNameStatus.Message = ex.Message;
+                DeviceNameStatus.IsOpen = true;
+            }
+        }
+
+        private async void SaveDeviceNameButton_Click(object sender, RoutedEventArgs e)
+        {
+            SaveDeviceNameButton.IsEnabled = false;
+            DeviceNameTextBox.IsEnabled = false;
+            try
+            {
+                var result = await _database.RenameCurrentDeviceAsync(DeviceNameTextBox.Text, _loginVersion);
+                DeviceNameTextBox.Text = result.Identity.DeviceName;
+                DeviceIdTextBox.Text = result.Identity.DeviceId;
+                DeviceNameStatus.Severity = result.AuditPending ? InfoBarSeverity.Warning : InfoBarSeverity.Success;
+                DeviceNameStatus.Title = result.Changed ? "Device name saved" : "Device name unchanged";
+                DeviceNameStatus.Message = result.AuditPending ? "Audit upload pending database connection." : "";
+            }
+            catch (Exception ex)
+            {
+                DeviceNameStatus.Severity = InfoBarSeverity.Error;
+                DeviceNameStatus.Title = "Device name not saved";
+                DeviceNameStatus.Message = ex.Message;
+            }
+            finally
+            {
+                DeviceNameStatus.IsOpen = true;
+                DeviceNameTextBox.IsEnabled = true;
+                SaveDeviceNameButton.IsEnabled = DeviceIdentity.CanRename && AppSession.LoginVersion == _loginVersion;
+            }
         }
 
         private async Task LoadSettingsAsync()

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,6 +12,8 @@ namespace NFC_System;
 public sealed class AttendanceQueueSnapshot
 {
     [JsonRequired] public string DeviceId { get; set; } = Guid.NewGuid().ToString("N");
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
+    public List<PendingDeviceNameChange> DeviceNameChanges { get; set; } = new();
     [JsonRequired] public long LastSequence { get; set; }
     [JsonRequired] public bool LegacyImported { get; set; }
     public bool CacheRefreshRequired { get; set; } = true;
@@ -32,10 +35,36 @@ public sealed class DurableAttendanceQueue
 
     public AttendanceQueueSnapshot Snapshot() => Access(state => state);
 
+    internal bool RenameDevice(string name, string staffName, string staffRole, DateTime timestamp, Action authorize)
+    {
+        string validatedName = DeviceIdentity.ValidateName(name);
+        return Access(state =>
+        {
+            authorize();
+            if (state.DeviceName == validatedName) return false;
+            state.DeviceNameChanges.Add(new PendingDeviceNameChange
+            {
+                ChangeId = Guid.NewGuid().ToString("N"), DeviceId = state.DeviceId,
+                PreviousName = DeviceIdentity.DisplayName(state.DeviceName), DeviceName = validatedName,
+                StaffName = staffName, StaffRole = staffRole,
+                Timestamp = timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)
+            });
+            state.DeviceName = validatedName;
+            return true;
+        }, true);
+    }
+
+    internal void AcknowledgeDeviceNameChange(string changeId) => Access(state =>
+    {
+        state.DeviceNameChanges.RemoveAll(x => x.ChangeId == changeId);
+        return true;
+    }, true);
+
     public PendingGateLog Enqueue(PendingGateLog log) => Access(state =>
     {
         log.TransactionId = Guid.NewGuid().ToString("N");
         log.DeviceId = state.DeviceId;
+        log.DeviceName = DeviceIdentity.DisplayName(state.DeviceName);
         log.DeviceSequence = ++state.LastSequence;
         state.GateLogs.Add(log);
         if (!log.OnlineAttempt) state.CacheRefreshRequired = true;
@@ -46,6 +75,7 @@ public sealed class DurableAttendanceQueue
     {
         log.TransactionId = Guid.NewGuid().ToString("N");
         log.DeviceId = state.DeviceId;
+        log.DeviceName = DeviceIdentity.DisplayName(state.DeviceName);
         log.DeviceSequence = ++state.LastSequence;
         state.EventLogs.Add(log);
         state.CacheRefreshRequired = true;
@@ -77,8 +107,12 @@ public sealed class DurableAttendanceQueue
         // Corruption is an error, never an empty queue. Preserve the file for recovery.
         var state = exists ? JsonSerializer.Deserialize<AttendanceQueueSnapshot>(File.ReadAllText(_path))
             ?? throw new InvalidDataException("Attendance outbox is empty or invalid.") : new AttendanceQueueSnapshot();
-        if (string.IsNullOrWhiteSpace(state.DeviceId) || state.LastSequence < 0 || state.GateLogs == null || state.EventLogs == null)
+        if (string.IsNullOrWhiteSpace(state.DeviceId) || state.LastSequence < 0 || state.GateLogs == null || state.EventLogs == null || state.DeviceNameChanges == null)
             throw new InvalidDataException("Invalid attendance device state.");
+        state.DeviceName = DeviceIdentity.DisplayName(state.DeviceName);
+        if (state.DeviceNameChanges.Any(x => x == null || !Guid.TryParseExact(x.ChangeId, "N", out _) || x.DeviceId != state.DeviceId) ||
+            state.DeviceNameChanges.Select(x => x.ChangeId).Distinct().Count() != state.DeviceNameChanges.Count)
+            throw new InvalidDataException("Invalid device rename audit state.");
         bool migrated = !state.LegacyImported;
         if (migrated)
         {
@@ -88,6 +122,7 @@ public sealed class DurableAttendanceQueue
             {
                 log.TransactionId = Guid.NewGuid().ToString("N");
                 log.DeviceId = state.DeviceId;
+                log.DeviceName = DeviceIdentity.UnknownName;
                 log.DeviceSequence = ++state.LastSequence;
                 log.IsLegacy = true;
                 log.WasOffline = true;
@@ -97,6 +132,8 @@ public sealed class DurableAttendanceQueue
             {
                 log.TransactionId = Guid.NewGuid().ToString("N");
                 log.DeviceId = state.DeviceId;
+                log.DeviceName = DeviceIdentity.UnknownName;
+                log.IsLegacy = true;
                 log.DeviceSequence = ++state.LastSequence;
                 state.EventLogs.Add(log);
             }

@@ -342,7 +342,10 @@
                                             <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                             <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                             <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                            <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                            <StackPanel Grid.Column="6" VerticalAlignment="Center" Spacing="4">
+                                                <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" FontSize="13"/>
+                                                <TextBlock Text="{x:Bind DeviceName}" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{StaticResource TextSecondaryBrush}" ToolTipService.ToolTip="{x:Bind DeviceId}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
@@ -492,7 +495,10 @@
                                         <TextBlock Grid.Column="1" Text="{x:Bind LogType}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="2" Text="{x:Bind Subject}" VerticalAlignment="Center" FontSize="13"/>
                                         <TextBlock Grid.Column="3" Text="{x:Bind Status}" Foreground="{x:Bind StatusColor}" FontWeight="Bold" VerticalAlignment="Center" FontSize="13"/>
-                                        <TextBlock Grid.Column="6" Text="{x:Bind Details}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="13"/>
+                                            <StackPanel Grid.Column="6" VerticalAlignment="Center" Spacing="4">
+                                                <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" FontSize="13"/>
+                                                <TextBlock Text="{x:Bind DeviceName}" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{StaticResource TextSecondaryBrush}" ToolTipService.ToolTip="{x:Bind DeviceId}"/>
+                                            </StackPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
@@ -516,7 +522,7 @@
             </StackPanel>
         </ContentDialog>
 
-        <ContentDialog x:Name="ExportConfigDialog" Title="Configure Audit Export" PrimaryButtonText="Export to CSV" CloseButtonText="Cancel" CornerRadius="8">
+        <ContentDialog x:Name="ExportConfigDialog" Title="Configure Audit Export" PrimaryButtonText="Export" CloseButtonText="Cancel" CornerRadius="8">
             <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
                 <TextBlock Text="Select the columns to include in the exported audit log:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 <Border Background="#0AFFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Padding="16">

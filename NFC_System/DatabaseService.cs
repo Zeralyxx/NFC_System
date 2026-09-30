@@ -12,6 +12,8 @@ namespace NFC_System;
 
 public sealed class VerificationLogRecord
 {
+    public string DeviceId { get; set; } = "";
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
     public string Timestamp { get; set; } = "";
     public DateTime RawTimestamp { get; set; }
     public string StudentId { get; set; } = "";
@@ -39,6 +41,8 @@ public sealed class StaffRecord
 
 public sealed class SystemAuditLog
 {
+    public string DeviceId { get; set; } = "";
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
     public DateTime Timestamp { get; set; }
     public string DisplayTime { get; set; } = "";
     public string LogType { get; set; } = "";
@@ -51,6 +55,9 @@ public sealed class SystemAuditLog
 
 public sealed class AttendanceLog
 {
+    public string DeviceId { get; set; } = "";
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
+    public DateTime RawTimestamp { get; set; }
     public string Timestamp { get; set; } = "";
     public string StudentId { get; set; } = "";
     public string FullName { get; set; } = "";
@@ -78,11 +85,11 @@ public sealed partial class DatabaseService
     }
 
     private const string CombinedLogsQuery = @"
-        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'fast_mode_logs' AS source_table FROM fast_mode_logs 
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, device_id, device_name, 'fast_mode_logs' AS source_table FROM fast_mode_logs
         UNION ALL 
-        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'standard_mode_logs' AS source_table FROM standard_mode_logs 
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, device_id, device_name, 'standard_mode_logs' AS source_table FROM standard_mode_logs
         UNION ALL 
-        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, 'high_security_mode_logs' AS source_table FROM high_security_mode_logs";
+        SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, device_id, device_name, 'high_security_mode_logs' AS source_table FROM high_security_mode_logs";
 
     public static void LoadConfig()
     {
@@ -269,6 +276,10 @@ public sealed partial class DatabaseService
             await schemaCmd.ExecuteNonQueryAsync();
         }
 
+        await EnsureDeviceAttributionSchemaAsync(connection);
+        await EnsureGraduationSchemaAsync(connection);
+        await EnsureEventRosterSyncSchemaAsync(connection);
+
         using (var typeCommand = new MySqlCommand("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'students' AND COLUMN_NAME = 'qr_credential'", connection))
         {
             if (Convert.ToString(await typeCommand.ExecuteScalarAsync()) == "varchar")
@@ -297,33 +308,6 @@ public sealed partial class DatabaseService
         try { using var alterCmd = new MySqlCommand("ALTER TABLE alerts ADD COLUMN synced_to_cloud BOOLEAN DEFAULT FALSE;", connection); await alterCmd.ExecuteNonQueryAsync(); } catch { }
     }
 
-    private async Task DeleteOrphanedCloudDocumentsAsync(string collectionName, HashSet<string> localIds)
-    {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{collectionName}?pageSize=1000&key={FIREBASE_API_KEY}";
-        try
-        {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) return;
-
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return;
-
-            foreach (var document in documents.EnumerateArray())
-            {
-                string docName = document.GetProperty("name").GetString() ?? "";
-                string cloudId = Uri.UnescapeDataString(docName.Split('/').LastOrDefault() ?? "");
-
-                if (!string.IsNullOrWhiteSpace(cloudId) && !localIds.Contains(cloudId))
-                {
-                    await _httpClient.DeleteAsync($"https://firestore.googleapis.com/v1/{docName}?key={FIREBASE_API_KEY}");
-                }
-            }
-        }
-        catch { }
-    }
-
     private byte[]? ExtractBlob(JsonElement fields, string key)
     {
         if (fields.TryGetProperty(key, out var prop) && prop.TryGetProperty("bytesValue", out var val))
@@ -342,11 +326,7 @@ public sealed partial class DatabaseService
 
         try
         {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
-
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
+            using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, url);
 
             if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
 
@@ -372,6 +352,7 @@ public sealed partial class DatabaseService
                 string section = ExtractString(fields, "section_name");
                 string status = ExtractString(fields, "status");
                 string nfcUid = ExtractString(fields, "nfc_uid");
+                string clearance = GraduationRules.Label(GraduationRules.Parse(ExtractString(fields, "graduation_clearance")));
                 string qr = ExtractString(fields, "qr_credential");
                 string pinHash = ExtractString(fields, "pin_hash");
                 string pinSalt = ExtractString(fields, "pin_salt");
@@ -385,11 +366,13 @@ public sealed partial class DatabaseService
 
                 string sql = @"
                     INSERT INTO students 
-                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data, is_temporary, entry_state)
+                    (student_id, full_name, email, course, year_level, section_name, status, nfc_uid, qr_credential, pin_hash, pin_salt, pin_locked, failed_pin_attempts, photo_data, is_temporary, entry_state,
+                     graduation_clearance, graduation_reason, graduation_changed_by, graduation_changed_at_utc, graduation_revision)
                     VALUES 
-                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo, @temp, @state)
+                    (@id, @name, @email, @course, @year, @section, @status, @nfc, @qr, @hash, @salt, @locked, @failed, @photo, @temp, @state,
+                     @clearance, @clearanceReason, @clearanceActor, @clearanceTime, @clearanceRevision)
                     ON DUPLICATE KEY UPDATE 
-                    full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, status=@status, nfc_uid=@nfc, 
+                    full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, nfc_uid=@nfc,
                     qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp";
 
                 using var cmd = new MySqlCommand(sql, connection);
@@ -409,6 +392,12 @@ public sealed partial class DatabaseService
                 cmd.Parameters.AddWithValue("@photo", photoData != null ? photoData : DBNull.Value);
                 cmd.Parameters.AddWithValue("@temp", isTemporary);
                 cmd.Parameters.AddWithValue("@state", entryState);
+                // Archive restore may recreate missing profiles, but cannot override a local hold or enrollment decision.
+                cmd.Parameters.AddWithValue("@clearance", clearance);
+                cmd.Parameters.AddWithValue("@clearanceReason", ExtractString(fields, "graduation_reason"));
+                cmd.Parameters.AddWithValue("@clearanceActor", ExtractString(fields, "graduation_changed_by"));
+                cmd.Parameters.AddWithValue("@clearanceTime", (object?)ExtractTimestamp(fields, "graduation_changed_at_utc")?.ToUniversalTime() ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@clearanceRevision", ExtractInt(fields, "graduation_revision"));
 
                 int affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) updatedCount++;
@@ -422,7 +411,6 @@ public sealed partial class DatabaseService
     public async Task<int> PushStudentsToCloudAsync()
     {
         int pushedCount = 0;
-        var localIds = new HashSet<string>();
 
         try
         {
@@ -437,7 +425,6 @@ public sealed partial class DatabaseService
                 string studentId = Value(reader["student_id"]);
                 if (string.IsNullOrWhiteSpace(studentId)) continue;
 
-                localIds.Add(studentId);
 
                 var fields = new Dictionary<string, object>
                 {
@@ -457,6 +444,13 @@ public sealed partial class DatabaseService
                     { "is_temporary", new { booleanValue = reader["is_temporary"].ToString() == "1" || reader["is_temporary"].ToString()?.ToLower() == "true" } },
                     { "entry_state", new { stringValue = Value(reader["entry_state"]) } }
                 };
+                fields["graduation_clearance"] = new { stringValue = Value(reader["graduation_clearance"]) };
+                fields["graduation_reason"] = new { stringValue = Value(reader["graduation_reason"]) };
+                fields["graduation_changed_by"] = new { stringValue = Value(reader["graduation_changed_by"]) };
+                fields["graduation_revision"] = new { integerValue = Value(reader["graduation_revision"]) };
+                fields["graduation_changed_at_utc"] = reader["graduation_changed_at_utc"] == DBNull.Value
+                    ? (object)new { nullValue = (string?)null }
+                    : new { timestampValue = DateTime.SpecifyKind(Convert.ToDateTime(reader["graduation_changed_at_utc"]), DateTimeKind.Utc).ToString("O") };
 
                 if (reader["photo_data"] is byte[] photoData && photoData.Length > 0)
                 {
@@ -476,7 +470,6 @@ public sealed partial class DatabaseService
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
 
-            await DeleteOrphanedCloudDocumentsAsync("students", localIds);
         }
         catch (Exception ex) { throw new Exception($"Student Upload Error: {ex.Message}"); }
 
@@ -494,11 +487,7 @@ public sealed partial class DatabaseService
 
             try
             {
-                var response = await _httpClient.GetAsync(url);
-                if (!response.IsSuccessStatusCode) continue;
-
-                var json = await response.Content.ReadAsStringAsync();
-                using JsonDocument doc = JsonDocument.Parse(json);
+                using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, url);
 
                 if (!doc.RootElement.TryGetProperty("documents", out var documents)) continue;
 
@@ -511,6 +500,8 @@ public sealed partial class DatabaseService
 
                     string studentId = ExtractString(fields, "student_id");
                     string studentName = ExtractString(fields, "student_name");
+                    string deviceId = ExtractString(fields, "device_id");
+                    string deviceName = DeviceIdentity.DisplayName(ExtractString(fields, "device_name"));
                     string nfcUid = ExtractString(fields, "nfc_uid");
                     string transactionType = ExtractString(fields, "transaction_type");
                     string verificationMode = ExtractString(fields, "verification_mode");
@@ -532,7 +523,12 @@ public sealed partial class DatabaseService
 
                     if (timestamp == null) continue;
 
-                    using var checkCmd = new MySqlCommand($"SELECT COUNT(*) FROM {tableName} WHERE timestamp = @ts AND transaction_type = @tt", connection);
+                    using var checkCmd = new MySqlCommand($"SELECT COUNT(*) FROM {tableName} WHERE timestamp = @ts AND transaction_type = @tt AND device_id = @device AND COALESCE(student_id, '') = @student AND COALESCE(nfc_uid, '') = @nfc AND is_granted = @granted AND COALESCE(error_code, '') = @error", connection);
+                    checkCmd.Parameters.AddWithValue("@device", deviceId);
+                    checkCmd.Parameters.AddWithValue("@student", studentId);
+                    checkCmd.Parameters.AddWithValue("@nfc", nfcUid);
+                    checkCmd.Parameters.AddWithValue("@granted", isGranted);
+                    checkCmd.Parameters.AddWithValue("@error", errorCode);
                     checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
                     checkCmd.Parameters.AddWithValue("@tt", transactionType);
 
@@ -540,10 +536,12 @@ public sealed partial class DatabaseService
 
                     string sql = $@"
                         INSERT INTO {tableName} 
-                        (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud) 
-                        VALUES (@ts, @sid, @sname, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, @nfcSys, @pinWf, @pinSys, @qrWf, @qrSys, @totWf, @totSys, @dbSpeed, 1)";
+                        (timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, synced_to_cloud, device_id, device_name)
+                        VALUES (@ts, @sid, @sname, @nfc, @tt, @mode, @granted, @errCode, @errMsg, @rem, @nfcSys, @pinWf, @pinSys, @qrWf, @qrSys, @totWf, @totSys, @dbSpeed, 1, @device, @deviceName)";
 
                     using var cmd = new MySqlCommand(sql, connection);
+                    cmd.Parameters.AddWithValue("@device", deviceId);
+                    cmd.Parameters.AddWithValue("@deviceName", deviceName);
                     cmd.Parameters.AddWithValue("@ts", timestamp.Value);
                     cmd.Parameters.AddWithValue("@sid", NullIfEmpty(studentId));
                     cmd.Parameters.AddWithValue("@sname", NullIfEmpty(studentName));
@@ -569,18 +567,14 @@ public sealed partial class DatabaseService
                     // Archive import is not a live attendance transition. Arrival order is not event order.
                 }
             }
-            catch { }
+            catch (Exception ex) { throw new InvalidOperationException($"Gate archive download failed ({tableName}).", ex); }
         }
 
         string urlAlerts = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts?pageSize=2000&key={FIREBASE_API_KEY}";
         try
         {
-            var response = await _httpClient.GetAsync(urlAlerts);
-            if (response.IsSuccessStatusCode)
+            using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, urlAlerts);
             {
-                var json = await response.Content.ReadAsStringAsync();
-                using JsonDocument doc = JsonDocument.Parse(json);
-
                 if (doc.RootElement.TryGetProperty("documents", out var documents))
                 {
                     using var connection = new MySqlConnection(ConnectionString);
@@ -592,30 +586,37 @@ public sealed partial class DatabaseService
 
                         string studentId = ExtractString(fields, "student_id");
                         string alertType = ExtractString(fields, "alert_type");
+                        string deviceId = ExtractString(fields, "device_id");
+                        string deviceName = DeviceIdentity.DisplayName(ExtractString(fields, "device_name"));
                         string message = ExtractString(fields, "message");
                         DateTime? timestamp = ExtractTimestamp(fields, "timestamp");
 
                         if (timestamp == null) continue;
 
-                        using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM alerts WHERE timestamp = @ts AND alert_type = @at AND message = @msg", connection);
+                        using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM alerts WHERE timestamp = @ts AND alert_type = @at AND message = @msg AND device_id = @device AND COALESCE(student_id, '') = @student", connection);
+                        checkCmd.Parameters.AddWithValue("@device", deviceId);
+                        checkCmd.Parameters.AddWithValue("@student", studentId);
                         checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
                         checkCmd.Parameters.AddWithValue("@at", alertType);
                         checkCmd.Parameters.AddWithValue("@msg", message);
 
                         if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0) continue;
 
-                        string sql = "INSERT INTO alerts (timestamp, student_id, alert_type, message, synced_to_cloud) VALUES (@ts, @sid, @at, @msg, 1)";
+                        string sql = "INSERT INTO alerts (timestamp, student_id, alert_type, message, synced_to_cloud, device_id, device_name) VALUES (@ts, @sid, @at, @msg, 1, @device, @deviceName)";
                         using var cmd = new MySqlCommand(sql, connection);
+                        cmd.Parameters.AddWithValue("@device", deviceId);
+                        cmd.Parameters.AddWithValue("@deviceName", deviceName);
                         cmd.Parameters.AddWithValue("@ts", timestamp.Value);
                         cmd.Parameters.AddWithValue("@sid", NullIfEmpty(studentId));
                         cmd.Parameters.AddWithValue("@at", NullIfEmpty(alertType));
                         cmd.Parameters.AddWithValue("@msg", NullIfEmpty(message));
                         await cmd.ExecuteNonQueryAsync();
+                        updatedCount++;
                     }
                 }
             }
         }
-        catch { }
+        catch (Exception ex) { throw new InvalidOperationException("Alert archive download failed.", ex); }
 
         return updatedCount;
     }
@@ -626,11 +627,7 @@ public sealed partial class DatabaseService
         int updatedCount = 0;
         try
         {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
-
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
+            using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, url);
 
             if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
 
@@ -643,6 +640,8 @@ public sealed partial class DatabaseService
 
                 string eventId = ExtractString(fields, "event_id");
                 string studentId = ExtractString(fields, "student_id");
+                string deviceId = ExtractString(fields, "device_id");
+                string deviceName = DeviceIdentity.DisplayName(ExtractString(fields, "device_name"));
                 string verificationMode = ExtractString(fields, "verification_mode");
                 string status = ExtractString(fields, "status");
                 string remarks = ExtractString(fields, "remarks");
@@ -650,7 +649,9 @@ public sealed partial class DatabaseService
 
                 if (timestamp == null || string.IsNullOrWhiteSpace(eventId)) continue;
 
-                using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM event_attendance WHERE timestamp = @ts AND event_id = @eid AND student_id = @sid", connection);
+                using var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM event_attendance WHERE timestamp = @ts AND event_id = @eid AND student_id = @sid AND device_id = @device AND COALESCE(status, '') = @status", connection);
+                checkCmd.Parameters.AddWithValue("@device", deviceId);
+                checkCmd.Parameters.AddWithValue("@status", status);
                 checkCmd.Parameters.AddWithValue("@ts", timestamp.Value);
                 checkCmd.Parameters.AddWithValue("@eid", eventId);
                 checkCmd.Parameters.AddWithValue("@sid", studentId);
@@ -659,10 +660,12 @@ public sealed partial class DatabaseService
 
                 string sql = @"
                     INSERT INTO event_attendance 
-                    (timestamp, event_id, student_id, verification_mode, status, remarks, synced_to_cloud) 
-                    VALUES (@ts, @eid, @sid, @mode, @status, @rem, 1)";
+                    (timestamp, event_id, student_id, verification_mode, status, remarks, synced_to_cloud, device_id, device_name)
+                    VALUES (@ts, @eid, @sid, @mode, @status, @rem, 1, @device, @deviceName)";
 
                 using var cmd = new MySqlCommand(sql, connection);
+                cmd.Parameters.AddWithValue("@device", deviceId);
+                cmd.Parameters.AddWithValue("@deviceName", deviceName);
                 cmd.Parameters.AddWithValue("@ts", timestamp.Value);
                 cmd.Parameters.AddWithValue("@eid", eventId);
                 cmd.Parameters.AddWithValue("@sid", studentId);
@@ -686,11 +689,7 @@ public sealed partial class DatabaseService
 
         try
         {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
-
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
+            using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, url);
 
             if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
 
@@ -734,7 +733,6 @@ public sealed partial class DatabaseService
     public async Task<int> PushStaffToCloudAsync()
     {
         int pushedCount = 0;
-        var localIds = new HashSet<string>();
 
         try
         {
@@ -749,7 +747,6 @@ public sealed partial class DatabaseService
                 string nfcUid = Value(reader["nfc_uid"]);
                 if (string.IsNullOrWhiteSpace(nfcUid)) continue;
 
-                localIds.Add(nfcUid);
 
                 var firestorePayload = new
                 {
@@ -772,7 +769,6 @@ public sealed partial class DatabaseService
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
 
-            await DeleteOrphanedCloudDocumentsAsync("staff", localIds);
         }
         catch (Exception ex) { throw new Exception($"Staff Upload Error: {ex.Message}"); }
 
@@ -786,11 +782,7 @@ public sealed partial class DatabaseService
 
         try
         {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
-
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
+            using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, url);
 
             if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
 
@@ -825,7 +817,6 @@ public sealed partial class DatabaseService
     public async Task<int> PushCoursesToCloudAsync()
     {
         int pushedCount = 0;
-        var localIds = new HashSet<string>();
 
         try
         {
@@ -840,7 +831,6 @@ public sealed partial class DatabaseService
                 string courseName = Value(reader["course_name"]);
                 if (string.IsNullOrWhiteSpace(courseName)) continue;
 
-                localIds.Add(courseName);
 
                 var firestorePayload = new
                 {
@@ -861,7 +851,6 @@ public sealed partial class DatabaseService
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
 
-            await DeleteOrphanedCloudDocumentsAsync("courses", localIds);
         }
         catch (Exception ex) { throw new Exception($"Course Upload Error: {ex.Message}"); }
 
@@ -875,11 +864,7 @@ public sealed partial class DatabaseService
 
         try
         {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
-
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
+            using JsonDocument doc = await CloudDocumentReader.ReadCollectionAsync(_httpClient, url);
 
             if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
 
@@ -952,7 +937,6 @@ public sealed partial class DatabaseService
     public async Task<int> PushEventsToCloudAsync()
     {
         int pushedCount = 0;
-        var localIds = new HashSet<string>();
 
         try
         {
@@ -967,7 +951,6 @@ public sealed partial class DatabaseService
                 string eventId = Value(reader["event_id"]);
                 if (string.IsNullOrWhiteSpace(eventId)) continue;
 
-                localIds.Add(eventId);
 
                 var firestorePayload = new
                 {
@@ -995,102 +978,18 @@ public sealed partial class DatabaseService
                 else throw new Exception(await response.Content.ReadAsStringAsync());
             }
 
-            await DeleteOrphanedCloudDocumentsAsync("events", localIds);
         }
         catch (Exception ex) { throw new Exception($"Events Upload Error: {ex.Message}"); }
 
         return pushedCount;
     }
 
-    public async Task<int> PullEventApprovedStudentsFromCloudAsync()
-    {
-        string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students?pageSize=2000&key={FIREBASE_API_KEY}";
-        int updatedCount = 0;
+    private static IEventRosterCloudStore CreateRosterCloudStore() => new FirestoreEventRosterStore(_httpClient,
+        $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents", FIREBASE_API_KEY);
 
-        try
-        {
-            var response = await _httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) throw new Exception(await response.Content.ReadAsStringAsync());
+    public Task<int> PullEventApprovedStudentsFromCloudAsync() => PullEventRosterStateAsync(CreateRosterCloudStore());
 
-            var json = await response.Content.ReadAsStringAsync();
-            using JsonDocument doc = JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("documents", out var documents)) return 0;
-
-            using var connection = new MySqlConnection(ConnectionString);
-            await connection.OpenAsync();
-
-            foreach (var document in documents.EnumerateArray())
-            {
-                if (!document.TryGetProperty("fields", out var fields)) continue;
-
-                string eventId = ExtractString(fields, "event_id");
-                string studentId = ExtractString(fields, "student_id");
-
-                if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(studentId)) continue;
-
-                string sql = "INSERT IGNORE INTO event_approved_students (event_id, student_id) VALUES (@event_id, @student_id)";
-                using var cmd = new MySqlCommand(sql, connection);
-                cmd.Parameters.AddWithValue("@event_id", eventId);
-                cmd.Parameters.AddWithValue("@student_id", studentId);
-
-                int affected = await cmd.ExecuteNonQueryAsync();
-                if (affected > 0) updatedCount++;
-            }
-        }
-        catch (Exception ex) { throw new Exception($"Approved Roster Sync Error: {ex.Message}"); }
-
-        return updatedCount;
-    }
-
-    public async Task<int> PushEventApprovedStudentsToCloudAsync()
-    {
-        int pushedCount = 0;
-        var localIds = new HashSet<string>();
-
-        try
-        {
-            using var connection = new MySqlConnection(ConnectionString);
-            await connection.OpenAsync();
-
-            using var cmd = new MySqlCommand("SELECT * FROM event_approved_students", connection);
-            using var reader = await cmd.ExecuteReaderAsync();
-
-            while (await reader.ReadAsync())
-            {
-                string eventId = Value(reader["event_id"]);
-                string studentId = Value(reader["student_id"]);
-
-                if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(studentId)) continue;
-
-                string combinedId = $"{eventId}_{studentId}";
-                localIds.Add(combinedId);
-
-                var firestorePayload = new
-                {
-                    fields = new
-                    {
-                        event_id = new { stringValue = eventId },
-                        student_id = new { stringValue = studentId }
-                    }
-                };
-
-                string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                string docId = Uri.EscapeDataString(combinedId);
-                string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_approved_students/{docId}?key={FIREBASE_API_KEY}";
-
-                var response = await _httpClient.PatchAsync(url, content);
-                if (response.IsSuccessStatusCode) pushedCount++;
-            }
-
-            await DeleteOrphanedCloudDocumentsAsync("event_approved_students", localIds);
-        }
-        catch (Exception ex) { throw new Exception($"Approved Roster Upload Error: {ex.Message}"); }
-
-        return pushedCount;
-    }
+    public Task<int> PushEventApprovedStudentsToCloudAsync() => PushEventRosterStateAsync(CreateRosterCloudStore());
 
     public async Task<int> PushLogsToCloudAsync()
     {
@@ -1101,7 +1000,7 @@ public sealed partial class DatabaseService
             await connection.OpenAsync();
 
             using var cmd = new MySqlCommand($@"
-                SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, source_table 
+                SELECT id, timestamp, student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, source_table, device_id, device_name
                 FROM ({CombinedLogsQuery}) vl 
                 WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL
                 ORDER BY timestamp ASC", connection);
@@ -1121,6 +1020,8 @@ public sealed partial class DatabaseService
                     {
                         student_id = new { stringValue = Value(reader["student_id"]) },
                         student_name = new { stringValue = Value(reader["student_name"]) },
+                        device_id = new { stringValue = Value(reader["device_id"]) },
+                        device_name = new { stringValue = DeviceIdentity.DisplayName(Value(reader["device_name"])) },
                         nfc_uid = new { stringValue = Value(reader["nfc_uid"]) },
                         transaction_type = new { stringValue = Value(reader["transaction_type"]) },
                         verification_mode = new { stringValue = Value(reader["verification_mode"]) },
@@ -1141,7 +1042,7 @@ public sealed partial class DatabaseService
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                pendingLogs.Add((dbId, jsonPayload, $"log_{sourceTable}_{dbId}", sourceTable));
+                pendingLogs.Add((dbId, jsonPayload, CloudLogDocumentId($"log_{sourceTable}", Value(reader["device_id"]), dbId), sourceTable));
             }
             reader.Close();
 
@@ -1150,7 +1051,8 @@ public sealed partial class DatabaseService
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
                 string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/{log.SourceTable}/{log.CloudDocId}?key={FIREBASE_API_KEY}";
 
-                var response = await _httpClient.PatchAsync(url, content);
+                using var response = await _httpClient.PatchAsync(url, content);
+                response.EnsureSuccessStatusCode();
                 if (response.IsSuccessStatusCode)
                 {
                     pushedCount++;
@@ -1161,7 +1063,7 @@ public sealed partial class DatabaseService
             }
 
             using var cmdAlerts = new MySqlCommand(@"
-                SELECT id, timestamp, student_id, alert_type, message 
+                SELECT id, timestamp, student_id, alert_type, message, device_id, device_name
                 FROM alerts 
                 WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL", connection);
             using var readerAlerts = await cmdAlerts.ExecuteReaderAsync();
@@ -1178,11 +1080,13 @@ public sealed partial class DatabaseService
                     {
                         student_id = new { stringValue = Value(readerAlerts["student_id"]) },
                         alert_type = new { stringValue = Value(readerAlerts["alert_type"]) },
+                        device_id = new { stringValue = Value(readerAlerts["device_id"]) },
+                        device_name = new { stringValue = DeviceIdentity.DisplayName(Value(readerAlerts["device_name"])) },
                         message = new { stringValue = Value(readerAlerts["message"]) },
                         timestamp = new { timestampValue = firestoreTimestamp }
                     }
                 };
-                pendingAlerts.Add((dbId, JsonSerializer.Serialize(payload), $"alert_{dbId}"));
+                pendingAlerts.Add((dbId, JsonSerializer.Serialize(payload), CloudLogDocumentId("alert", Value(readerAlerts["device_id"]), dbId)));
             }
             readerAlerts.Close();
 
@@ -1190,7 +1094,8 @@ public sealed partial class DatabaseService
             {
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
                 string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/alerts/{log.CloudDocId}?key={FIREBASE_API_KEY}";
-                var response = await _httpClient.PatchAsync(url, content);
+                using var response = await _httpClient.PatchAsync(url, content);
+                response.EnsureSuccessStatusCode();
                 if (response.IsSuccessStatusCode)
                 {
                     pushedCount++;
@@ -1216,7 +1121,7 @@ public sealed partial class DatabaseService
             await connection.OpenAsync();
 
             using var cmd = new MySqlCommand(@"
-                SELECT id, timestamp, event_id, student_id, verification_mode, status, remarks 
+                SELECT id, timestamp, event_id, student_id, verification_mode, status, remarks, device_id, device_name
                 FROM event_attendance 
                 WHERE synced_to_cloud = 0 OR synced_to_cloud IS NULL
                 ORDER BY timestamp ASC", connection);
@@ -1234,6 +1139,8 @@ public sealed partial class DatabaseService
                     fields = new
                     {
                         event_id = new { stringValue = Value(reader["event_id"]) },
+                        device_id = new { stringValue = Value(reader["device_id"]) },
+                        device_name = new { stringValue = DeviceIdentity.DisplayName(Value(reader["device_name"])) },
                         student_id = new { stringValue = Value(reader["student_id"]) },
                         verification_mode = new { stringValue = Value(reader["verification_mode"]) },
                         status = new { stringValue = Value(reader["status"]) },
@@ -1243,7 +1150,7 @@ public sealed partial class DatabaseService
                 };
 
                 string jsonPayload = JsonSerializer.Serialize(firestorePayload);
-                pendingLogs.Add((dbId, jsonPayload, $"att_{dbId}"));
+                pendingLogs.Add((dbId, jsonPayload, CloudLogDocumentId("att", Value(reader["device_id"]), dbId)));
             }
             reader.Close();
 
@@ -1252,7 +1159,8 @@ public sealed partial class DatabaseService
                 var content = new StringContent(log.JSON, Encoding.UTF8, "application/json");
                 string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance/{log.CloudDocId}?key={FIREBASE_API_KEY}";
 
-                var response = await _httpClient.PatchAsync(url, content);
+                using var response = await _httpClient.PatchAsync(url, content);
+                response.EnsureSuccessStatusCode();
                 if (response.IsSuccessStatusCode)
                 {
                     pushedCount++;
@@ -1266,6 +1174,9 @@ public sealed partial class DatabaseService
 
         return pushedCount;
     }
+
+    private static string CloudLogDocumentId(string prefix, string deviceId, int id) =>
+        string.IsNullOrWhiteSpace(deviceId) ? $"{prefix}_{id}" : $"{prefix}_{Uri.EscapeDataString(deviceId)}_{id}";
 
     private string ExtractString(JsonElement fields, string key)
     {
@@ -1447,7 +1358,7 @@ public sealed partial class DatabaseService
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            whereClauses.Add("(student_id LIKE @search OR student_name LIKE @search OR nfc_uid LIKE @search OR details LIKE @search)");
+            whereClauses.Add("(student_id LIKE @search OR student_name LIKE @search OR nfc_uid LIKE @search OR details LIKE @search OR device_name LIKE @search OR device_id LIKE @search)");
             parameters.Add("@search", $"%{searchTerm.Trim()}%");
         }
 
@@ -1480,7 +1391,7 @@ public sealed partial class DatabaseService
                        COALESCE(NULLIF(cl.student_name, ''), s.full_name) as student_name, 
                        cl.nfc_uid, cl.transaction_type as action, 
                        CASE WHEN cl.is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
-                       cl.error_code, cl.remarks as details, 'GATE LOG' as log_type
+                       cl.error_code, cl.remarks as details, 'GATE LOG' as log_type, cl.device_id, cl.device_name
                 FROM ({CombinedLogsQuery}) cl 
                 LEFT JOIN students s ON (s.student_id = cl.student_id OR (cl.nfc_uid != '' AND s.nfc_uid = cl.nfc_uid))
                 WHERE cl.transaction_type != 'EventAttendance'
@@ -1490,7 +1401,7 @@ public sealed partial class DatabaseService
                 SELECT timestamp, student_id, '' as student_name, '' as nfc_uid, alert_type as action, 
                        CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'RESOLVED' ELSE 'FLAGGED' END as status, 
                        '' as error_code, message as details, 
-                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type
+                       CASE WHEN alert_type LIKE 'ADMIN%' OR alert_type LIKE 'STAFF%' THEN 'ADMIN ACTION' ELSE 'SECURITY ALERT' END as log_type, device_id, device_name
                 FROM alerts
             ) AS MasterLogs
             WHERE 1=1 {whereSql}
@@ -1539,6 +1450,8 @@ public sealed partial class DatabaseService
 
             var log = new SystemAuditLog
             {
+                DeviceId = Value(reader["device_id"]),
+                DeviceName = DeviceIdentity.DisplayName(Value(reader["device_name"])),
                 Timestamp = Convert.ToDateTime(reader["timestamp"]),
                 LogType = Value(reader["log_type"]),
                 Subject = subject,
@@ -1840,7 +1753,7 @@ public sealed partial class DatabaseService
                COALESCE(NULLIF(vl.student_id, ''), s.student_id) as student_id, 
                COALESCE(NULLIF(vl.student_name, ''), s.full_name) as full_name, 
                s.course, s.section_name, 
-               vl.transaction_type, vl.is_granted, vl.verification_mode, vl.db_query_speed_ms
+               vl.transaction_type, vl.is_granted, vl.verification_mode, vl.db_query_speed_ms, vl.device_id, vl.device_name
         FROM ({CombinedLogsQuery}) vl
         LEFT JOIN students s ON (s.student_id = vl.student_id OR (vl.nfc_uid != '' AND s.nfc_uid = vl.nfc_uid))
         WHERE vl.transaction_type != 'EventAttendance'
@@ -1855,6 +1768,8 @@ public sealed partial class DatabaseService
 
             list.Add(new VerificationLogRecord
             {
+                DeviceId = Value(reader["device_id"]),
+                DeviceName = DeviceIdentity.DisplayName(Value(reader["device_name"])),
                 Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd - hh:mm tt") : "",
                 RawTimestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]) : DateTime.MinValue,
                 StudentId = Value(reader["student_id"]),
@@ -1872,6 +1787,8 @@ public sealed partial class DatabaseService
 
     public async Task SaveStudentAsync(StudentRecord student, string? pin)
     {
+        StudentProfileRules.ValidateEdit(student.StudentId, student.FullName, student.Status, student.NfcUid, false);
+        GraduationRules.RequireNewStudentStatus(student.Status, student.NfcUid, !string.IsNullOrWhiteSpace(pin));
         ValidateIssuedQr(student);
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
@@ -1937,63 +1854,8 @@ public sealed partial class DatabaseService
         return results;
     }
 
-    public async Task UpdateStudentAsync(string originalStudentId, StudentRecord student, string? newPin)
-    {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        bool changesQr;
-        using (var existingQr = new MySqlCommand("SELECT qr_credential FROM students WHERE student_id = @id", connection))
-        {
-            existingQr.Parameters.AddWithValue("@id", originalStudentId);
-            changesQr = !string.Equals(Convert.ToString(await existingQr.ExecuteScalarAsync()), student.QrCredential, StringComparison.Ordinal) || originalStudentId != student.StudentId;
-            if (changesQr) ValidateIssuedQr(student);
-        }
-
-        bool isRename = !string.Equals(originalStudentId, student.StudentId, StringComparison.Ordinal);
-
-        if (isRename)
-        {
-            bool targetExists;
-            using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
-            {
-                checkCmd.Parameters.AddWithValue("@id", student.StudentId);
-                targetExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
-            }
-            if (targetExists)
-                throw new InvalidOperationException($"Cannot rename to '{student.StudentId}' — that ID already belongs to another student.");
-        }
-
-        if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, originalStudentId))
-            throw new InvalidOperationException("This NFC card is already linked to another student.");
-
-        string? salt = null;
-        string? hash = null;
-        if (!string.IsNullOrWhiteSpace(newPin))
-        {
-            var hashed = PinHasher.HashPin(newPin);
-            salt = hashed.Salt;
-            hash = hashed.Hash;
-        }
-
-        string sql = salt != null && hash != null
-            ? @"UPDATE students 
-            SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
-                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential,
-                pin_salt=@pin_salt, pin_hash=@pin_hash, pin_locked=FALSE, failed_pin_attempts=0, photo_data=@photo_data, is_temporary=@is_temporary
-            WHERE student_id=@original_id;"
-            : @"UPDATE students 
-            SET student_id=@student_id, full_name=@full_name, email=@email, course=@course, year_level=@year_level,
-                section_name=@section_name, status=@status, nfc_uid=@nfc_uid, qr_credential=@qr_credential, photo_data=@photo_data, is_temporary=@is_temporary
-            WHERE student_id=@original_id;";
-
-        using var cmd = new MySqlCommand(sql, connection);
-        AddStudentParameters(cmd, student, salt, hash);
-        cmd.Parameters.AddWithValue("@original_id", originalStudentId);
-        if (changesQr) AppSession.RequireQrIssuancePermission();
-        await cmd.ExecuteNonQueryAsync();
-        OfflineCacheService.UpdateCachedCredential(originalStudentId, student);
-    }
+    public Task UpdateStudentAsync(string originalStudentId, StudentRecord student, string? newPin) =>
+        UpdateStudentWithClearanceAsync(originalStudentId, student, newPin);
 
     private static void ValidateIssuedQr(StudentRecord student)
     {
@@ -2181,16 +2043,8 @@ public sealed partial class DatabaseService
 
     public async Task UpdateStudentStatusAsync(string studentId, string status)
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(
-            "UPDATE students SET status = @status WHERE student_id = @student_id", connection);
-        command.Parameters.AddWithValue("@status", status);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-
-        await AddAlertAsync(studentId, "ADMIN_ACTION", $"Updated student status to '{status}'.");
+        var preview = await PreviewStudentStatusUpdateAsync(new[] { studentId }, status);
+        await ApplyStudentStatusUpdateAsync(preview, AppSession.CurrentStaffName);
     }
 
     public async Task UnlockAccountAsync(string studentId)
@@ -2351,6 +2205,7 @@ public sealed partial class DatabaseService
 
     public async Task LogVerificationAsync(StudentRecord? student, string? studentName, string uid, TransactionType transactionType, VerificationMode mode, bool granted, string status, string errorCategory, string remarks, double nfcSystemMs, double pinWorkflowMs, double pinSystemMs, double qrWorkflowMs, double qrSystemMs, double dbQuerySpeedMs)
     {
+        var device = DeviceIdentity.CaptureCurrent();
         if (errorCategory != null && (errorCategory.ToUpper().Contains("OFFLINE") || errorCategory == "OFFLINE_MODE"))
         {
             errorCategory = granted ? "VERIFIED" : "";
@@ -2372,9 +2227,12 @@ public sealed partial class DatabaseService
 
         using var command = new MySqlCommand($@"
             INSERT INTO {tableName}
-            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms)
+            (student_id, student_name, nfc_uid, transaction_type, verification_mode, is_granted, error_code, error_message, remarks, nfc_system_ms, pin_workflow_ms, pin_system_ms, qr_workflow_ms, qr_system_ms, total_workflow_ms, total_system_ms, db_query_speed_ms, device_id, device_name)
             VALUES
-            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed)", connection);
+            (@student_id, @student_name, @nfc_uid, @transaction_type, @verification_mode, @is_granted, @error_category, @status, @remarks, @nfc_speed, @pin_wf, @pin_sys, @qr_wf, @qr_sys, @tot_wf, @tot_sys, @db_speed, @device_id, @device_name)", connection);
+
+        command.Parameters.AddWithValue("@device_id", device.DeviceId);
+        command.Parameters.AddWithValue("@device_name", device.DeviceName);
 
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(student?.StudentId));
         command.Parameters.AddWithValue("@student_name", NullIfEmpty(studentName));
@@ -2400,12 +2258,15 @@ public sealed partial class DatabaseService
 
     public async Task AddAlertAsync(string? studentId, string alertType, string message)
     {
+        var device = DeviceIdentity.CaptureCurrent();
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            INSERT INTO alerts (student_id, alert_type, message)
-            VALUES (@student_id, @alert_type, @message)", connection);
+            INSERT INTO alerts (student_id, alert_type, message, device_id, device_name)
+            VALUES (@student_id, @alert_type, @message, @device_id, @device_name)", connection);
+        command.Parameters.AddWithValue("@device_id", device.DeviceId);
+        command.Parameters.AddWithValue("@device_name", device.DeviceName);
         command.Parameters.AddWithValue("@student_id", NullIfEmpty(studentId));
         command.Parameters.AddWithValue("@alert_type", alertType);
         command.Parameters.AddWithValue("@message", message);
@@ -2432,44 +2293,15 @@ public sealed partial class DatabaseService
 
     public async Task RemoveEventAttendeeAsync(string eventId, string studentId)
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand("DELETE FROM event_approved_students WHERE event_id = @event_id AND student_id = @student_id", connection);
-        command.Parameters.AddWithValue("@event_id", eventId);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-
-        await AddAlertAsync(studentId, "ADMIN_ACTION", $"Manually removed student from event roster for '{eventId}'.");
+        await ApplyEventRosterSelectionAsync(eventId, new[] { studentId }, true, AppSession.LoginVersion);
     }
 
     public async Task AddBatchToEventAsync(string eventId, string? courseName, string? yearLevel)
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        var whereClauses = new List<string>();
-        if (!string.IsNullOrWhiteSpace(courseName)) whereClauses.Add("course = @course");
-        if (!string.IsNullOrWhiteSpace(yearLevel)) whereClauses.Add("year_level = @year");
-
-        string whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
-
-        string sql = $@"
-        INSERT IGNORE INTO event_approved_students (event_id, student_id)
-        SELECT @event_id, student_id FROM students {whereSql}";
-
-        using var command = new MySqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@event_id", eventId);
-
-        if (!string.IsNullOrWhiteSpace(courseName))
-            command.Parameters.AddWithValue("@course", courseName);
-
-        if (!string.IsNullOrWhiteSpace(yearLevel))
-            command.Parameters.AddWithValue("@year", yearLevel.Replace("Year ", "").Trim());
-
-        await command.ExecuteNonQueryAsync();
-
-        await AddAlertAsync(null, "ADMIN_ACTION", $"Executed batch approval for Event '{eventId}'. Filter constraints applied.");
+        long session = AppSession.LoginVersion;
+        var directory = await GetEventRosterDirectoryAsync(eventId);
+        var selected = EventRosterRules.Filter(directory, null, courseName, yearLevel?.Replace("Year ", "").Trim(), null, "Active");
+        await ApplyEventRosterSelectionAsync(eventId, selected.Select(s => s.StudentId), false, session);
     }
 
     public async Task<int> GetStudentCountByCourseAsync(string courseName)
@@ -2497,17 +2329,7 @@ public sealed partial class DatabaseService
 
     public async Task AddEventAttendeeAsync(string eventId, string studentId)
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            INSERT IGNORE INTO event_approved_students (event_id, student_id)
-            VALUES (@event_id, @student_id)", connection);
-        command.Parameters.AddWithValue("@event_id", eventId);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-
-        await AddAlertAsync(studentId, "ADMIN_ACTION", $"Manually approved student for Event '{eventId}'.");
+        await ApplyEventRosterSelectionAsync(eventId, new[] { studentId }, false, AppSession.LoginVersion);
     }
 
     public async Task<IReadOnlyList<StudentRecord>> GetEventAttendeesAsync(string eventId)
@@ -2609,14 +2431,17 @@ public sealed partial class DatabaseService
 
     public async Task RecordAttendanceAsync(string? eventId, string studentId, VerificationMode mode, string status, string remarks)
     {
+        var device = DeviceIdentity.CaptureCurrent();
         if (string.IsNullOrWhiteSpace(eventId)) return;
 
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            INSERT INTO event_attendance (event_id, student_id, verification_mode, status, remarks)
-            VALUES (@event_id, @student_id, @mode, @status, @remarks)", connection);
+            INSERT INTO event_attendance (event_id, student_id, verification_mode, status, remarks, device_id, device_name)
+            VALUES (@event_id, @student_id, @mode, @status, @remarks, @device_id, @device_name)", connection);
+        command.Parameters.AddWithValue("@device_id", device.DeviceId);
+        command.Parameters.AddWithValue("@device_name", device.DeviceName);
         command.Parameters.AddWithValue("@event_id", eventId);
         command.Parameters.AddWithValue("@student_id", studentId);
         command.Parameters.AddWithValue("@mode", ToStorageValue(mode));
@@ -2634,30 +2459,6 @@ public sealed partial class DatabaseService
         command.Parameters.AddWithValue("@uid", uid);
         command.Parameters.AddWithValue("@student_id", studentId);
         return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
-    }
-
-    private static void AddStudentParameters(MySqlCommand command, StudentRecord student, string? salt, string? hash)
-    {
-        command.Parameters.AddWithValue("@student_id", student.StudentId);
-        command.Parameters.AddWithValue("@full_name", student.FullName);
-        command.Parameters.AddWithValue("@email", NullIfEmpty(student.Email));
-        command.Parameters.AddWithValue("@course", NullIfEmpty(student.Course));
-
-        if (int.TryParse(student.YearLevel, out int year))
-            command.Parameters.AddWithValue("@year_level", year);
-        else
-            command.Parameters.AddWithValue("@year_level", DBNull.Value);
-
-        command.Parameters.AddWithValue("@section_name", NullIfEmpty(student.SectionName));
-        command.Parameters.AddWithValue("@status", student.Status);
-        command.Parameters.AddWithValue("@nfc_uid", student.NfcUid);
-        command.Parameters.AddWithValue("@qr_credential", student.QrCredential);
-
-        command.Parameters.AddWithValue("@pin_salt", salt != null ? salt : DBNull.Value);
-        command.Parameters.AddWithValue("@pin_hash", hash != null ? hash : DBNull.Value);
-
-        command.Parameters.AddWithValue("@photo_data", student.PhotoData != null ? student.PhotoData : DBNull.Value);
-        command.Parameters.AddWithValue("@is_temporary", student.IsTemporary ? 1 : 0);
     }
 
     private static StudentRecord ReadStudent(MySqlDataReader reader)
@@ -2758,51 +2559,10 @@ public sealed partial class DatabaseService
 
     public async Task<int> BatchUpdateStudentStatusAsync(string? course, string? yearLevel, string newStatus)
     {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        var whereClauses = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(course) && course != "All Courses")
-            whereClauses.Add("course = @course");
-
-        if (!string.IsNullOrWhiteSpace(yearLevel) && yearLevel != "All Years")
-        {
-            if (yearLevel == "5+")
-            {
-                whereClauses.Add("year_level >= 5");
-            }
-            else
-            {
-                whereClauses.Add("year_level = @year");
-            }
-        }
-
-        string whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
-
-        if (string.IsNullOrEmpty(whereSql))
-            throw new InvalidOperationException("You must select at least one filter (Course or Year Level) to perform a batch update.");
-
-        string sql = $"UPDATE students SET status = @status {whereSql}";
-        using var command = new MySqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@status", newStatus);
-
-        if (!string.IsNullOrWhiteSpace(course) && course != "All Courses")
-            command.Parameters.AddWithValue("@course", course);
-
-        if (!string.IsNullOrWhiteSpace(yearLevel) && yearLevel != "All Years" && yearLevel != "5+")
-            command.Parameters.AddWithValue("@year", yearLevel.Replace("Year ", "").Trim());
-
-        int rowsAffected = await command.ExecuteNonQueryAsync();
-
-        //this removes the duplicate alert messages when the batch update is performed multiple times with the same parameters
-        /*
-        if (rowsAffected > 0)
-        {
-            await AddAlertAsync(null, "ADMIN_ACTION", $"Batch updated {rowsAffected} students to '{newStatus}' (Course: {course ?? "All"}, Year: {yearLevel ?? "All"}).");
-        } */
-
-        return rowsAffected;
+        var preview = await PreviewBatchStudentStatusUpdateAsync(
+            string.IsNullOrWhiteSpace(course) ? "All Courses" : course,
+            string.IsNullOrWhiteSpace(yearLevel) ? "All Years" : yearLevel.Replace("Year ", "").Trim(), newStatus);
+        return await ApplyStudentStatusUpdateAsync(preview, AppSession.CurrentStaffName);
     }
 
     public async Task<string?> GetStaffRoleAsync(string uid)
@@ -2854,7 +2614,7 @@ public sealed partial class DatabaseService
         await connection.OpenAsync();
 
         using var command = new MySqlCommand(@"
-            SELECT ea.timestamp, ea.student_id, s.full_name, s.course, s.section_name, ea.verification_mode, ea.status
+            SELECT ea.timestamp, ea.student_id, s.full_name, s.course, s.section_name, ea.verification_mode, ea.status, ea.device_id, ea.device_name
             FROM event_attendance ea
             LEFT JOIN students s ON ea.student_id = s.student_id
             WHERE ea.event_id = @event_id
@@ -2868,6 +2628,9 @@ public sealed partial class DatabaseService
         {
             list.Add(new AttendanceLog
             {
+                DeviceId = Value(reader["device_id"]),
+                DeviceName = DeviceIdentity.DisplayName(Value(reader["device_name"])),
+                RawTimestamp = Convert.ToDateTime(reader["timestamp"]),
                 Timestamp = reader["timestamp"] != DBNull.Value ? Convert.ToDateTime(reader["timestamp"]).ToString("MMM dd, yyyy - hh:mm:ss tt") : "",
                 StudentId = Value(reader["student_id"]),
                 FullName = Value(reader["full_name"]),

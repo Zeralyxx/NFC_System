@@ -568,7 +568,10 @@
                                                     <ColumnDefinition Width="2*"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
+                                                    <TextBlock Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{x:Bind DeviceName}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind DeviceId}"/>
+                                                </StackPanel>
 
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
@@ -679,7 +682,10 @@
                                             <ColumnDefinition Width="1*"/>
                                             <ColumnDefinition Width="1*"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
+                                            <TextBlock Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{x:Bind DeviceName}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind DeviceId}"/>
+                                        </StackPanel>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
                                             <TextBlock Text="{x:Bind StudentId}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
@@ -783,7 +789,10 @@
                                             <ColumnDefinition Width="2*"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <TextBlock Grid.Column="0" Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="4">
+                                            <TextBlock Text="{x:Bind Timestamp}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{x:Bind DeviceName}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind DeviceId}"/>
+                                        </StackPanel>
 
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <TextBlock Text="{x:Bind FullName}" Style="{StaticResource DataValueStyle}" TextWrapping="NoWrap"/>
@@ -809,7 +818,7 @@
             </Grid>
         </ContentDialog>
 
-        <ContentDialog x:Name="ExportConfigDialog" Title="Configure Export Data" PrimaryButtonText="Export to CSV" CloseButtonText="Cancel" CornerRadius="8">
+        <ContentDialog x:Name="ExportConfigDialog" Title="Configure Export Data" PrimaryButtonText="Export" CloseButtonText="Cancel" CornerRadius="8">
             <!-- Keep unchanged -->
             <StackPanel Spacing="16" Width="400" Margin="0,16,0,0">
                 <TextBlock Text="Select the columns you want to include in the exported report:" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>

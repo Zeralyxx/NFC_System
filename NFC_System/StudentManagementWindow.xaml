@@ -42,6 +42,12 @@
 
                 <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="4">
                     <TextBlock Text="Student Directory" Style="{StaticResource PageTitleStyle}" Margin="0"/>
+                    <Button Click="ImportStudents_Click" HorizontalAlignment="Left" ToolTipService.ToolTip="Import student profiles or download a template">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8B5;" FontSize="16"/>
+                            <TextBlock Text="Import Students"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
 
@@ -201,7 +207,13 @@
                             <!-- Batch Operations Trigger -->
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Advanced Global Operations" Style="{StaticResource DataValueStyle}" Foreground="{StaticResource PrimaryAccentBrush}"/>
-                                <Button x:Name="OpenBatchDialogButton" Content="Batch Update Status (Graduation / Expulsion)" Click="OpenBatchDialogButton_Click" HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                <Button x:Name="OpenGraduationClearanceButton" Click="OpenGraduationClearance_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="44">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <FontIcon Glyph="&#xE73A;" FontSize="16"/>
+                                        <TextBlock Text="Graduation Clearance" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="OpenBatchDialogButton" Content="Batch Update Status" Click="OpenBatchDialogButton_Click" HorizontalAlignment="Stretch" Height="44" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
                             </StackPanel>
 
                             <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
@@ -210,13 +222,14 @@
                             <StackPanel Spacing="16">
                                 <TextBlock Text="Individual Profile Management" Style="{StaticResource DataValueStyle}"/>
 
-                                <TextBox x:Name="EditStudentIdBox" Header="Student ID (Editable)" PlaceholderText="Select a student to edit..." IsEnabled="False"/>
+                                <TextBox x:Name="EditStudentIdBox" Header="Student ID" PlaceholderText="Select a student to edit..." IsReadOnly="True" IsEnabled="False"/>
 
                                 <ComboBox x:Name="EditStatusComboBox" Header="Enrollment Status" HorizontalAlignment="Stretch" IsEnabled="False">
                                     <ComboBoxItem Content="Active"/>
                                     <ComboBoxItem Content="Inactive"/>
                                     <ComboBoxItem Content="Graduated"/>
                                     <ComboBoxItem Content="Expelled"/>
+                                    <ComboBoxItem Content="Pending Enrollment"/>
                                 </ComboBox>
                             </StackPanel>
 
@@ -260,7 +273,7 @@
                     <ComboBoxItem Content="Expelled"/>
                 </ComboBox>
 
-                <Button x:Name="ConfirmBatchButton" Content="Apply Batch Update" Click="ConfirmBatchButton_Click" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Height="44" Margin="0,16,0,0"/>
+                <Button x:Name="ConfirmBatchButton" Content="Preview Students" Click="ConfirmBatchButton_Click" HorizontalAlignment="Stretch" Background="{StaticResource PrimaryAccentBrush}" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Height="44" Margin="0,16,0,0"/>
             </StackPanel>
         </ContentDialog>
 
@@ -451,7 +464,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <TextBox x:Name="EditDialogStudentIdBox" Header="Student ID" TextChanging="NumberOnly_TextChanging"/>
+                    <TextBox x:Name="EditDialogStudentIdBox" Header="Student ID" MaxLength="50"/>
                     <TextBox x:Name="EditDialogFullNameBox" Header="Full Name"/>
                     <TextBox x:Name="EditDialogEmailBox" Header="Email Address" PlaceholderText="michael.sintay@tcu.edu.ph"/>
                     <ComboBox x:Name="EditDialogCourseComboBox" Header="Course" HorizontalAlignment="Stretch"/>
@@ -470,6 +483,7 @@
                         <ComboBoxItem Content="Inactive"/>
                         <ComboBoxItem Content="Graduated"/>
                         <ComboBoxItem Content="Expelled"/>
+                        <ComboBoxItem Content="Pending Enrollment"/>
                     </ComboBox>
 
                     <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,4"/>

@@ -16,7 +16,7 @@ namespace NFC_System
 {
     public sealed partial class StudentManagementWindow : Window
     {
-        private enum AdminActionType { None, SaveIndividual, DeleteIndividual, BatchUpdate, EditFullProfile }
+        private enum AdminActionType { None, SaveIndividual, DeleteIndividual, BatchUpdate, EditFullProfile, SaveClearance }
 
         private readonly DatabaseService _database = new();
         private List<StudentRecord> _allStudents = new();
@@ -110,9 +110,11 @@ namespace NFC_System
                     return;
                 }
 
-                if (_isAwaitingAdminAuth)
+                if (_isAwaitingAdminAuth && !_isProcessingAdminAuth)
                 {
-                    await HandleAdminAuthScanAsync(uid);
+                    _isProcessingAdminAuth = true;
+                    try { await HandleAdminAuthScanAsync(uid); }
+                    finally { _isProcessingAdminAuth = false; }
                 }
             });
         }
@@ -233,6 +235,7 @@ namespace NFC_System
 
         private async Task HandleAdminAuthScanAsync(string uid)
         {
+            long authenticationSession = AppSession.LoginVersion;
             string? role = null;
             string? fullName = null;
             string? pinHash = null;
@@ -292,6 +295,7 @@ namespace NFC_System
                 else failReason = "Authorization Denied: Tapped card is not an Administrator.";
             }
 
+            if (!_isAwaitingAdminAuth || authenticationSession != AppSession.LoginVersion) return;
             if (isAuthorized)
             {
                 _isAwaitingAdminAuth = false;
@@ -323,7 +327,7 @@ namespace NFC_System
         {
             try
             {
-                if (AppSession.IsEventOrganizer && ConfigPanelContainer != null)
+                if (!AppSession.IsAdmin && ConfigPanelContainer != null)
                 {
                     ConfigPanelContainer.Visibility = Visibility.Collapsed;
                 }
@@ -548,7 +552,7 @@ namespace NFC_System
             if (AppSession.IsEventOrganizer) return;
             if (e.OriginalSource is FrameworkElement fe && fe.DataContext is StudentRecord student)
             {
-                MasterDirectoryDialog.Hide();
+                await QrCredentialDisplay.HideAsync(MasterDirectoryDialog);
                 await OpenEditDialogAsync(student);
             }
         }
@@ -557,7 +561,7 @@ namespace NFC_System
         {
             _editingStudent = student;
             ReissueQrCheckBox.IsEnabled = AppSession.CanIssueQrCredentials;
-            ReissueQrCheckBox.IsChecked = AppSession.CanIssueQrCredentials && !student.QrCredential.StartsWith("NFC1.", StringComparison.Ordinal);
+            ReissueQrCheckBox.IsChecked = AppSession.CanIssueQrCredentials && StudentProfileRules.ShouldOfferQrReplacement(student.NfcUid, student.QrCredential);
             EditDialogStatusText.Visibility = Visibility.Collapsed;
 
             EditDialogPhotoPreview.ProfilePicture = await ImageHelper.GetBitmapAsync(student.PhotoData);
@@ -585,6 +589,7 @@ namespace NFC_System
                 "Inactive" => 1,
                 "Graduated" => 2,
                 "Expelled" => 3,
+                "Pending Enrollment" => 4,
                 _ => 0
             };
 
@@ -603,6 +608,7 @@ namespace NFC_System
             _isAwaitingNfcReplacementScan = false;
             ChangeNfcButton.IsEnabled = true;
             NfcScanStatusText.Visibility = Visibility.Collapsed;
+            ChangeNfcButton.Content = string.IsNullOrWhiteSpace(student.NfcUid) ? "Assign NFC card" : "Replace NFC card";
             NfcReplacementReasonBox.Visibility = Visibility.Collapsed;
             NfcReplacementReasonBox.Text = "";
             EditDialogSaveButton.IsEnabled = ReissueQrCheckBox.IsChecked == true;
@@ -721,7 +727,7 @@ namespace NFC_System
             bool curIsTemporary = EditDialogIsTemporaryCheckBox.IsChecked == true;
             bool hasPinChange = !string.IsNullOrWhiteSpace(EditDialogNewPinBox.Password);
 
-            bool nfcActuallyChanged = curNfcUid != _origNfcUid;
+            bool nfcActuallyChanged = curNfcUid != _origNfcUid && !string.IsNullOrWhiteSpace(_origNfcUid);
 
             if (NfcReplacementReasonBox != null)
             {
@@ -789,16 +795,24 @@ namespace NFC_System
             string nfcUid = EditDialogNfcUidBox.Text.Trim();
             string pin = EditDialogNewPinBox.Password.Trim();
 
-            bool replacesQr = ReissueQrCheckBox.IsChecked == true || newId != _editingStudent.StudentId || nfcUid != _editingStudent.NfcUid;
+            string newStatus = (EditDialogStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Active";
+            bool replacesQr = StudentProfileRules.ShouldIssueQr(_editingStudent.StudentId, _editingStudent.NfcUid,
+                _editingStudent.QrCredential, newId, nfcUid, ReissueQrCheckBox.IsChecked == true);
             if (replacesQr && !AppSession.CanIssueQrCredentials)
             {
                 ShowEditDialogError(AppSession.QrIssuanceDeniedMessage);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(newId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
+            try
             {
-                ShowEditDialogError("Student ID, Full Name, and NFC UID cannot be empty.");
+                StudentProfileRules.ValidateEdit(newId, fullName, newStatus, nfcUid, !string.IsNullOrWhiteSpace(_origNfcUid));
+                if (replacesQr && string.IsNullOrWhiteSpace(nfcUid))
+                    throw new InvalidOperationException("Assign an NFC card before issuing a QR credential.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                ShowEditDialogError(ex.Message);
                 return;
             }
 
@@ -808,7 +822,7 @@ namespace NFC_System
                 return;
             }
 
-            bool nfcActuallyChanged = nfcUid != _origNfcUid;
+            bool nfcActuallyChanged = nfcUid != _origNfcUid && !string.IsNullOrWhiteSpace(_origNfcUid);
             if (nfcActuallyChanged && string.IsNullOrWhiteSpace(NfcReplacementReasonBox.Text))
             {
                 ShowEditDialogError("Please provide a reason for the NFC card replacement.");
@@ -817,6 +831,27 @@ namespace NFC_System
 
             _pendingNfcReplacementReason = NfcReplacementReasonBox.Text.Trim();
             await QrCredentialDisplay.HideAsync(EditStudentDialog);
+
+            _pendingStatusPreview = null;
+            if (_origStatus != newStatus)
+            {
+                try
+                {
+                    _pendingStatusPreview = await _database.PreviewStudentProfileStatusUpdateAsync(_origStudentId, newStatus, nfcUid, !string.IsNullOrWhiteSpace(pin));
+                    if (!await GraduationDialogs.ConfirmStatusAsync(Content.XamlRoot, _pendingStatusPreview))
+                    {
+                        _pendingStatusPreview = null;
+                        await EditStudentDialog.ShowAsync();
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ShowGraduationMessageAsync("Status update unavailable", ex.Message);
+                    await EditStudentDialog.ShowAsync();
+                    return;
+                }
+            }
 
             _pendingAction = AdminActionType.EditFullProfile;
             _pendingAdminSeverity = "MODERATE";
@@ -832,9 +867,7 @@ namespace NFC_System
                 AuthStatusText.Visibility = Visibility.Collapsed;
                 AdminAuthDescriptionText.Text = "An Administrator must verify this profile update by tapping their NFC card.";
 
-                _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                await AdminAuthDialog.ShowAsync();
+                await ShowStudentAuthorizationAsync();
             }
         }
 
@@ -854,6 +887,8 @@ namespace NFC_System
                 {
                     GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
                 }
+                if (OpenGraduationClearanceButton != null) OpenGraduationClearanceButton.IsEnabled = isOnline && AppSession.IsAdmin;
+                if (OpenBatchDialogButton != null) OpenBatchDialogButton.IsEnabled = isOnline && AppSession.IsAdmin;
             });
         }
 
@@ -876,25 +911,10 @@ namespace NFC_System
 
             try
             {
+                GraduationRules.RequireAdministrator(DatabaseMonitor.IsOnline);
                 if (_pendingAction == AdminActionType.SaveIndividual)
                 {
-                    if (StudentListView.SelectedItem is StudentRecord selected)
-                    {
-                        string oldId = selected.StudentId;
-                        string newId = EditStudentIdBox.Text.Trim();
-                        string newStatus = ((ComboBoxItem)EditStatusComboBox.SelectedItem).Content.ToString() ?? "Active";
-
-                        using var connection = new MySqlConnection(DatabaseService.ConnectionString);
-                        await connection.OpenAsync();
-
-                        using var cmd = new MySqlCommand("UPDATE students SET student_id = @newId, status = @status WHERE student_id = @oldId", connection);
-                        cmd.Parameters.AddWithValue("@newId", newId);
-                        cmd.Parameters.AddWithValue("@status", newStatus);
-                        cmd.Parameters.AddWithValue("@oldId", oldId);
-                        await cmd.ExecuteNonQueryAsync();
-
-                        await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", $"Updated profile for {selected.FullName}. ID changed to '{newId}', Status changed to '{newStatus}'.");
-                    }
+                    await ApplyPendingStatusPreviewAsync(adminName);
                 }
                 else if (_pendingAction == AdminActionType.DeleteIndividual)
                 {
@@ -912,12 +932,15 @@ namespace NFC_System
                 }
                 else if (_pendingAction == AdminActionType.BatchUpdate)
                 {
-                    string course = BatchCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
-                    string year = (BatchYearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Years";
-                    string status = (BatchNewStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Active";
-
-                    int affectedRows = await _database.BatchUpdateStudentStatusAsync(course, year, status);
-                    await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", $"Batch updated {affectedRows} students to '{status}' (Course: {course}, Year: {year}).");
+                    await ApplyPendingStatusPreviewAsync(adminName);
+                }
+                else if (_pendingAction == AdminActionType.SaveClearance)
+                {
+                    GraduationRules.RequireAdministrator(DatabaseMonitor.IsOnline, _pendingClearanceSession);
+                    var change = _pendingClearance ?? throw new InvalidOperationException("Open the clearance again.");
+                    await _database.SaveGraduationClearanceAsync(change.Student.StudentId, change.Status,
+                        change.Reason, change.Student.Revision, adminName);
+                    await ShowGraduationMessageAsync("Clearance saved", $"{change.Student.StudentId}: {GraduationRules.Label(change.Status)}");
                 }
                 else if (_pendingAction == AdminActionType.EditFullProfile)
                 {
@@ -944,7 +967,8 @@ namespace NFC_System
                         };
 
                         List<string> changes = new List<string>();
-                        bool replaceQr = ReissueQrCheckBox.IsChecked == true || originalId != updated.StudentId || oldUid != updated.NfcUid;
+                        bool replaceQr = StudentProfileRules.ShouldIssueQr(originalId, oldUid, _editingStudent.QrCredential,
+                            updated.StudentId, updated.NfcUid, ReissueQrCheckBox.IsChecked == true);
                         if (replaceQr)
                         {
                             updated.QrCredential = new QrCredentialService().Issue(updated.StudentId);
@@ -960,21 +984,23 @@ namespace NFC_System
                         if (_origIsTemporary != updated.IsTemporary) changes.Add($"Temp Badge (→ {updated.IsTemporary})");
                         if (!string.IsNullOrWhiteSpace(pin)) changes.Add("Reset PIN");
                         if (_currentPhotoData != _editingStudent.PhotoData) changes.Add("Updated Photo");
-                        if (oldUid != updated.NfcUid) changes.Add($"Replaced NFC Card (Reason: {nfcReplacementReason})");
+                        if (oldUid != updated.NfcUid) changes.Add(string.IsNullOrWhiteSpace(oldUid)
+                            ? "Assigned first NFC card" : $"Replaced NFC Card (Reason: {nfcReplacementReason})");
 
                         string changesString = changes.Count > 0 ? string.Join(", ", changes) : "No specific fields altered (forced save)";
                         string logMessage = $"Edited profile for {updated.FullName} ({updated.StudentId}). Changes: {changesString}.";
 
-                        await _database.UpdateStudentAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin);
+                        await _database.UpdateStudentWithClearanceAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin,
+                            adminName, _pendingStatusPreview);
                         await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", logMessage);
 
-                        if (oldUid != updated.NfcUid)
+                        if (oldUid != updated.NfcUid || _origStatus != updated.Status || !string.IsNullOrWhiteSpace(pin))
                         {
                             await _database.UpdateShadowCacheAsync();
                         }
 
                         _editingStudent = null;
-                        if (replaceQr) await QrCredentialDisplay.ShowAsync(this, updated.StudentId, updated.QrCredential);
+                        if (replaceQr) await QrCredentialDisplay.ShowAsync(this, updated.StudentId, updated.QrCredential, credentialReplaced: true);
                     }
                 }
 
@@ -992,6 +1018,12 @@ namespace NFC_System
                     XamlRoot = this.Content.XamlRoot
                 };
                 await errorDialog.ShowAsync();
+            }
+            finally
+            {
+                _pendingAction = AdminActionType.None;
+                _pendingStatusPreview = null;
+                _pendingClearance = null;
             }
         }
 
@@ -1061,6 +1093,7 @@ namespace NFC_System
                     "Active" => 0,
                     "Inactive" => 1,
                     "Graduated" => 2,
+                    "Pending Enrollment" => 4,
                     _ => 3
                 };
 
@@ -1081,26 +1114,15 @@ namespace NFC_System
 
         private async void SaveChangesButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(EditStudentIdBox.Text)) return;
-
-            _pendingAction = AdminActionType.SaveIndividual;
-            _pendingAdminSeverity = "MODERATE";
-
-            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            if (StudentListView.SelectedItem is not StudentRecord selected) return;
+            try
             {
-                await ExecutePendingAdminAction(AppSession.CurrentStaffName);
+                string status = (EditStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Active";
+                _pendingStatusPreview = await _database.PreviewStudentStatusUpdateAsync(new[] { selected.StudentId }, status);
+                if (await GraduationDialogs.ConfirmStatusAsync(Content.XamlRoot, _pendingStatusPreview))
+                    await AuthorizeStudentActionAsync(AdminActionType.SaveIndividual, highSeverity: false);
             }
-            else
-            {
-                AdminPinBox.Visibility = Visibility.Collapsed;
-                AdminPinBox.Password = "";
-                AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "An Administrator must verify this profile update by tapping their NFC card.";
-
-                _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                await AdminAuthDialog.ShowAsync();
-            }
+            catch (Exception ex) { await ShowGraduationMessageAsync("Status update unavailable", ex.Message); }
         }
 
         private async void DeleteStudentButton_Click(object sender, RoutedEventArgs e)
@@ -1142,26 +1164,17 @@ namespace NFC_System
 
         private async void ConfirmBatchButton_Click(object sender, RoutedEventArgs e)
         {
-            BatchUpdateDialog.Hide();
-
-            _pendingAction = AdminActionType.BatchUpdate;
-            _pendingAdminSeverity = "HIGH";
-
-            if (AppSession.CurrentStaffRoleLabel == "Master Admin")
+            string course = BatchCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
+            string year = (BatchYearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Years";
+            string status = (BatchNewStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Active";
+            await QrCredentialDisplay.HideAsync(BatchUpdateDialog);
+            try
             {
-                await ExecutePendingAdminAction(AppSession.CurrentStaffName);
+                _pendingStatusPreview = await _database.PreviewBatchStudentStatusUpdateAsync(course, year, status);
+                if (await GraduationDialogs.ConfirmStatusAsync(Content.XamlRoot, _pendingStatusPreview))
+                    await AuthorizeStudentActionAsync(AdminActionType.BatchUpdate, highSeverity: true);
             }
-            else
-            {
-                AdminPinBox.Visibility = Visibility.Visible;
-                AdminPinBox.Password = "";
-                AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "To confirm this batch update, an Administrator must enter their 4-digit PIN and tap their NFC card.";
-
-                _isAwaitingAdminAuth = true;
-                AdminAuthDialog.XamlRoot = this.Content.XamlRoot;
-                await AdminAuthDialog.ShowAsync();
-            }
+            catch (Exception ex) { await ShowGraduationMessageAsync("Batch update unavailable", ex.Message); }
         }
 
         private async void OpenBatchDialogButton_Click(object sender, RoutedEventArgs e)

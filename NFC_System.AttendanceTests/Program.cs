@@ -108,6 +108,7 @@ await Test($"Cloud restore fails closed on {fault} failure", async () =>
 });
 
 bool sqlEnabled = args.Contains("--mysql");
+await DeviceAttributionTests.RunAsync(Test);
 if (sqlEnabled)
 {
     using var admin = new MySqlConnection(DatabaseService.ConnectionString.Replace("Database=attendance_tests;", ""));
@@ -124,11 +125,13 @@ if (sqlEnabled)
             qr_system_ms DOUBLE, total_workflow_ms DOUBLE, total_system_ms DOUBLE, db_query_speed_ms DOUBLE, synced_to_cloud BOOLEAN DEFAULT FALSE) ENGINE=InnoDB");
     await Sql(@"CREATE TABLE IF NOT EXISTS event_attendance (id INT AUTO_INCREMENT PRIMARY KEY, timestamp DATETIME(3), event_id VARCHAR(50),
         student_id VARCHAR(50), verification_mode VARCHAR(30), status VARCHAR(30), remarks TEXT) ENGINE=InnoDB");
+    await Sql(@"CREATE TABLE IF NOT EXISTS alerts (id INT AUTO_INCREMENT PRIMARY KEY, timestamp DATETIME(3), student_id VARCHAR(50),
+        alert_type VARCHAR(100), message TEXT, synced_to_cloud BOOLEAN DEFAULT FALSE) ENGINE=InnoDB");
     await DatabaseService.CreateAttendanceSchemaAsync(connection);
     var db = new DatabaseService(); db.ActivateAttendanceDevice();
     async Task Reset()
     {
-        foreach (string table in new[] { "attendance_decisions", "attendance_receipts", "attendance_devices", "attendance_current", "attendance_visits", "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance", "students" }) await Sql($"DELETE FROM {table}");
+        foreach (string table in new[] { "attendance_decisions", "attendance_receipts", "attendance_devices", "attendance_current", "attendance_visits", "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance", "students", "alerts" }) await Sql($"DELETE FROM {table}");
         await Sql("INSERT INTO students VALUES ('A','OUTSIDE'),('B','OUTSIDE')");
         OfflineCacheService.AttendanceQueue = new DurableAttendanceQueue(NewDirectory());
         OfflineCacheService.CachedState = "OUTSIDE";
@@ -167,7 +170,7 @@ if (sqlEnabled)
     await Test("Crash after DB commit before acknowledgment does not duplicate on retry", async () =>
     {
         await Reset(); await Scan("Entry", 0, true); var log = OfflineCacheService.AttendanceQueue.Snapshot().GateLogs.Single();
-        await Sql($"INSERT INTO attendance_devices VALUES ('{log.DeviceId}',UTC_TIMESTAMP(),1,0,FALSE,TRUE)");
+        await Sql($"INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,acknowledged_sequence,ready,enabled) VALUES ('{log.DeviceId}',UTC_TIMESTAMP(),1,0,FALSE,TRUE)");
         await DatabaseService.CommitForTestAsync(connection, log);
         Assert(OfflineCacheService.HasPendingLogs());
         await db.PulseAttendanceAsync();
@@ -218,21 +221,21 @@ if (sqlEnabled)
     });
     await Test("Stale peer hides history until the peer reports a reconciled queue", async () =>
     {
-        await Reset(); await Sql("INSERT INTO attendance_devices VALUES ('peer',UTC_TIMESTAMP()-INTERVAL 1 MINUTE,2,1,FALSE,TRUE)");
+        await Reset(); await Sql("INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,acknowledged_sequence,ready,enabled) VALUES ('peer',UTC_TIMESTAMP()-INTERVAL 1 MINUTE,2,1,FALSE,TRUE)");
         var entry = await Scan("Entry", 0); Assert(entry.Visit == null);
         await Sql("UPDATE attendance_devices SET last_seen=UTC_TIMESTAMP(),acknowledged_sequence=2,ready=TRUE WHERE device_id='peer'");
         Assert(await DatabaseService.ReadVisitForTestAsync("A", entry.TransactionId) != null);
     });
     await Test("Reported ready with an acknowledgment gap still hides history", async () =>
     {
-        await Reset(); await Sql("INSERT INTO attendance_devices VALUES ('peer',UTC_TIMESTAMP(),2,1,TRUE,TRUE)");
+        await Reset(); await Sql("INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,acknowledged_sequence,ready,enabled) VALUES ('peer',UTC_TIMESTAMP(),2,1,TRUE,TRUE)");
         Assert((await Scan("Entry", 0)).Visit == null);
     });
     await Test("Cross-device offline exit is unresolved rather than guessed", async () =>
     {
         await Reset(); await Scan("Entry", 0);
         var other = new DurableAttendanceQueue(NewDirectory()); var log = other.Enqueue(Log("Exit", minute: 1));
-        await Sql($"INSERT INTO attendance_devices VALUES ('{log.DeviceId}',UTC_TIMESTAMP(),1,0,FALSE,TRUE)");
+        await Sql($"INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,acknowledged_sequence,ready,enabled) VALUES ('{log.DeviceId}',UTC_TIMESTAMP(),1,0,FALSE,TRUE)");
         await DatabaseService.CommitForTestAsync(connection, log);
         Assert(await Scalar("SELECT confirmed FROM attendance_visits") == "False" || await Scalar("SELECT confirmed FROM attendance_visits") == "0");
     });
@@ -406,7 +409,7 @@ if (sqlEnabled)
     });
     await Test("Restore refuses a live peer", async () =>
     {
-        await Reset(); await Sql("INSERT INTO attendance_devices VALUES ('peer',UTC_TIMESTAMP(),0,0,TRUE,TRUE)");
+        await Reset(); await Sql("INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,acknowledged_sequence,ready,enabled) VALUES ('peer',UTC_TIMESTAMP(),0,0,TRUE,TRUE)");
         bool threw = false; try { await db.RestoreAttendanceSnapshotAsync(EmptyBackup(DateTime.UtcNow)); } catch (InvalidOperationException) { threw = true; }
         Assert(threw && await Scalar("SELECT device_id FROM attendance_devices") == "peer");
     });
@@ -438,7 +441,7 @@ if (sqlEnabled)
         var first = new DurableAttendanceQueue(NewDirectory()).Enqueue(Log());
         var second = new DurableAttendanceQueue(NewDirectory()).Enqueue(Log(minute: 1));
         foreach (var log in new[] { first, second })
-            await Sql($"INSERT INTO attendance_devices VALUES ('{log.DeviceId}',UTC_TIMESTAMP(),1,0,FALSE,TRUE)");
+            await Sql($"INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,acknowledged_sequence,ready,enabled) VALUES ('{log.DeviceId}',UTC_TIMESTAMP(),1,0,FALSE,TRUE)");
         using var firstConnection = new MySqlConnection(DatabaseService.ConnectionString);
         using var secondConnection = new MySqlConnection(DatabaseService.ConnectionString);
         await firstConnection.OpenAsync(); await secondConnection.OpenAsync();
@@ -446,6 +449,7 @@ if (sqlEnabled)
         Assert(await Scalar("SELECT COUNT(*) FROM attendance_decisions WHERE is_granted=TRUE") == "1");
         Assert(await Scalar("SELECT COUNT(*) FROM attendance_visits") == "1");
     });
+    await DeviceAttributionTests.RunSqlAsync(Test, connection, Reset);
 }
 else Console.WriteLine("SQL integration tests skipped; pass --mysql with the isolated test server on port 23306.");
 Console.WriteLine($"{passed} passed; {failed} failed.");

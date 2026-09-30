@@ -39,7 +39,7 @@ internal static class QrCredentialDisplay
         finally { dialog.Closed -= OnClosed; }
     }
 
-    internal static async Task ShowAsync(Window owner, string studentId, string credential)
+    internal static async Task ShowAsync(Window owner, string studentId, string credential, bool credentialReplaced = false)
     {
         if (string.IsNullOrWhiteSpace(credential)) return;
         var pixels = new BarcodeWriterPixelData
@@ -49,10 +49,26 @@ internal static class QrCredentialDisplay
         }.Write(credential);
         var bitmap = new WriteableBitmap(pixels.Width, pixels.Height);
         using (var stream = bitmap.PixelBuffer.AsStream()) stream.Write(pixels.Pixels, 0, pixels.Pixels.Length);
+        var qrImage = new Image { Source = bitmap, Width = 320, Height = 320 };
+        FrameworkElement content = qrImage;
+        if (credentialReplaced)
+        {
+            var replacementContent = new StackPanel { Width = 320, Spacing = 12 };
+            replacementContent.Children.Add(new InfoBar
+            {
+                IsOpen = true,
+                IsClosable = false,
+                Severity = InfoBarSeverity.Success,
+                Title = "QR replaced successfully",
+                Message = $"Saved for student {studentId}."
+            });
+            replacementContent.Children.Add(qrImage);
+            content = replacementContent;
+        }
         var dialog = new ContentDialog
         {
             Title = $"Student QR: {studentId}",
-            Content = new Image { Source = bitmap, Width = 320, Height = 320 },
+            Content = content,
             PrimaryButtonText = "Export PNG",
             CloseButtonText = "Close",
             XamlRoot = owner.Content.XamlRoot

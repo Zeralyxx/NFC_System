@@ -17,6 +17,9 @@ public sealed partial class DatabaseService
     private Task<bool> UpdateShadowCacheCoreAsync() { CacheRefreshes++; if (FailCacheRefresh) throw new IOException("Injected refresh failure"); return Task.FromResult(true); }
     public int CacheRefreshes { get; private set; }
     public static Task CreateAttendanceSchemaAsync(MySqlConnector.MySqlConnection connection) => EnsureAttendanceSchemaAsync(connection);
+    public static Task CreateDeviceSchemaAsync(MySqlConnector.MySqlConnection connection) => EnsureDeviceAttributionSchemaAsync(connection);
+    public static Task FlushDeviceNamesForTestAsync(MySqlConnector.MySqlConnection connection) => FlushDeviceNameChangesAsync(connection);
+    public static void DeactivateAttendanceForTest() => _attendanceActive = false;
     public static Task CommitForTestAsync(MySqlConnector.MySqlConnection connection, PendingGateLog log) => CommitQueuedRecordAsync(connection, log, null, true);
     public static Task CommitLiveForTestAsync(MySqlConnector.MySqlConnection connection, PendingGateLog log) => CommitQueuedRecordAsync(connection, log, null, false);
     public static Task<AttendanceVisit?> ReadVisitForTestAsync(string student, string transaction) => ReadConfirmedVisitAsync(student, transaction);

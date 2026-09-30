@@ -479,6 +479,13 @@ namespace NFC_System
 
             bool isTemporary = IsTemporaryCheckBox.IsChecked == true;
 
+            string idError = StudentProfileRules.ValidateStudentId(studentId);
+            if (idError.Length != 0)
+            {
+                UidLogListView.Items.Insert(0, $"[ERROR] {idError}");
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(studentId) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(nfcUid))
             {
                 UidLogListView.Items.Insert(0, "[ERROR] Critical structural criteria missing (ID, Name, or NFC).");

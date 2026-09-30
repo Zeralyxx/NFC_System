@@ -45,12 +45,13 @@ public sealed class DatabaseService
     }
     public Task<bool> HasStudentEnteredEventAsync(string? eventId, string id) => Task.FromResult(EventEntered);
     public Task<bool> IsStudentAllowedForEventAsync(string? eventId, string id) => Task.FromResult(EventAllowed);
-    public Task UpdatePinFailureAsync(string id, int failed, bool locked)
+    public Task? PinUpdateBarrier { get; set; }
+    public async Task UpdatePinFailureAsync(string id, int failed, bool locked)
     {
+        if (PinUpdateBarrier != null) await PinUpdateBarrier;
         var student = Students.Single(s => s.StudentId == id);
         student.FailedPinAttempts = failed;
         student.PinLocked = locked;
-        return Task.CompletedTask;
     }
     public Task UpdateEntryStateAsync(string id, string state)
     {

@@ -127,7 +127,7 @@ public static class OfflineCacheService
         }
     }
 
-    public static void UpdateCachedCredential(string originalStudentId, StudentRecord updated)
+    public static void UpdateCachedCredential(string originalStudentId, StudentRecord updated, bool pinReplaced = false)
     {
         LoadStudentMemoryCache();
         lock (FileLock)
@@ -139,6 +139,14 @@ public static class OfflineCacheService
             cached.NfcUid = updated.NfcUid;
             cached.QrCredential = updated.QrCredential;
             cached.Status = updated.Status;
+            cached.FullName = updated.FullName;
+            if (pinReplaced)
+            {
+                cached.PinSalt = updated.PinSalt;
+                cached.PinHash = updated.PinHash;
+                cached.PinLocked = false;
+                cached.FailedPinAttempts = 0;
+            }
             WriteCacheFile(StudentsCacheFile, _inMemoryStudents);
         }
     }

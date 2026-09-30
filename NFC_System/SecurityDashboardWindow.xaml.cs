@@ -1370,155 +1370,84 @@ namespace NFC_System
 
         private async void ExportLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            StatusTextBlock.Text = "Gathering audit records for export...";
-            StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
-
-            string? statusFilter = AppSession.CurrentStaffRoleLabel == "Personnel" ? "Denied / Flagged" : null;
-            var rawLogs = await _database.GetMasterAuditLogsAsync(10000, null, null, statusFilter, null);
-
-            if (rawLogs == null || !rawLogs.Any())
+            ExportLogsButton.IsEnabled = false;
+            try
             {
-                ContentDialog emptyDialog = new ContentDialog
+                StatusTextBlock.Text = "Gathering filtered audit records...";
+                string search = PopupSearchBox.Text?.Trim() ?? "";
+                string type = (PopupTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Types";
+                string status = AppSession.CurrentStaffRoleLabel == "Personnel" ? "Denied / Flagged" :
+                    (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Statuses";
+                DateTime? date = PopupDatePicker.Date?.DateTime;
+                var logs = (await _database.GetMasterAuditLogsAsync(10000, search, type, status, date)).ToList();
+                if (logs.Count == 0) throw new InvalidOperationException("There are no audit records matching the current filters.");
+                if (await EnqueueDialogAsync(ExportConfigDialog) != ContentDialogResult.Primary)
                 {
-                    Title = "Nothing to Export",
-                    Content = "There are no audit records in the database to export.",
-                    CloseButtonText = "OK"
-                };
-                await EnqueueDialogAsync(emptyDialog);
-                StatusTextBlock.Text = "System Ready: Waiting for input...";
-                return;
-            }
-
-            var dialogResult = await EnqueueDialogAsync(ExportConfigDialog);
-
-            if (dialogResult != ContentDialogResult.Primary)
-            {
-                StatusTextBlock.Text = "Export cancelled.";
-                return;
-            }
-
-            var logsToExport = rawLogs.ToList();
-            string sortOption = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
-
-            if (sortOption == "Group by Log Type")
-            {
-                logsToExport = logsToExport
-                    .OrderBy(l => l.LogType)
-                    .ThenByDescending(l => l.Timestamp)
-                    .ToList();
-            }
-            else if (sortOption == "Sort alphabetically by Subject")
-            {
-                logsToExport = logsToExport
-                    .OrderBy(l => l.Subject)
-                    .ToList();
-            }
-
-            var picker = new Windows.Storage.Pickers.FileSavePicker();
-            IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-
-            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
-            picker.FileTypeChoices.Add("Excel CSV Document", new List<string>() { ".csv" });
-            picker.SuggestedFileName = $"Security_Audit_Log_{DateTime.Now:yyyyMMdd}";
-
-            Windows.Storage.StorageFile file = await picker.PickSaveFileAsync();
-
-            if (file != null)
-            {
-                StatusTextBlock.Text = "Writing custom audit log to CSV...";
-
-                try
-                {
-                    var csvData = new System.Text.StringBuilder();
-
-                    var headers = new List<string>();
-                    if (ExportColTimestamp.IsChecked == true) headers.Add("Date & Time");
-                    if (ExportColLogType.IsChecked == true) headers.Add("Log Type");
-                    if (ExportColSubject.IsChecked == true) headers.Add("Subject");
-                    if (ExportColAction.IsChecked == true) headers.Add("Action Taken");
-                    if (ExportColStatus.IsChecked == true) headers.Add("Status");
-                    if (ExportColDetails.IsChecked == true) headers.Add("Extended Details");
-
-                    csvData.AppendLine(string.Join(",", headers));
-
-                    foreach (var log in logsToExport)
-                    {
-                        var row = new List<string>();
-
-                        if (ExportColTimestamp.IsChecked == true) row.Add($"\"{log.DisplayTime}\"");
-                        if (ExportColLogType.IsChecked == true) row.Add($"\"{log.LogType}\"");
-                        if (ExportColSubject.IsChecked == true) row.Add($"\"{log.Subject}\"");
-                        if (ExportColAction.IsChecked == true) row.Add($"\"{log.Action}\"");
-                        if (ExportColStatus.IsChecked == true) row.Add($"\"{log.Status}\"");
-                        if (ExportColDetails.IsChecked == true) row.Add($"\"{log.Details.Replace("\"", "\"\"")}\"");
-
-                        csvData.AppendLine(string.Join(",", row));
-                    }
-
-                    Windows.Storage.CachedFileManager.DeferUpdates(file);
-                    await Windows.Storage.FileIO.WriteTextAsync(file, csvData.ToString(), Windows.Storage.Streams.UnicodeEncoding.Utf8);
-                    Windows.Storage.Provider.FileUpdateStatus status = await Windows.Storage.CachedFileManager.CompleteUpdatesAsync(file);
-
-                    if (status == Windows.Storage.Provider.FileUpdateStatus.Complete)
-                    {
-                        StatusTextBlock.Text = $"Audit log successfully exported.";
-                        StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
-                        PlaySuccessPing();
-
-                        ContentDialog successDialog = new ContentDialog
-                        {
-                            Title = "Export Complete",
-                            Content = $"Your custom security audit was successfully exported and saved to:\n\n{file.Path}",
-                            CloseButtonText = "OK"
-                        };
-                        await EnqueueDialogAsync(successDialog);
-                    }
+                    StatusTextBlock.Text = "Export cancelled.";
+                    return;
                 }
-                catch (Exception ex)
+                string sort = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+                if (sort == "Group by Log Type") logs = logs.OrderBy(l => l.LogType).ThenByDescending(l => l.Timestamp).ToList();
+                else if (sort == "Sort alphabetically by Subject") logs = logs.OrderBy(l => l.Subject).ToList();
+                var columns = new List<SpreadsheetColumn>();
+                var selectors = new List<Func<SystemAuditLog, object?>>();
+                void Add(bool? selected, string header, Func<SystemAuditLog, object?> value, SpreadsheetValueKind kind = SpreadsheetValueKind.Text)
                 {
-                    StatusTextBlock.Text = $"Export failed: {ex.Message}";
-                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                    PlayErrorAlert();
+                    if (selected != true) return;
+                    columns.Add(new(header, kind));
+                    selectors.Add(value);
                 }
+                Add(ExportColTimestamp.IsChecked, "Date & Time", l => l.Timestamp, SpreadsheetValueKind.DateTime);
+                Add(ExportColLogType.IsChecked, "Log Type", l => l.LogType);
+                Add(ExportColSubject.IsChecked, "Subject", l => l.Subject);
+                Add(ExportColAction.IsChecked, "Action Taken", l => l.Action);
+                Add(ExportColStatus.IsChecked, "Status", l => l.Status);
+                Add(ExportColDetails.IsChecked, "Extended Details", l => l.Details);
+                if (columns.Count == 0) throw new InvalidOperationException("Select at least one audit column.");
+                Add(true, "Device ID", l => l.DeviceId);
+                Add(true, "Device Name", l => ReportSpreadsheetTables.DeviceName(l.DeviceName));
+                var table = new SpreadsheetTable("Security audit", columns, logs.Select(l => selectors.Select(s => s(l)).ToArray()).ToList());
+                if (!await SpreadsheetPicker.SaveAsync(this, $"Security_Audit_Log_{DateTime.Now:yyyyMMdd}", table))
+                {
+                    StatusTextBlock.Text = "Export cancelled.";
+                    return;
+                }
+                StatusTextBlock.Text = "Audit log exported.";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                PlaySuccessPing();
+                await EnqueueDialogAsync(new ContentDialog { Title = "Export complete", Content = $"Saved {logs.Count:N0} audit records matching the selected filters.", CloseButtonText = "OK" });
             }
-            else
+            catch (Exception ex)
             {
-                StatusTextBlock.Text = "Export cancelled.";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+                StatusTextBlock.Text = $"Export failed: {ex.Message}";
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                PlayErrorAlert();
             }
+            finally { ExportLogsButton.IsEnabled = true; }
         }
 
         private async void ExportMetricsButton_Click(object sender, RoutedEventArgs e)
         {
+            ExportMetricsButton.IsEnabled = false;
             try
             {
-                var folderPicker = new Windows.Storage.Pickers.FolderPicker();
-                folderPicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop;
-                folderPicker.FileTypeFilter.Add("*");
-
-                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                WinRT.Interop.InitializeWithWindow.Initialize(folderPicker, hwnd);
-
-                var folder = await folderPicker.PickSingleFolderAsync();
-                if (folder != null)
+                StatusTextBlock.Text = "Gathering system performance metrics...";
+                var tables = await _database.GetMetricsSpreadsheetTablesAsync();
+                bool saved = await SpreadsheetPicker.SaveTablesAsync(this, $"System_Metrics_{DateTime.Now:yyyyMMdd}", tables);
+                StatusTextBlock.Text = saved ? "Performance metrics exported." : "Export cancelled.";
+                if (saved)
                 {
-                    StatusTextBlock.Text = "Exporting system performance metrics to CSV...";
-                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
-
-                    await _database.ExportCleanLogsToCsvAsync(folder.Path);
-
-                    StatusTextBlock.Text = $"Performance metrics successfully exported to {folder.Path}";
-                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
+                    StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                     PlaySuccessPing();
                 }
             }
             catch (Exception ex)
             {
                 StatusTextBlock.Text = $"Metrics export failed: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                StatusTextBlock.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
             }
+            finally { ExportMetricsButton.IsEnabled = true; }
         }
 
         private void MaximizeWindow()

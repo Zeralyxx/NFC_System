@@ -108,7 +108,7 @@
                         <StackPanel Spacing="20">
                             <TextBlock Text="Identity Information" Style="{StaticResource CardTitleStyle}"/>
 
-                            <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" TextChanging="NumberOnly_TextChanging"/>
+                            <TextBox x:Name="StudentIdTextBox" Header="Student ID" PlaceholderText="e.g. 26-00001" MaxLength="50"/>
                             <TextBox x:Name="FullNameTextBox" Header="Full Name" PlaceholderText="Enter complete name"/>
                             <TextBox x:Name="EmailTextBox" Header="Institutional Email" PlaceholderText="e.g. michael.sintay@tcu.edu.ph" />
                             <ComboBox x:Name="CourseComboBox" Header="Course" PlaceholderText="Select a Course" HorizontalAlignment="Stretch"/>

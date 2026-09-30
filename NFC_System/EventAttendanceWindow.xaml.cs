@@ -17,6 +17,10 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
         private readonly VerificationEngine _engine;
         private bool _isInitializing = true;
+        private bool _loadingEvents;
+        private bool _closed;
+        private bool _usingCachedEvents;
+        private readonly DispatcherTimer _eventRefreshTimer = new() { Interval = TimeSpan.FromSeconds(15) };
 
         private bool _isForceClosing = false;
         private bool _isAwaitingAdminAuth = false;
@@ -31,6 +35,12 @@ namespace NFC_System
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
             UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             _engine = new VerificationEngine(_database);
+            KioskStateController.EventModeChanged += OnEventModeChanged;
+            _eventRefreshTimer.Tick += async (_, _) =>
+            {
+                if (DatabaseMonitor.IsOnline && !_closed) await LoadActiveEventsAsync();
+            };
+            _eventRefreshTimer.Start();
 
             MaximizeWindow();
 
@@ -246,6 +256,10 @@ namespace NFC_System
 
         private void Window_Closed(object sender, WindowEventArgs args)
         {
+            _closed = true;
+            _eventRefreshTimer.Stop();
+            _liveFeedTimer.Stop();
+            KioskStateController.EventModeChanged -= OnEventModeChanged;
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
 
             // THE FIX: Unhook the hardware listener to prevent memory leaks
@@ -314,14 +328,20 @@ namespace NFC_System
 
         private async System.Threading.Tasks.Task LoadActiveEventsAsync()
         {
+            if (_loadingEvents || _closed) return;
+            _loadingEvents = true;
+            string? selectedId = (ActiveEventComboBox.SelectedItem as EventRecord)?.EventId;
+            bool loadedOnline = false;
             IReadOnlyList<EventRecord> events = new List<EventRecord>();
-
+            try
+            {
             if (DatabaseMonitor.IsOnline)
             {
-                try { events = await _database.GetActiveEventsAsync(); } catch { }
+                try { events = await _database.GetActiveEventsAsync(int.MaxValue); loadedOnline = true; }
+                catch (Exception ex) { AttendanceLogListView.Items.Insert(0, $"[WARNING] Event refresh failed: {ex.Message}"); }
             }
 
-            if (events == null || events.Count == 0)
+            if (!loadedOnline)
             {
                 try
                 {
@@ -329,7 +349,7 @@ namespace NFC_System
                     if (cachedEvents != null && cachedEvents.Count > 0)
                     {
                         events = cachedEvents
-                            .Where(e => e.IsActive)
+                            .Where(e => e.IsActive && Enum.TryParse<VerificationMode>(e.VerificationMode, out var mode) && Enum.IsDefined(mode))
                             .Select(e => new EventRecord
                             {
                                 EventId = e.EventId,
@@ -344,15 +364,32 @@ namespace NFC_System
                 catch { }
             }
 
+            if (_closed) return;
+            _usingCachedEvents = !loadedOnline;
             ActiveEventComboBox.ItemsSource = events;
-
-            if (events != null && events.Count > 0)
-            {
-                ActiveEventComboBox.SelectedIndex = 0;
+            ActiveEventComboBox.SelectedItem = selectedId == null ? events.FirstOrDefault() : events.FirstOrDefault(e => e.EventId == selectedId);
+            UpdateEventModeStatus();
             }
+            finally { _loadingEvents = false; }
+            BroadcastStateToKiosk();
+        }
 
-            string sourceTag = DatabaseMonitor.IsOnline && events != null && events.Count > 0 ? "Online Database" : "Offline Cache";
-            AttendanceLogListView.Items.Insert(0, $"[INFO] Loaded {events?.Count ?? 0} active event(s) via {sourceTag}.");
+        private void OnEventModeChanged(string eventId, VerificationMode mode)
+        {
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (!_closed && DatabaseMonitor.IsOnline) await LoadActiveEventsAsync();
+            });
+        }
+
+        private void UpdateEventModeStatus()
+        {
+            var selected = ActiveEventComboBox.SelectedItem as EventRecord;
+            bool cached = _usingCachedEvents || !DatabaseMonitor.IsOnline;
+            EventModeStatusText.Text = selected == null ? "No active event selected." :
+                $"{(cached ? "Cached mode" : "Database mode")}: {DatabaseService.ToStorageValue(selected.VerificationMode)}. " +
+                (cached ? "Offline devices retain their last cached configuration." : "Mode changes apply to new verification sessions.");
+            LaunchKioskButton.IsEnabled = selected != null && !AppSession.IsKioskRunning;
         }
 
         private void UpdateOfflineBanner(bool isOnline)
@@ -363,6 +400,9 @@ namespace NFC_System
                 {
                     GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
                 }
+                if (_closed) return;
+                UpdateEventModeStatus();
+                if (!_isInitializing) _ = LoadActiveEventsAsync();
             });
         }
 
@@ -373,6 +413,8 @@ namespace NFC_System
 
         private async void ActiveEventComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_loadingEvents) return;
+            UpdateEventModeStatus();
             BroadcastStateToKiosk();
 
             if (!_isInitializing && ActiveEventComboBox.SelectedItem is EventRecord selectedEvent)
@@ -412,9 +454,8 @@ namespace NFC_System
 
             TransactionType type = DirectionComboBox.SelectedIndex == 1 ? TransactionType.Exit : TransactionType.Entry;
             EventRecord? selectedEvent = ActiveEventComboBox.SelectedItem as EventRecord;
-            VerificationMode mode = selectedEvent?.VerificationMode ?? VerificationMode.Standard;
-
-            KioskStateController.BroadcastModeChange(mode, type);
+            if (selectedEvent != null)
+                KioskStateController.BroadcastEventStateChange(selectedEvent.EventId, selectedEvent.VerificationMode, type);
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -433,6 +474,7 @@ namespace NFC_System
 
         private void LaunchKioskButton_Click(object sender, RoutedEventArgs e)
         {
+            if (AppSession.IsKioskRunning || ActiveEventComboBox.SelectedItem is not EventRecord) return;
             BroadcastStateToKiosk();
 
             EventRecord? selectedEvent = ActiveEventComboBox.SelectedItem as EventRecord;
@@ -452,8 +494,12 @@ namespace NFC_System
             {
                 KioskModeWindow.OnKioskOutcome -= ApplyOutcomeFromKiosk;
                 KioskModeWindow.OnKioskLog -= AddKioskLog;
+                ActiveEventComboBox.IsEnabled = true;
+                UpdateEventModeStatus();
             };
 
+            ActiveEventComboBox.IsEnabled = false;
+            LaunchKioskButton.IsEnabled = false;
             kiosk.Activate();
         }
 

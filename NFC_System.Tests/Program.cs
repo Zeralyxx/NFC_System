@@ -31,7 +31,7 @@ async Task Test(string name, Func<Task> action)
     catch (Exception ex) { failed++; Console.WriteLine($"FAIL {name}: {ex.Message}"); }
 }
 Task Check(Action action) { action(); return Task.CompletedTask; }
-(DatabaseService Db, VerificationEngine Engine, StudentRecord A) Fixture(bool offline = false)
+(DatabaseService Db, VerificationEngine Engine, StudentRecord A) Fixture(bool offline = false, bool cache = false)
 {
     DatabaseMonitor.IsOnline = !offline;
     OfflineCacheService.Students.Clear();
@@ -42,7 +42,7 @@ Task Check(Action action) { action(); return Task.CompletedTask; }
     var a = new StudentRecord { StudentId = "2026-001", FullName = "Student A", NfcUid = "AA:01", QrCredential = qrA, PinSalt = pin.Salt, PinHash = pin.Hash };
     db.Students.Add(a);
     db.Students.Add(new StudentRecord { StudentId = "2026-002", FullName = "Student B", NfcUid = "BB:02", QrCredential = qrB, PinSalt = pin.Salt, PinHash = pin.Hash });
-    if (offline) OfflineCacheService.Students.Add(JsonSerializer.Deserialize<StudentRecord>(JsonSerializer.Serialize(a))!);
+    if (offline || cache) OfflineCacheService.Students.Add(JsonSerializer.Deserialize<StudentRecord>(JsonSerializer.Serialize(a))!);
     return (db, new VerificationEngine(db, qr), a);
 }
 async Task<VerificationSession> HighSession(VerificationEngine engine)
@@ -169,7 +169,9 @@ foreach (bool offline in new[] { false, true })
             var begin = await f.Engine.BeginQrFallbackVerificationAsync(qrA, VerificationMode.HighSecurity, TransactionType.Entry, null);
             Assert(begin.Step == VerificationStep.RequiresPin);
             Assert(!(await f.Engine.SubmitPinAsync(begin.Session!, "0000")).IsGranted);
-            Assert(!(await f.Engine.SubmitPinAsync(begin.Session!, "1234")).IsGranted);
+            Assert(begin.Session!.Student.FailedPinAttempts == attempt + 1);
+            Assert(begin.Session.Student.PinLocked == (attempt == 2));
+            if (attempt == 2) Assert(!(await f.Engine.SubmitPinAsync(begin.Session, "1234")).IsGranted);
         }
         Assert((await f.Engine.BeginQrFallbackVerificationAsync(qrA, VerificationMode.HighSecurity, TransactionType.Entry, null)).ErrorCategory == "PIN_LOCKED");
     });
@@ -188,6 +190,84 @@ foreach (bool offline in new[] { false, true })
         Assert((await f.Engine.BeginQrFallbackVerificationAsync(qrA, VerificationMode.Standard, TransactionType.EventAttendance, "event")).ErrorCategory == "UNAUTHORIZED_EVENT_ACCESS");
     });
 }
+foreach (bool offline in new[] { false, true })
+{
+    foreach (var path in new[]
+    {
+        (Mode: VerificationMode.Standard, Fallback: false),
+        (Mode: VerificationMode.HighSecurity, Fallback: false),
+        (Mode: VerificationMode.Fast, Fallback: true),
+        (Mode: VerificationMode.Standard, Fallback: true),
+        (Mode: VerificationMode.HighSecurity, Fallback: true)
+    })
+    {
+        string label = $"{(offline ? "Offline" : "Online")} {path.Mode} {(path.Fallback ? "QR fallback" : "NFC")}";
+        Task<VerificationOutcome> BeginPin(VerificationEngine engine) => path.Fallback
+            ? engine.BeginQrFallbackVerificationAsync(qrA, path.Mode, TransactionType.Entry, null)
+            : engine.BeginNfcVerificationAsync("AA:01", path.Mode, TransactionType.Entry);
+
+        await Test(label + " allows exactly three wrong PINs without rescanning", async () =>
+        {
+            var f = Fixture(offline, cache: true);
+            var session = (await BeginPin(f.Engine)).Session!;
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                var result = await f.Engine.SubmitPinAsync(session, "0000");
+                bool locked = attempt == 3;
+                Assert(!result.IsGranted && result.ErrorCategory == (locked ? "PIN_LOCKED" : "PIN_FAILURE"));
+                Assert(result.Step == (locked ? VerificationStep.Completed : VerificationStep.RequiresPin), "Retry must remain at the PIN step until failure three");
+                Assert(session.NextStep == result.Step && session.Student.FailedPinAttempts == attempt);
+                Assert(session.Student.PinLocked == locked);
+                Assert(OfflineCacheService.Students[0].FailedPinAttempts == attempt && OfflineCacheService.Students[0].PinLocked == locked);
+                if (!offline) Assert(f.A.FailedPinAttempts == attempt && f.A.PinLocked == locked);
+                if (!locked) Assert(ReferenceEquals(result.Session, session) && result.ResultMessage.Contains($"{attempt}/3"));
+            }
+            Assert(!(await f.Engine.SubmitPinAsync(session, "1234")).IsGranted, "Correct PIN cannot bypass an existing lock");
+            Assert((await BeginPin(f.Engine)).Step == VerificationStep.Completed, "Rescanning must not bypass lockout");
+            var failures = (offline ? OfflineCacheService.Logs : f.Db.Logs).Where(l => l.Remarks.StartsWith("Failed PIN attempt")).ToList();
+            Assert(failures.Count == 3 && failures.Select(l => l.Remarks).Distinct().Count() == 3, "Exactly one log per PIN submission");
+        });
+
+        foreach (int wrongCount in new[] { 1, 2 })
+            await Test(label + $" accepts correct PIN after {wrongCount} failure(s) and resets counter", async () =>
+            {
+                var f = Fixture(offline, cache: true);
+                var session = (await BeginPin(f.Engine)).Session!;
+                for (int i = 0; i < wrongCount; i++) await f.Engine.SubmitPinAsync(session, "0000");
+                var success = await f.Engine.SubmitPinAsync(session, "1234");
+                if (path.Mode == VerificationMode.HighSecurity && !path.Fallback)
+                {
+                    Assert(success.Step == VerificationStep.RequiresQr && !success.IsGranted, "Correct PIN must not skip QR");
+                    success = await f.Engine.SubmitQrAsync(session, qrA);
+                }
+                Assert(success.IsGranted, "Correct PIN before the third failure must work in the same session");
+                Assert(session.Student.FailedPinAttempts == 0 && !session.Student.PinLocked);
+                Assert(OfflineCacheService.Students[0].FailedPinAttempts == 0 && !OfflineCacheService.Students[0].PinLocked);
+                if (!offline) Assert(f.A.FailedPinAttempts == 0 && !f.A.PinLocked);
+                Assert((await f.Engine.BeginNfcVerificationAsync("AA:01", VerificationMode.Fast, TransactionType.Exit)).IsGranted);
+                var nextSession = (await BeginPin(f.Engine)).Session!;
+                var firstFailure = await f.Engine.SubmitPinAsync(nextSession, "0000");
+                Assert(firstFailure.ErrorCategory == "PIN_FAILURE" && firstFailure.ResultMessage.Contains("1/3"));
+                Assert(nextSession.Student.FailedPinAttempts == 1 && !nextSession.Student.PinLocked);
+            });
+    }
+}
+await Test("Overlapping wrong PIN submissions count only the active submission", async () =>
+{
+    var f = Fixture(cache: true);
+    var session = (await f.Engine.BeginNfcVerificationAsync("AA:01", VerificationMode.Standard, TransactionType.Entry)).Session!;
+    var resume = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    f.Db.PinUpdateBarrier = resume.Task;
+    var first = f.Engine.SubmitPinAsync(session, "0000");
+    try
+    {
+        var overlapping = await f.Engine.SubmitPinAsync(session, "0000");
+        Assert(overlapping.ErrorCategory == "INVALID_SEQUENCE" && !overlapping.IsGranted);
+    }
+    finally { resume.TrySetResult(true); }
+    Assert((await first).Step == VerificationStep.RequiresPin);
+    Assert(f.A.FailedPinAttempts == 1 && f.Db.Logs.Count(l => l.Error == "PIN_FAILURE") == 1);
+});
 await Test("QR cannot bypass PIN in High Security", async () =>
 {
     var f = Fixture();

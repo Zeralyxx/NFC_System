@@ -20,6 +20,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- Header -->
@@ -46,8 +47,21 @@
                     </StackPanel>
                 </Border>
 
+                <StackPanel Grid.Row="2" Spacing="12" Margin="0,24,0,0">
+                    <TextBlock Text="Device Identity" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
+                    <TextBox x:Name="DeviceNameTextBox" Header="Device name" MaxLength="100"/>
+                    <TextBox x:Name="DeviceIdTextBox" Header="Permanent device ID" IsReadOnly="True"/>
+                    <Button x:Name="SaveDeviceNameButton" Click="SaveDeviceNameButton_Click" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE74E;" FontSize="16"/>
+                            <TextBlock Text="Save Device Name"/>
+                        </StackPanel>
+                    </Button>
+                    <InfoBar x:Name="DeviceNameStatus" IsOpen="False" IsClosable="True"/>
+                </StackPanel>
+
                 <!-- Security Policies Card -->
-                <Border Grid.Row="2" Padding="24" Margin="0,24,0,0" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
+                <Border Grid.Row="3" Padding="24" Margin="0,24,0,0" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                     <StackPanel Spacing="8">
                         <TextBlock Text="Security Policies" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
 
@@ -60,7 +74,7 @@
                 </Border>
 
                 <!-- Action Buttons Footer -->
-                <Grid Grid.Row="3" Margin="0,32,0,0" ColumnSpacing="16">
+                <Grid Grid.Row="4" Margin="0,32,0,0" ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>

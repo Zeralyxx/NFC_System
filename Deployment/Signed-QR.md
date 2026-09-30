@@ -98,7 +98,7 @@ acceptance checks below.
 
 The Windows-only WinUiSmoke app uses the production QR display helper and exits
 after checking live WinUI startup, XamlRoot attachment, dialog close/reopen sequencing,
-QR bitmap creation, preservation of unsaved editor fields and file-picker owner
+QR bitmap creation, replacement-only success notices, preservation of unsaved editor fields and file-picker owner
 initialization. It does not connect to the database or provision signing keys. Its
 result is written beside its executable as `winui-smoke-result.txt`, with a nonzero
 process exit code on failure. Interactive file selection and physical camera/reader
@@ -124,10 +124,17 @@ Do not record the full QR credential in access logs.
 | Register, export PNG, scan from print and phone | Saved credential decodes exactly; correct student; no truncation |
 | Edit name/course only | QR stays identical and remains usable |
 | Reissue / replace NFC / rename ID | New signed QR; old QR denied against updated DB/cache; export survives restart |
+| Save an explicit QR replacement or automatic replacement after ID/NFC change | Post-save QR dialog shows a green "QR replaced successfully" notice and the saved student ID; Export PNG remains available |
+| View an existing QR or save a name/course-only edit | No QR-replacement success notice |
+| Cancel replacement authorization, fail validation, or fail the database save | No QR-replacement success notice or post-save QR preview |
 | Legacy plain ID, edited payload/signature, unknown key, malformed QR | Denied without reaching PIN in fallback |
 | High Security: A NFC, correct PIN, A QR | Granted; expected timing and student in logs |
 | High Security: A NFC, correct PIN, B QR | Denied; no state/attendance change |
 | Fallback: A QR, wrong PIN three separate attempts | Denied; lock persists across restart and reconnect |
+| Standard/High Security NFC or QR fallback: tap/scan once, then enter wrong PIN three times without rescanning | Attempts 1 and 2 show 1/3 and 2/3 with an empty, usable keypad; attempt 3 locks the account; one failure log per submission |
+| Correct PIN after one or two wrong PINs in the same session | Counter resets to zero; Standard/fallback grants when otherwise allowed; High Security NFC still requires QR |
+| Successful PIN and exit, then scan again and enter a wrong PIN | New failure starts at 1/3, not a previous counter; test online and offline |
+| Rapid repeated Enter while a PIN submission is processing | Only one active submission is processed; no duplicate failure count or access grant |
 | Fallback in Fast/Standard/High Security, including exit | PIN always required; appropriate rules still apply |
 | Copy A's QR and use all valid required credentials | Accepted, documenting the static-copy limitation |
 | Inactive/deleted/replaced student; already-inside repeated entry | Denied according to current DB/cache rules |

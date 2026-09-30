@@ -9,6 +9,9 @@
     <Compile Include="../NFC_System/AttendanceTracking.cs" Link="Production/AttendanceTracking.cs" />
     <Compile Include="../NFC_System/PendingAttendanceRecords.cs" Link="Production/PendingAttendanceRecords.cs" />
     <Compile Include="../NFC_System/DurableAttendanceQueue.cs" Link="Production/DurableAttendanceQueue.cs" />
+    <Compile Include="../NFC_System/DeviceIdentity.cs" Link="Production/DeviceIdentity.cs" />
+    <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs" />
+    <Compile Include="../NFC_System/DatabaseService.DeviceAttribution.cs" Link="Production/DatabaseService.DeviceAttribution.cs" />
     <Compile Include="../NFC_System/DatabaseService.Attendance.cs" Link="Production/DatabaseService.Attendance.cs" />
     <Compile Include="../NFC_System/DatabaseService.AttendanceBackup.cs" Link="Production/DatabaseService.AttendanceBackup.cs" />
     <Compile Include="../NFC_System/AttendanceBackupStore.cs" Link="Production/AttendanceBackupStore.cs" />

@@ -5,6 +5,7 @@ public class PendingGateLog
 {
     public string TransactionId { get; set; } = "";
     public string DeviceId { get; set; } = "";
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
     public long DeviceSequence { get; set; }
     public bool WasOffline { get; set; }
     public bool OnlineAttempt { get; set; }
@@ -34,6 +35,8 @@ public class PendingEventAttendance
 {
     public string TransactionId { get; set; } = "";
     public string DeviceId { get; set; } = "";
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
+    public bool IsLegacy { get; set; }
     public long DeviceSequence { get; set; }
     public string Timestamp { get; set; } = "";
     public string EventId { get; set; } = "";
@@ -41,4 +44,15 @@ public class PendingEventAttendance
     public string VerificationMode { get; set; } = "";
     public string Status { get; set; } = "";
     public string Remarks { get; set; } = "";
+}
+
+public sealed class PendingDeviceNameChange
+{
+    public string ChangeId { get; set; } = "";
+    public string DeviceId { get; set; } = "";
+    public string PreviousName { get; set; } = DeviceIdentity.UnknownName;
+    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
+    public string StaffName { get; set; } = "";
+    public string StaffRole { get; set; } = "";
+    public string Timestamp { get; set; } = "";
 }

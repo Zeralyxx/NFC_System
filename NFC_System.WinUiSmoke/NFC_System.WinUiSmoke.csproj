@@ -19,6 +19,9 @@
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
     <Compile Include="../NFC_System/QrCredentialDisplay.cs" Link="Production/QrCredentialDisplay.cs" />
     <Compile Include="../NFC_System/BrandLogo.cs" Link="Production/BrandLogo.cs" />
+    <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs" />
+    <Compile Include="../NFC_System/GraduationClearance.cs" Link="Production/GraduationClearance.cs" />
+    <Compile Include="../NFC_System/GraduationDialogs.cs" Link="Production/GraduationDialogs.cs" />
     <Content Include="../NFC_System/Assets/Branding/Icon.png" Link="Assets/Branding/Icon.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../NFC_System/Assets/Branding/AppIcon.ico" Link="Assets/Branding/AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

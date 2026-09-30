@@ -279,7 +279,6 @@ public sealed class VerificationEngine
 
         if (!PinHasher.VerifyPin(pin, student.PinSalt, student.PinHash))
         {
-            session.NextStep = VerificationStep.Completed;
             int failedAttempts = student.FailedPinAttempts + 1;
             bool locked = failedAttempts >= 3;
 
@@ -311,7 +310,9 @@ public sealed class VerificationEngine
 
             await SafeLogGateAsync(student, session.Uid, session.TransactionType, session.Mode, false, error, $"Failed PIN attempt {failedAttempts}/3.", session.NfcSystemMs, session.PinWorkflowMs, session.PinSystemMs, session.QrWorkflowMs, session.QrSystemMs, session.TotalDbQueryMs, session.IsOffline);
 
-            return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}");
+            // Reopen only after persistence/logging finishes so overlapping submissions cannot count twice.
+            if (!locked) session.NextStep = VerificationStep.RequiresPin;
+            return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}", retrySession: locked ? null : session);
         }
 
         if (!session.IsOffline)
@@ -595,7 +596,7 @@ public sealed class VerificationEngine
         OfflineCacheService.SaveOfflineEventLog(eventId, studentId, DatabaseService.ToStorageValue(mode), status, remarks);
     }
 
-    private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine)
+    private static VerificationOutcome Denied(string uid, StudentRecord? student, string title, string message, string errorCategory, string logLine, VerificationSession? retrySession = null)
     {
         string finalLogLine = logLine;
 
@@ -604,6 +605,11 @@ public sealed class VerificationEngine
             finalLogLine = logLine.Replace(student.FullName, $"[TEMP] {student.FullName}");
         }
 
-        return new VerificationOutcome { Step = VerificationStep.Completed, IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory, Student = student, LogLine = finalLogLine };
+        return new VerificationOutcome
+        {
+            Step = retrySession == null ? VerificationStep.Completed : VerificationStep.RequiresPin,
+            IsGranted = false, ResultTitle = title, ResultMessage = message, ErrorCategory = errorCategory,
+            Student = student, Session = retrySession, LogLine = finalLogLine
+        };
     }
 }

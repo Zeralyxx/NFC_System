@@ -15,12 +15,21 @@ namespace NFC_System
 {
     public sealed partial class EventManagementWindow : Window
     {
-        private List<StudentRecord> _masterAttendeesList = new();
+        private IReadOnlyList<EventRosterStudent> _directory = Array.Empty<EventRosterStudent>();
+        private IReadOnlyList<EventRosterStudent> _filteredDirectory = Array.Empty<EventRosterStudent>();
+        private readonly HashSet<string> _selectedRosterIds = new(StringComparer.OrdinalIgnoreCase);
+        private string[] _previewIds = Array.Empty<string>();
+        private bool _previewRemoval;
+        private bool _updatingSelection;
+        private bool _editorBusy;
+        private bool _authBusy;
+        private bool _closed;
+        private long _editorSessionVersion;
+        private TaskCompletionSource<(string Uid, string Pin)?>? _eventAuthorization;
         private readonly DatabaseService _database = new();
         private EventRecord? _selectedEvent;
 
         // THE FIX: State variables for Exit Interceptor and Serial Port
-        private SerialPort? _serialPort;
         private string _currentPort = "COM3";
         private bool _isForceClosing = false;
         private bool _isAwaitingAdminAuth = false;
@@ -30,6 +39,7 @@ namespace NFC_System
         public EventManagementWindow()
         {
             this.InitializeComponent();
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
             DatabaseMonitor.ConnectionStatusChanged += UpdateOfflineBanner;
             UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
@@ -164,38 +174,34 @@ namespace NFC_System
         // ====================================================================
         private void TryConnectSerial(string portName)
         {
-            if (_serialPort != null && _serialPort.IsOpen) return;
-
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-            }
-            catch { }
+            HardwareService.Connect(portName);
         }
 
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        private void HardwareService_OnUidScanned(string uid)
         {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-                if (!line.StartsWith("UID=")) return;
-
-                string uid = line.Substring(4).Trim();
-
-                if (_isAwaitingAdminAuth)
-                {
-                    DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
-                }
-            }
-            catch { }
+            if (!_closed && _isAwaitingAdminAuth)
+                DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
         }
 
         private async Task HandleAdminAuthScanAsync(string uid)
         {
+            if (_closed || !_isAwaitingAdminAuth || _authBusy) return;
+            _authBusy = true;
+            try
+            {
+            if (_pendingAdminAction == "EVENT_MODE")
+            {
+                if (!DatabaseMonitor.IsOnline || _editorSessionVersion != AppSession.LoginVersion)
+                {
+                    AuthStatusText.Text = "An online database and the original administrator session are required.";
+                    AuthStatusText.Visibility = Visibility.Visible;
+                    return;
+                }
+                _isAwaitingAdminAuth = false;
+                _eventAuthorization?.TrySetResult((uid, AdminPinBox.Password.Trim()));
+                await QrCredentialDisplay.HideAsync(AdminAuthDialog);
+                return;
+            }
             string? role = null;
             string? pinHash = null;
             string? pinSalt = null;
@@ -250,25 +256,19 @@ namespace NFC_System
                 AuthStatusText.Visibility = Visibility.Visible;
                 PlayErrorAlert();
             }
+            }
+            finally { _authBusy = false; }
         }
 
         private void CloseSerialPort()
         {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
         }
 
         private void Window_Closed(object sender, WindowEventArgs args)
         {
+            _closed = true;
+            _eventAuthorization?.TrySetResult(null);
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
             CloseSerialPort();
         }
@@ -316,327 +316,401 @@ namespace NFC_System
 
         private async Task LoadActiveEventsAsync()
         {
-            try
-            {
-                IReadOnlyList<EventRecord> events = await _database.GetActiveEventsAsync();
-                ActiveEventsListView.ItemsSource = events;
-                CloseEventButton.IsEnabled = false;
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"[DB ERROR] Could not load events: {ex.Message}");
-            }
+            if (!DatabaseMonitor.IsOnline) return;
+            var selectedId = _selectedEvent?.EventId;
+            var events = await _database.GetActiveEventsAsync(int.MaxValue);
+            ActiveEventsListView.ItemsSource = events;
+            ActiveEventsListView.SelectedItem = events.FirstOrDefault(e => e.EventId == selectedId);
+            CloseEventButton.IsEnabled = ActiveEventsListView.SelectedItem != null;
         }
 
-        private async Task LoadCoursesAsync()
-        {
-            try
-            {
-                IReadOnlyList<string> courses = await _database.GetDistinctCoursesAsync();
-                CourseComboBox.ItemsSource = courses;
-                ViewFilterCourseComboBox.ItemsSource = courses;
-            }
-            catch { }
-        }
+        private Task LoadCoursesAsync() => Task.CompletedTask;
 
-        private async Task RefreshAttendeesListAsync()
+        private async Task RefreshRosterAsync()
         {
             if (_selectedEvent == null) return;
+            _directory = await _database.GetEventRosterDirectoryAsync(_selectedEvent.EventId);
+            _updatingSelection = true;
             try
             {
-                var attendees = await _database.GetEventAttendeesAsync(_selectedEvent.EventId);
-                _masterAttendeesList = new List<StudentRecord>(attendees);
-                ApplyViewFilters();
+                var course = CourseComboBox.SelectedItem as string;
+                var section = SectionComboBox.SelectedItem as string;
+                var status = StatusComboBox.SelectedItem as string ?? "Active";
+                CourseComboBox.ItemsSource = _directory.Select(s => s.Course).Where(s => s.Length > 0).Distinct().OrderBy(s => s).ToList();
+                SectionComboBox.ItemsSource = _directory.Select(s => s.SectionName).Where(s => s.Length > 0).Distinct().OrderBy(s => s).ToList();
+                StatusComboBox.ItemsSource = new[] { "All statuses", "Active" }.Concat(_directory.Select(s => s.Status).Where(s => s.Length > 0)).Distinct().ToList();
+                CourseComboBox.SelectedItem = course;
+                SectionComboBox.SelectedItem = section;
+                StatusComboBox.SelectedItem = status;
             }
-            catch (Exception ex)
-            {
-                LogMessage($"[DB ERROR] Could not load attendees: {ex.Message}");
-            }
+            finally { _updatingSelection = false; }
+            ApplyViewFilters();
         }
 
         private void UpdateOfflineBanner(bool isOnline)
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                if (GlobalOfflineBanner != null)
-                {
-                    GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
-                }
+                if (_closed) return;
+                GlobalOfflineBanner.Visibility = isOnline ? Visibility.Collapsed : Visibility.Visible;
+                CreateEventButton.IsEnabled = isOnline && EventEditPolicy.CanManage(AppSession.IsLoggedIn, AppSession.IsAdmin, AppSession.IsEventOrganizer);
+                UpdateEditorActions();
+                if (!isOnline) InvalidatePreview();
             });
         }
 
         private void ApplyViewFilters()
         {
-            if (_masterAttendeesList == null) return;
-
-            string? courseFilter = ViewFilterCourseComboBox.SelectedItem?.ToString();
-            string? yearFilter = (ViewFilterYearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString();
-            string searchQuery = SearchAttendeeTextBox.Text?.Trim().ToLower() ?? "";
-
-            var filteredData = _masterAttendeesList.AsEnumerable();
-
-            if (!string.IsNullOrWhiteSpace(searchQuery))
+            if (_updatingSelection || RosterStudentsListView == null) return;
+            var source = RosterScopeComboBox.SelectedIndex == 1 ? _directory.Where(s => s.IsIncluded) : _directory;
+            string? status = StatusComboBox.SelectedItem as string;
+            _filteredDirectory = EventRosterRules.Filter(source, SearchAttendeeTextBox.Text,
+                CourseComboBox.SelectedItem as string, (YearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                SectionComboBox.SelectedItem as string, status == "All statuses" ? null : status);
+            _updatingSelection = true;
+            try
             {
-                filteredData = filteredData.Where(s =>
-                    (s.FullName != null && s.FullName.ToLower().Contains(searchQuery)) ||
-                    (s.StudentId != null && s.StudentId.ToLower().Contains(searchQuery)));
+                RosterStudentsListView.ItemsSource = _filteredDirectory;
+                foreach (var student in _filteredDirectory)
+                    if (_selectedRosterIds.Contains(student.StudentId)) RosterStudentsListView.SelectedItems.Add(student);
             }
-
-            if (!string.IsNullOrWhiteSpace(courseFilter))
-            {
-                filteredData = filteredData.Where(s => s.Course == courseFilter);
-            }
-
-            if (!string.IsNullOrWhiteSpace(yearFilter))
-            {
-                if (yearFilter == "5+")
-                {
-                    filteredData = filteredData.Where(s => int.TryParse(s.YearLevel, out int y) && y >= 5);
-                }
-                else
-                {
-                    filteredData = filteredData.Where(s => s.YearLevel == yearFilter);
-                }
-            }
-
-            var observableData = new System.Collections.ObjectModel.ObservableCollection<StudentRecord>(filteredData);
-            AttendeesListView.ItemsSource = observableData;
-            AttendeesGridView.ItemsSource = observableData;
+            finally { _updatingSelection = false; }
+            UpdateSelectionText();
         }
 
-        private void ViewFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void UpdateSelectionText()
         {
-            ApplyViewFilters();
+            int visibleSelected = _filteredDirectory.Count(s => _selectedRosterIds.Contains(s.StudentId));
+            RosterSelectionText.Text = $"{_filteredDirectory.Count:N0} matching; {_selectedRosterIds.Count:N0} selected ({_selectedRosterIds.Count - visibleSelected:N0} outside current filter).";
+            SelectMatchingButton.Content = $"Select all matching ({_filteredDirectory.Count:N0})";
+            UpdateEditorActions();
         }
 
-        private void SearchAttendeeTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        private void UpdateEditorActions()
         {
+            if (SaveEventDetailsButton == null) return;
+            bool allowed = !_editorBusy && DatabaseMonitor.IsOnline && AppSession.LoginVersion == _editorSessionVersion &&
+                EventEditPolicy.CanManage(AppSession.IsLoggedIn, AppSession.IsAdmin, AppSession.IsEventOrganizer);
+            SaveEventDetailsButton.IsEnabled = allowed;
+            EditEventModeComboBox.IsEnabled = allowed && EventEditPolicy.CanChangeMode(AppSession.IsLoggedIn, AppSession.IsAdmin, AppSession.CurrentStaffRoleLabel);
+            PreviewAddButton.IsEnabled = allowed && _selectedRosterIds.Count > 0;
+            PreviewRemoveButton.IsEnabled = allowed && _selectedRosterIds.Count > 0;
+            SelectMatchingButton.IsEnabled = allowed;
+            ApplyRosterButton.IsEnabled = allowed && _previewIds.Length > 0;
+        }
+
+        private void SetEditorBusy(bool busy)
+        {
+            _editorBusy = busy;
+            AttendeeManagementDialog.IsEnabled = !busy;
+            UpdateEditorActions();
+        }
+
+        private void ShowEditorNotice(string message, InfoBarSeverity severity)
+        {
+            EventEditorNotice.Message = message;
+            EventEditorNotice.Severity = severity;
+            EventEditorNotice.IsOpen = true;
+            LogMessage($"[{severity}] {message}");
+        }
+
+        private void InvalidatePreview()
+        {
+            _previewIds = Array.Empty<string>();
+            if (RosterPreviewPanel != null) RosterPreviewPanel.Visibility = Visibility.Collapsed;
+            UpdateEditorActions();
+        }
+
+        private void RosterFilter_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyViewFilters();
+        private void SearchAttendeeTextBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyViewFilters();
+
+        private void RosterScope_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (RosterStudentsListView == null) return;
+            _selectedRosterIds.Clear();
+            InvalidatePreview();
             ApplyViewFilters();
         }
 
         private void ClearViewFilters_Click(object sender, RoutedEventArgs e)
         {
+            _updatingSelection = true;
             SearchAttendeeTextBox.Text = "";
-            ViewFilterCourseComboBox.SelectedIndex = -1;
-            ViewFilterYearComboBox.SelectedIndex = -1;
+            CourseComboBox.SelectedIndex = -1;
+            YearComboBox.SelectedIndex = -1;
+            SectionComboBox.SelectedIndex = -1;
+            StatusComboBox.SelectedItem = "Active";
+            _updatingSelection = false;
             ApplyViewFilters();
         }
 
-        private void ExpandDialogToggle_Click(object sender, RoutedEventArgs e)
+        private void RosterStudents_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (ExpandDialogToggle.IsChecked == true)
+            if (_updatingSelection) return;
+            foreach (EventRosterStudent student in e.RemovedItems) _selectedRosterIds.Remove(student.StudentId);
+            foreach (EventRosterStudent student in e.AddedItems) _selectedRosterIds.Add(student.StudentId);
+            InvalidatePreview();
+            UpdateSelectionText();
+        }
+
+        private void SelectMatching_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedRosterIds.Union(_filteredDirectory.Select(s => s.StudentId), StringComparer.OrdinalIgnoreCase).Count() > EventRosterRules.MaximumSelection)
             {
-                DialogContentContainer.Width = 1100;
-                AttendeesListView.Visibility = Visibility.Collapsed;
-                AttendeesGridView.Visibility = Visibility.Visible;
-                ExpandDialogToggle.Content = "⮌ Collapse View";
+                ShowEditorNotice($"Select at most {EventRosterRules.MaximumSelection:N0} students.", InfoBarSeverity.Warning);
+                return;
             }
-            else
-            {
-                DialogContentContainer.Width = 600;
-                AttendeesListView.Visibility = Visibility.Visible;
-                AttendeesGridView.Visibility = Visibility.Collapsed;
-                ExpandDialogToggle.Content = "⛶ Expand View";
-            }
+            _selectedRosterIds.UnionWith(_filteredDirectory.Select(s => s.StudentId));
+            InvalidatePreview();
+            ApplyViewFilters();
+        }
+
+        private void ClearSelection_Click(object sender, RoutedEventArgs e)
+        {
+            _selectedRosterIds.Clear();
+            InvalidatePreview();
+            ApplyViewFilters();
+        }
+
+        private async void ReloadRoster_Click(object sender, RoutedEventArgs e)
+        {
+            if (_editorBusy) return;
+            SetEditorBusy(true);
+            InvalidatePreview();
+            try { await RefreshRosterAsync(); }
+            catch (Exception ex) { ShowEditorNotice(ex.Message, InfoBarSeverity.Error); }
+            finally { SetEditorBusy(false); }
         }
 
         private async void CreateEventButton_Click(object sender, RoutedEventArgs e)
         {
-            string eventId = EventIdTextBox.Text.Trim();
-            string eventName = EventNameTextBox.Text.Trim();
-
-            if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(eventName))
-            {
-                LogMessage("[WARNING] Event ID and Event Name are required.");
-                return;
-            }
-
-            VerificationMode mode = EventModeComboBox.SelectedIndex switch
-            {
-                0 => VerificationMode.Fast,
-                2 => VerificationMode.HighSecurity,
-                _ => VerificationMode.Standard
-            };
-
-            bool isRestricted = RestrictedEventCheckBox.IsChecked ?? false;
-
             try
             {
-                await _database.SaveEventAsync(eventId, eventName, mode, isRestricted);
-                LogMessage($"[SUCCESS] Event '{eventName}' ({eventId}) created and activated.");
-
+                CreateEventButton.IsEnabled = false;
+                var mode = ModeFromIndex(EventModeComboBox.SelectedIndex);
+                await _database.CreateNewEventAsync(EventIdTextBox.Text.Trim(), EventNameTextBox.Text.Trim(), mode,
+                    RestrictedEventCheckBox.IsChecked == true, AppSession.LoginVersion);
+                LogMessage($"[SUCCESS] Event '{EventIdTextBox.Text.Trim()}' created.");
                 EventIdTextBox.Text = "";
                 EventNameTextBox.Text = "";
                 await LoadActiveEventsAsync();
             }
-            catch (Exception ex)
-            {
-                LogMessage($"[DB ERROR] Failed to create event: {ex.Message}");
-            }
+            catch (Exception ex) { LogMessage($"[ERROR] {ex.Message}"); }
+            finally { CreateEventButton.IsEnabled = DatabaseMonitor.IsOnline; }
         }
 
         private void ActiveEventsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            _selectedEvent = ActiveEventsListView.SelectedItem as EventRecord;
-            CloseEventButton.IsEnabled = _selectedEvent != null;
+            if (!_editorBusy) _selectedEvent = ActiveEventsListView.SelectedItem as EventRecord;
+            CloseEventButton.IsEnabled = ActiveEventsListView.SelectedItem != null && DatabaseMonitor.IsOnline;
         }
+
+        private static VerificationMode ModeFromIndex(int index) => index switch
+        {
+            0 => VerificationMode.Fast, 2 => VerificationMode.HighSecurity, _ => VerificationMode.Standard
+        };
 
         private async void ActiveEventsListView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
         {
-            if (ActiveEventsListView.SelectedItem is EventRecord clickedEvent)
+            if (_editorBusy || ActiveEventsListView.SelectedItem is not EventRecord clickedEvent) return;
+            _selectedEvent = clickedEvent;
+            _editorSessionVersion = AppSession.LoginVersion;
+            AttendeeManagementDialog.XamlRoot = Content.XamlRoot;
+            AttendeeManagementDialog.Title = $"Manage Event: {clickedEvent.EventId}";
+            DialogContentContainer.Width = Math.Max(260, Math.Min(840, Content.XamlRoot.Size.Width - 120));
+            EventEditorScroll.MaxHeight = Math.Max(260, Content.XamlRoot.Size.Height - 180);
+            EditEventNameTextBox.Text = clickedEvent.EventName;
+            EditEventModeComboBox.SelectedIndex = (int)clickedEvent.VerificationMode;
+            EventModePermissionText.Text = DatabaseMonitor.IsOnline
+                ? "Database mode. Changes apply to new verification sessions; offline devices retain their cached mode."
+                : "Cached mode. An online database connection is required to save changes.";
+            EventEditorNotice.IsOpen = false;
+            _selectedRosterIds.Clear();
+            InvalidatePreview();
+            AttendeeManagementSection.Visibility = clickedEvent.IsRestricted ? Visibility.Visible : Visibility.Collapsed;
+            try
             {
-                _selectedEvent = clickedEvent;
-
-                AttendeeManagementDialog.XamlRoot = this.Content.XamlRoot;
-                AttendeeManagementDialog.Title = $"Manage Event: {clickedEvent.EventId}";
-
-                EditEventNameTextBox.Text = clickedEvent.EventName ?? "";
-
-                if (!clickedEvent.IsRestricted)
+                if (clickedEvent.IsRestricted)
                 {
-                    AttendeeManagementSection.Visibility = Visibility.Collapsed;
-                    LogMessage($"[INFO] '{clickedEvent.EventId}' is an open event. Attendee management hidden.");
+                    await RefreshRosterAsync();
+                    ClearViewFilters_Click(this, new RoutedEventArgs());
                 }
-                else
-                {
-                    AttendeeManagementSection.Visibility = Visibility.Visible;
-
-                    CourseComboBox.SelectedIndex = -1;
-                    YearComboBox.SelectedIndex = -1;
-                    IndividualIdTextBox.Text = "";
-                    SearchAttendeeTextBox.Text = "";
-
-                    await RefreshAttendeesListAsync();
-                }
-
-                DialogContentContainer.Width = 600;
-                ExpandDialogToggle.IsChecked = false;
-                ExpandDialogToggle.Content = "⛶ Expand View";
-                AttendeesListView.Visibility = Visibility.Visible;
-                AttendeesGridView.Visibility = Visibility.Collapsed;
-
+                UpdateEditorActions();
                 await AttendeeManagementDialog.ShowAsync();
+            }
+            catch (Exception ex) { LogMessage($"[ERROR] {ex.Message}"); }
+        }
+
+        private async Task<(string Uid, string Pin)?> AuthorizeEventModeAsync()
+        {
+            if (AppSession.IsKioskRunning)
+                throw new InvalidOperationException("Close the kiosk before authorizing an event mode change.");
+            await QrCredentialDisplay.HideAsync(AttendeeManagementDialog);
+            _eventAuthorization = new TaskCompletionSource<(string Uid, string Pin)?>();
+            _pendingAdminAction = "EVENT_MODE";
+            _pendingAdminSeverity = "HIGH";
+            AdminPinBox.Password = "";
+            AdminPinBox.Visibility = Visibility.Visible;
+            AuthStatusText.Visibility = Visibility.Collapsed;
+            AdminAuthDescriptionText.Text = "Enter the authorizing administrator's PIN and tap their NFC card.";
+            _isAwaitingAdminAuth = true;
+            AdminAuthDialog.XamlRoot = Content.XamlRoot;
+            try
+            {
+                await AdminAuthDialog.ShowAsync();
+                _eventAuthorization.TrySetResult(null);
+                return await _eventAuthorization.Task;
+            }
+            finally
+            {
+                _isAwaitingAdminAuth = false;
+                _pendingAdminAction = "";
+                AdminPinBox.Password = "";
+                _eventAuthorization = null;
             }
         }
 
         private async void UpdateEventNameButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedEvent == null) return;
-
+            if (_selectedEvent == null || _editorBusy) return;
+            var editing = _selectedEvent;
             string newName = EditEventNameTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(newName))
-            {
-                LogMessage("[WARNING] Event Name cannot be empty.");
-                return;
-            }
-
+            var mode = ModeFromIndex(EditEventModeComboBox.SelectedIndex);
+            bool modeChanged = editing.VerificationMode != mode;
+            bool reopen = false;
+            SetEditorBusy(true);
             try
             {
-                await _database.SaveEventAsync(_selectedEvent.EventId, newName, _selectedEvent.VerificationMode, _selectedEvent.IsRestricted);
-                LogMessage($"[SUCCESS] Event '{_selectedEvent.EventId}' renamed to '{newName}'.");
+                EventEditPolicy.ValidateEdit(editing, editing.EventName, editing.VerificationMode, newName, mode);
+                (string Uid, string Pin)? credentials = null;
+                if (modeChanged && AppSession.CurrentStaffRoleLabel != "Master Admin")
+                {
+                    if (!EventEditPolicy.CanChangeMode(AppSession.IsLoggedIn, AppSession.IsAdmin, AppSession.CurrentStaffRoleLabel))
+                        throw new UnauthorizedAccessException("Only an Administrator or Master Admin may change verification mode.");
+                    if (AppSession.IsKioskRunning) throw new InvalidOperationException("Close the kiosk before authorizing an event mode change.");
+                    reopen = true;
+                    credentials = await AuthorizeEventModeAsync();
+                    if (credentials == null) return;
+                }
+                _selectedEvent = await _database.UpdateEventDetailsAsync(editing.EventId, editing.EventName, editing.VerificationMode,
+                    newName, mode, _editorSessionVersion, credentials?.Uid, credentials?.Pin);
+                if (modeChanged) KioskStateController.BroadcastEventModeChange(editing.EventId, mode);
+                ShowEditorNotice("Event saved. Original event date and active state were preserved.", InfoBarSeverity.Success);
                 await LoadActiveEventsAsync();
             }
-            catch (Exception ex)
+            catch (Exception ex) { ShowEditorNotice(ex.Message, InfoBarSeverity.Error); }
+            finally
             {
-                LogMessage($"[DB ERROR] Failed to update event name: {ex.Message}");
+                SetEditorBusy(false);
+                if (reopen && !_closed) await AttendeeManagementDialog.ShowAsync();
             }
         }
 
-        private async void AddBatchButton_Click(object sender, RoutedEventArgs e)
+        private async Task PreviewRosterAsync(IEnumerable<string> ids, bool removal, IReadOnlyList<EventRosterPreviewRow>? errors = null)
         {
-            if (_selectedEvent == null) return;
-
-            string? selectedCourse = CourseComboBox.SelectedIndex >= 0 ? CourseComboBox.SelectedItem?.ToString() : null;
-            string? selectedYear = YearComboBox.SelectedIndex >= 0 ? (YearComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() : null;
-
-            if (string.IsNullOrWhiteSpace(selectedCourse) && string.IsNullOrWhiteSpace(selectedYear))
+            var requested = ids.ToArray();
+            await RefreshRosterAsync();
+            _previewRemoval = removal;
+            var preview = EventRosterRules.Preview(requested, _directory);
+            if (removal)
             {
-                LogMessage("[WARNING] Please select a Course or Year Level to batch add.");
-                return;
+                var conflicts = _directory.Where(s => s.HasSyncConflict).Select(s => s.StudentId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var rows = preview.Rows.Select(row => row with { Result = conflicts.Contains(row.StudentId)
+                    ? "Confirm exclusion" : row.Result == "Already included" ? "Remove" : "Not on roster" }).ToList();
+                _previewIds = rows.Where(row => row.Result is "Remove" or "Confirm exclusion").Select(row => row.StudentId).ToArray();
+                RosterPreviewSummary.Text = $"{_previewIds.Length} removals; {rows.Count - _previewIds.Length} not on roster. Attendance logs will be retained.";
+                RosterPreviewList.ItemsSource = rows;
+                ApplyRosterButton.Content = "Remove selected attendees";
             }
+            else
+            {
+                _previewIds = preview.Rows.Where(row => row.Result == "Add").Select(row => row.StudentId).ToArray();
+                RosterPreviewSummary.Text = preview.Summary + (errors?.Count > 0 ? $" {errors.Count} invalid file rows." : "");
+                RosterPreviewList.ItemsSource = preview.Rows.Concat(errors ?? Array.Empty<EventRosterPreviewRow>()).ToList();
+                ApplyRosterButton.Content = $"Add eligible students ({_previewIds.Length})";
+            }
+            RosterPreviewPanel.Visibility = Visibility.Visible;
+            UpdateEditorActions();
+        }
 
+        private async void AddBatchButton_Click(object sender, RoutedEventArgs e) => await PrepareSelectedRosterAsync(false);
+        private async void RemoveSelected_Click(object sender, RoutedEventArgs e) => await PrepareSelectedRosterAsync(true);
+
+        private async Task PrepareSelectedRosterAsync(bool removal)
+        {
+            if (_editorBusy) return;
+            SetEditorBusy(true);
+            try { await PreviewRosterAsync(_selectedRosterIds, removal); }
+            catch (Exception ex) { InvalidatePreview(); ShowEditorNotice(ex.Message, InfoBarSeverity.Error); }
+            finally { SetEditorBusy(false); }
+        }
+
+        private async void ApplyRoster_Click(object sender, RoutedEventArgs e)
+        {
+            if (_editorBusy || _selectedEvent == null || _previewIds.Length == 0) return;
+            SetEditorBusy(true);
             try
             {
-                await _database.AddBatchToEventAsync(_selectedEvent.EventId, selectedCourse, selectedYear);
-
-                string filterDetails = $"Course: {(selectedCourse ?? "Any")}, Year: {(selectedYear ?? "Any")}";
-                LogMessage($"[SUCCESS] Batch approved for '{_selectedEvent.EventId}' [{filterDetails}].");
-
-                await RefreshAttendeesListAsync();
-
-                CourseComboBox.SelectedIndex = -1;
-                YearComboBox.SelectedIndex = -1;
+                var result = await _database.ApplyEventRosterSelectionAsync(_selectedEvent.EventId, _previewIds, _previewRemoval, _editorSessionVersion);
+                ShowEditorNotice($"{result.Changed} {(_previewRemoval ? "removed" : "added")}; {result.AlreadyIncluded} already included; {result.Ineligible} now ineligible; {result.Unknown} no longer in the directory.",
+                    InfoBarSeverity.Success);
+                _selectedRosterIds.Clear();
+                InvalidatePreview();
+                await RefreshRosterAsync();
             }
-            catch (Exception ex)
-            {
-                LogMessage($"[ERROR] Failed to add batch: {ex.Message}");
-            }
+            catch (Exception ex) { ShowEditorNotice(ex.Message, InfoBarSeverity.Error); }
+            finally { SetEditorBusy(false); }
         }
 
-        private async void AddIndividualButton_Click(object sender, RoutedEventArgs e)
+        private async void ImportRoster_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedEvent == null) return;
-
-            string studentId = IndividualIdTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(studentId)) return;
-
+            if (_editorBusy || !DatabaseMonitor.IsOnline) return;
+            SetEditorBusy(true);
             try
             {
-                var student = await _database.GetStudentByIdAsync(studentId);
-                if (student == null)
-                {
-                    LogMessage($"[WARNING] Cannot add: Student ID '{studentId}' does not exist in the database.");
-                    return;
-                }
-
-                await _database.AddEventAttendeeAsync(_selectedEvent.EventId, studentId);
-                LogMessage($"[SUCCESS] Added student '{studentId}' to '{_selectedEvent.EventId}'.");
-
-                IndividualIdTextBox.Text = "";
-                await RefreshAttendeesListAsync();
+                var file = await SpreadsheetPicker.PickImportAsync(this);
+                if (file == null) return;
+                var document = await Task.Run(() => SpreadsheetService.ReadImport(file.Path, StudentImportKind.Roster));
+                await RefreshRosterAsync();
+                var rows = EventRosterImport.Preview(document, _directory);
+                _selectedRosterIds.Clear();
+                _previewIds = EventRosterRules.NormalizeIds(rows.Where(row => row.Result == "Add").Select(row => row.StudentId));
+                _previewRemoval = false;
+                _selectedRosterIds.UnionWith(_previewIds);
+                ApplyViewFilters();
+                RosterPreviewList.ItemsSource = rows;
+                RosterPreviewSummary.Text = $"{_previewIds.Length} additions; {rows.Count(row => row.Result == "Already included")} already included; " +
+                    $"{rows.Count(row => row.Result == "Ineligible: inactive")} ineligible; {rows.Count(row => row.Result == "Unknown student ID")} unknown; " +
+                    $"{rows.Count(row => row.Result.StartsWith("Row ", StringComparison.Ordinal))} duplicate or invalid file rows.";
+                ApplyRosterButton.Content = $"Add eligible students ({_previewIds.Length})";
+                RosterPreviewPanel.Visibility = Visibility.Visible;
             }
-            catch (Exception ex)
-            {
-                LogMessage($"[ERROR] Failed to add student: {ex.Message}");
-            }
+            catch (Exception ex) { InvalidatePreview(); ShowEditorNotice(ex.Message, InfoBarSeverity.Error); }
+            finally { SetEditorBusy(false); }
         }
 
-        private async void RemoveAttendeeButton_Click(object sender, RoutedEventArgs e)
+        private async void DownloadRosterTemplate_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedEvent == null) return;
-
-            if (sender is Button btn && btn.Tag is string studentId)
+            try
             {
-                try
-                {
-                    await _database.RemoveEventAttendeeAsync(_selectedEvent.EventId, studentId);
-                    LogMessage($"[SUCCESS] Removed '{studentId}' from event list.");
-                    await RefreshAttendeesListAsync();
-                }
-                catch (Exception ex)
-                {
-                    LogMessage($"[ERROR] Failed to remove attendee: {ex.Message}");
-                }
+                if (await SpreadsheetPicker.SaveTemplateAsync(this, StudentImportKind.Roster))
+                    ShowEditorNotice("Roster template saved.", InfoBarSeverity.Success);
             }
+            catch (Exception ex) { ShowEditorNotice(ex.Message, InfoBarSeverity.Error); }
         }
 
         private async void CloseEventButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedEvent != null)
+            if (_selectedEvent == null || !DatabaseMonitor.IsOnline ||
+                !EventEditPolicy.CanManage(AppSession.IsLoggedIn, AppSession.IsAdmin, AppSession.IsEventOrganizer)) return;
+            try
             {
-                try
-                {
-                    await _database.CloseEventAsync(_selectedEvent.EventId);
-                    LogMessage($"[SUCCESS] Event '{_selectedEvent.DisplayName}' closed and removed.");
-
-                    ActiveEventsListView.SelectedItem = null;
-                    await LoadActiveEventsAsync();
-                }
-                catch (Exception ex)
-                {
-                    LogMessage($"[DB ERROR] Could not close event: {ex.Message}");
-                }
+                await _database.CloseEventAsync(_selectedEvent.EventId);
+                LogMessage($"[SUCCESS] Event '{_selectedEvent.EventId}' closed.");
+                _selectedEvent = null;
+                await LoadActiveEventsAsync();
             }
+            catch (Exception ex) { LogMessage($"[ERROR] {ex.Message}"); }
         }
 
         private void RefreshLogsButton_Click(object sender, RoutedEventArgs e)

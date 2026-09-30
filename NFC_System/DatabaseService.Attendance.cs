@@ -58,6 +58,7 @@ public sealed partial class DatabaseService
         using var command = new MySqlCommand(@"
             CREATE TABLE IF NOT EXISTS attendance_devices (
                 device_id VARCHAR(32) PRIMARY KEY,
+                device_name VARCHAR(100) NOT NULL DEFAULT 'Unknown/Legacy',
                 last_seen DATETIME(3) NOT NULL,
                 reported_sequence BIGINT NOT NULL DEFAULT 0,
                 acknowledged_sequence BIGINT NOT NULL DEFAULT 0,
@@ -94,6 +95,7 @@ public sealed partial class DatabaseService
             ('attendance_devices','attendance_receipts','attendance_decisions','attendance_current','attendance_visits') AND engine<>'InnoDB'", connection);
         if (Convert.ToInt32(await metadataEngines.ExecuteScalarAsync()) != 0)
             throw new InvalidOperationException("Attendance metadata must use InnoDB before synchronization or restore can proceed.");
+        await EnsureDeviceAttributionSchemaAsync(connection);
     }
 
     public async Task<AttendanceCommitResult> RecordAttendanceTransactionAsync(VerificationSession session, string remarks)
@@ -169,9 +171,19 @@ public sealed partial class DatabaseService
 
     public async Task PulseAttendanceAsync()
     {
-        if (!_attendanceActive || !await AttendanceLock.WaitAsync(0)) return;
+        if (!await AttendanceLock.WaitAsync(0)) return;
         try
         {
+            if (!_attendanceActive)
+            {
+                if (OfflineCacheService.AttendanceQueue.Snapshot().DeviceNameChanges.Count == 0) return;
+                using var connection = new MySqlConnection(ConnectionString);
+                await connection.OpenAsync();
+                await EnsureAttendanceSchemaAsync(connection);
+                await FlushDeviceNameChangesAsync(connection);
+                DeviceAuditSyncError = null;
+                return;
+            }
             await RecoverAttendanceCoreAsync();
         }
         catch (Exception ex) { AttendanceSyncError = ex.Message; }
@@ -202,6 +214,12 @@ public sealed partial class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
         await EnsureAttendanceSchemaAsync(connection);
+        try
+        {
+            await FlushDeviceNameChangesAsync(connection);
+            DeviceAuditSyncError = null;
+        }
+        catch (Exception ex) { DeviceAuditSyncError = ex.Message; }
         await ReportDeviceAsync(connection, snapshot, !snapshot.CacheRefreshRequired && snapshot.GateLogs.Count == 0 && snapshot.EventLogs.Count == 0);
 
         // Preserve allocation order across gate and event queues; stop on the first failure.
@@ -234,10 +252,11 @@ public sealed partial class DatabaseService
     private static async Task ReportDeviceAsync(MySqlConnection connection, AttendanceQueueSnapshot snapshot, bool ready)
     {
         using var command = new MySqlCommand(@"
-            INSERT INTO attendance_devices (device_id,last_seen,reported_sequence,ready)
-            VALUES (@id,UTC_TIMESTAMP(3),@seq,@ready)
-            ON DUPLICATE KEY UPDATE last_seen=UTC_TIMESTAMP(3), reported_sequence=@seq, ready=@ready, enabled=TRUE", connection);
+            INSERT INTO attendance_devices (device_id,device_name,last_seen,reported_sequence,ready)
+            VALUES (@id,@name,UTC_TIMESTAMP(3),@seq,@ready)
+            ON DUPLICATE KEY UPDATE device_name=@name,last_seen=UTC_TIMESTAMP(3), reported_sequence=@seq, ready=@ready, enabled=TRUE", connection);
         command.Parameters.AddWithValue("@id", snapshot.DeviceId);
+        command.Parameters.AddWithValue("@name", DeviceIdentity.DisplayName(snapshot.DeviceName));
         command.Parameters.AddWithValue("@seq", snapshot.LastSequence);
         command.Parameters.AddWithValue("@ready", ready);
         await command.ExecuteNonQueryAsync();
@@ -309,7 +328,8 @@ public sealed partial class DatabaseService
             {
                 if (!string.IsNullOrWhiteSpace(gate.EventId))
                     await InsertQueuedEventAsync(connection, transaction, gate.EventId, gate.StudentId, gate.VerificationMode,
-                        gate.TransactionType == "Exit" ? "DEPARTED" : "PRESENT", gate.Remarks, gate.Timestamp);
+                        gate.TransactionType == "Exit" ? "DEPARTED" : "PRESENT", gate.Remarks, gate.Timestamp,
+                        gate.IsLegacy ? "" : gate.DeviceId, gate.DeviceName);
                 if (string.IsNullOrWhiteSpace(gate.EventId) && (gate.TransactionType == "Entry" || gate.TransactionType == "Exit"))
                     await ApplyGateVisitAsync(connection, transaction, gate, recovered || gate.WasOffline);
                 else if (gate.TransactionType == "EventAttendance")
@@ -318,7 +338,8 @@ public sealed partial class DatabaseService
         }
         else
         {
-            await InsertQueuedEventAsync(connection, transaction, evt!.EventId, evt.StudentId, evt.VerificationMode, evt.Status, evt.Remarks, evt.Timestamp);
+            await InsertQueuedEventAsync(connection, transaction, evt!.EventId, evt.StudentId, evt.VerificationMode, evt.Status, evt.Remarks, evt.Timestamp,
+                evt.IsLegacy ? "" : evt.DeviceId, evt.DeviceName);
             if (evt.Status == "PRESENT") await InvalidateEventGateStateAsync(connection, transaction, evt.StudentId, evt.Timestamp, evt.DeviceId, evt.DeviceSequence);
         }
         using (var ack = new MySqlCommand("UPDATE attendance_devices SET acknowledged_sequence=GREATEST(acknowledged_sequence,@seq) WHERE device_id=@device", connection, transaction))
@@ -336,8 +357,8 @@ public sealed partial class DatabaseService
         string table = log.VerificationMode switch { "Fast" => "fast_mode_logs", "HighSecurity" => "high_security_mode_logs", _ => "standard_mode_logs" };
         using var command = new MySqlCommand($@"INSERT INTO {table}
             (timestamp,student_id,student_name,nfc_uid,transaction_type,verification_mode,is_granted,error_code,remarks,
-             nfc_system_ms,pin_workflow_ms,pin_system_ms,qr_workflow_ms,qr_system_ms,total_workflow_ms,total_system_ms,db_query_speed_ms)
-            VALUES (@ts,@sid,@name,@uid,@type,@mode,@granted,@error,@remarks,@nfc,@pw,@ps,@qw,@qs,@tw,@total,@db)", connection, transaction);
+             nfc_system_ms,pin_workflow_ms,pin_system_ms,qr_workflow_ms,qr_system_ms,total_workflow_ms,total_system_ms,db_query_speed_ms,device_id,device_name)
+            VALUES (@ts,@sid,@name,@uid,@type,@mode,@granted,@error,@remarks,@nfc,@pw,@ps,@qw,@qs,@tw,@total,@db,@device,@device_name)", connection, transaction);
         command.Parameters.AddWithValue("@ts", ParseAttendanceTimestamp(log.Timestamp));
         command.Parameters.AddWithValue("@sid", NullIfEmpty(log.StudentId));
         command.Parameters.AddWithValue("@name", NullIfEmpty(log.StudentName));
@@ -355,22 +376,26 @@ public sealed partial class DatabaseService
         command.Parameters.AddWithValue("@tw", log.TotalWorkflowMs);
         command.Parameters.AddWithValue("@total", log.TotalSystemMs);
         command.Parameters.AddWithValue("@db", log.DbQuerySpeedMs);
+        command.Parameters.AddWithValue("@device", log.IsLegacy ? "" : log.DeviceId);
+        command.Parameters.AddWithValue("@device_name", DeviceIdentity.DisplayName(log.DeviceName));
         await command.ExecuteNonQueryAsync();
     }
 
     private static DateTime ParseAttendanceTimestamp(string value) => DateTime.ParseExact(value, "yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
 
     private static async Task InsertQueuedEventAsync(MySqlConnection connection, MySqlTransaction transaction, string eventId,
-        string studentId, string mode, string status, string remarks, string timestamp)
+        string studentId, string mode, string status, string remarks, string timestamp, string deviceId, string deviceName)
     {
         using var command = new MySqlCommand(@"INSERT INTO event_attendance
-            (timestamp,event_id,student_id,verification_mode,status,remarks) VALUES (@ts,@event,@sid,@mode,@status,@remarks)", connection, transaction);
+            (timestamp,event_id,student_id,verification_mode,status,remarks,device_id,device_name) VALUES (@ts,@event,@sid,@mode,@status,@remarks,@device,@device_name)", connection, transaction);
         command.Parameters.AddWithValue("@ts", ParseAttendanceTimestamp(timestamp));
         command.Parameters.AddWithValue("@event", eventId);
         command.Parameters.AddWithValue("@sid", studentId);
         command.Parameters.AddWithValue("@mode", mode);
         command.Parameters.AddWithValue("@status", status);
         command.Parameters.AddWithValue("@remarks", remarks);
+        command.Parameters.AddWithValue("@device", deviceId);
+        command.Parameters.AddWithValue("@device_name", DeviceIdentity.DisplayName(deviceName));
         await command.ExecuteNonQueryAsync();
     }
 

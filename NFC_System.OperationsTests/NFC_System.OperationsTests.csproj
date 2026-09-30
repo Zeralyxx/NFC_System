@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../NFC_System/EventRosterSync.cs" Link="Production/EventRosterSync.cs" />
+    <Compile Include="../NFC_System/DatabaseService.EventRosterSync.cs" Link="Production/DatabaseService.EventRosterSync.cs" />
+    <Compile Include="../NFC_System/StudentProfileRules.cs" Link="Production/StudentProfileRules.cs" />
+    <Compile Include="../NFC_System/DatabaseService.StudentParameters.cs" Link="Production/DatabaseService.StudentParameters.cs" />
+    <Compile Include="../NFC_System/CloudDocumentReader.cs" Link="Production/CloudDocumentReader.cs" />
+    <Compile Include="../NFC_System/SpreadsheetService.cs" Link="Production/SpreadsheetService.cs" />
+    <Compile Include="../NFC_System/GraduationClearance.cs" Link="Production/GraduationClearance.cs" />
+    <Compile Include="../NFC_System/EventRosterRules.cs" Link="Production/EventRosterRules.cs" />
+    <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs" />
+    <Compile Include="../NFC_System/SecurityModels.cs" Link="Production/SecurityModels.cs" />
+    <Compile Include="../NFC_System/AttendanceTracking.cs" Link="Production/AttendanceTracking.cs" />
+    <Compile Include="../NFC_System/KioskStateController.cs" Link="Production/KioskStateController.cs" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+    <PackageReference Include="MySqlConnector" Version="2.5.0" />
+    <Compile Include="../NFC_System/DatabaseService.Graduation.cs" Link="Production/DatabaseService.Graduation.cs" />
+    <Compile Include="../NFC_System/DatabaseService.Events.cs" Link="Production/DatabaseService.Events.cs" />
+    <Compile Include="../NFC_System/DatabaseService.StudentImport.cs" Link="Production/DatabaseService.StudentImport.cs" />
+    <Compile Include="../NFC_System/PinHasher.cs" Link="Production/PinHasher.cs" />
+  </ItemGroup>
+</Project>

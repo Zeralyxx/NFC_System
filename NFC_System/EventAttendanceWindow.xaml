@@ -74,6 +74,7 @@
                         <Button x:Name="RefreshEventsButton" Content="Refresh Events" Click="RefreshEventsButton_Click" Padding="16,10" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" VerticalAlignment="Bottom"/>
                     </StackPanel>
                 </Grid>
+                <TextBlock x:Name="EventModeStatusText" Text="Loading event mode..." TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
             </StackPanel>
 
             <!-- Main Content Area -->

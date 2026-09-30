@@ -49,6 +49,10 @@ namespace NFC_System
         private VerificationSession? _activeSession;
 
         private VerificationMode _currentMode = VerificationMode.HighSecurity;
+        private TransactionType _currentType;
+        private (VerificationMode Mode, TransactionType Type)? _pendingConfiguration;
+        private bool _processingNfc;
+        private bool _initializing = true;
         private AuthenticationStage _currentStage = AuthenticationStage.Idle;
         private readonly DispatcherTimer _inactivityTimer = new();
         private readonly System.Threading.Timer _hardwareStatusTimer;
@@ -125,6 +129,10 @@ namespace NFC_System
             _originatingMode = originatingMode;
             _contextDetails = contextDetails;
             _eventId = eventId;
+            var initialState = !string.IsNullOrEmpty(eventId)
+                ? KioskStateController.GetEventState(eventId)
+                : (KioskStateController.CurrentMode, KioskStateController.CurrentType);
+            (_currentMode, _currentType) = initialState;
 
             if (_eventId != _lastTrackedEventId)
             {
@@ -203,6 +211,8 @@ namespace NFC_System
             _syncRecoveryTimer.Start();
 
             KioskStateController.ModeChanged += KioskStateController_ModeChanged;
+            KioskStateController.EventStateChanged += KioskStateController_EventStateChanged;
+            KioskStateController.EventModeChanged += KioskStateController_EventModeChanged;
         }
 
         // ====================================================================
@@ -408,15 +418,60 @@ namespace NFC_System
 
         private void KioskStateController_ModeChanged(VerificationMode newMode, TransactionType newType)
         {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _currentMode = newMode;
-                string modeText = newMode == VerificationMode.Fast ? "Fast" :
-                                  newMode == VerificationMode.Standard ? "Standard" : "High-Security";
+            if (_originatingMode != "Event")
+                DispatcherQueue.TryEnqueue(() => QueueConfiguration(newMode, newType));
+        }
 
-                KioskHeaderSubtitle.Text = $"GATE TERMINAL  •  {newType.ToString().ToUpper()} ({modeText})";
-                SetState(AuthenticationStage.Idle);
-            });
+        private void KioskStateController_EventStateChanged(string eventId, VerificationMode mode, TransactionType type)
+        {
+            if (_originatingMode == "Event" && eventId == _eventId)
+                DispatcherQueue.TryEnqueue(() => QueueConfiguration(mode, type));
+        }
+
+        private void KioskStateController_EventModeChanged(string eventId, VerificationMode mode)
+        {
+            if (_originatingMode == "Event" && eventId == _eventId)
+                DispatcherQueue.TryEnqueue(() => QueueConfiguration(mode, _pendingConfiguration?.Type ?? _currentType));
+        }
+
+        private void QueueConfiguration(VerificationMode mode, TransactionType type)
+        {
+            if (_isClosing) return;
+            _pendingConfiguration = (mode, type);
+            if (_currentStage == AuthenticationStage.Idle && !_processingNfc && !_processingQr)
+                ApplyPendingConfiguration();
+        }
+
+        private void ApplyPendingConfiguration()
+        {
+            if (_pendingConfiguration is not { } next) return;
+            (_currentMode, _currentType) = next;
+            _pendingConfiguration = null;
+            string modeText = _currentMode == VerificationMode.HighSecurity ? "High-Security" : _currentMode.ToString();
+            KioskHeaderSubtitle.Text = $"{_originatingMode.ToUpper()} TERMINAL | {_contextDetails} | {_currentType} ({modeText})";
+        }
+
+        private async Task RefreshEventConfigurationAsync()
+        {
+            if (_originatingMode != "Event") return;
+            if (string.IsNullOrWhiteSpace(_eventId)) throw new InvalidOperationException("No event selected.");
+            VerificationMode mode;
+            if (DatabaseMonitor.IsOnline)
+            {
+                var configuration = await _database.GetEventConfigurationAsync(_eventId);
+                if (configuration == null || configuration.Status != "Active")
+                    throw new InvalidOperationException("This event is closed or unavailable.");
+                mode = configuration.VerificationMode;
+            }
+            else
+            {
+                var cached = OfflineCacheService.GetCachedEvents().FirstOrDefault(e => e.EventId == _eventId);
+                if (cached == null || !cached.IsActive || !Enum.TryParse(cached.VerificationMode, out mode) || !Enum.IsDefined(mode))
+                    throw new InvalidOperationException("No active offline event configuration is available.");
+            }
+            // Called only before a new verification session; never reinterpret a PIN/QR already in progress.
+            _pendingConfiguration = (mode, _pendingConfiguration?.Type ?? _currentType);
+            ApplyPendingConfiguration();
         }
 
         private void KioskStateController_CameraChanged(string cameraId)
@@ -435,7 +490,7 @@ namespace NFC_System
             {
                 if (_originatingMode == "Event")
                 {
-                    _currentMode = KioskStateController.CurrentMode;
+                    await RefreshEventConfigurationAsync();
                 }
                 else
                 {
@@ -452,7 +507,7 @@ namespace NFC_System
             }
             catch
             {
-                _currentMode = KioskStateController.CurrentMode;
+                if (_originatingMode != "Event") _currentMode = KioskStateController.CurrentMode;
                 HardwareService.Connect("COM3");
                 UpdateKioskHealthStatus();
             }
@@ -467,7 +522,8 @@ namespace NFC_System
                 ForgotIdButton.Visibility = Visibility.Visible;
             }
 
-            SetState(AuthenticationStage.Idle);
+            _initializing = false;
+            if (!_isClosing) SetState(AuthenticationStage.Idle);
         }
 
         private void KioskModeWindow_Closed(object sender, WindowEventArgs args)
@@ -492,6 +548,8 @@ namespace NFC_System
             System.Threading.Thread.Sleep(50);
             _ = DisposeCameraAsync();
             KioskStateController.ModeChanged -= KioskStateController_ModeChanged;
+            KioskStateController.EventStateChanged -= KioskStateController_EventStateChanged;
+            KioskStateController.EventModeChanged -= KioskStateController_EventModeChanged;
         }
 
         private void ExitKiosk_Click(object sender, RoutedEventArgs e)
@@ -501,6 +559,8 @@ namespace NFC_System
 
         private void ForgotIdButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_initializing || _processingNfc || _processingQr || _isVerifyingPin) return;
+            ApplyPendingConfiguration();
             _tempStudentName = "";
             _tempStudentId = "";
             _tempStudentPhoto = null;
@@ -534,6 +594,7 @@ namespace NFC_System
         {
             int stateChangeVersion = ++_stateChangeVersion;
             _currentStage = newState;
+            if (newState == AuthenticationStage.Idle) ApplyPendingConfiguration();
             UpdateUiForState(newState);
 
             if (newState == AuthenticationStage.WaitingForPIN || newState == AuthenticationStage.WaitingForQR)
@@ -628,6 +689,21 @@ namespace NFC_System
 
         public async void ProcessNfcScan(string uid)
         {
+            if (_initializing || _processingNfc || _processingQr || _isClosing) return;
+            _processingNfc = true;
+            try { await ProcessNfcScanAsync(uid); }
+            catch (Exception ex)
+            {
+                if (_isClosing) return;
+                _outcomeTitle = "VERIFICATION UNAVAILABLE";
+                _outcomeMessage = ex is InvalidOperationException ? ex.Message : "Please try again or contact personnel.";
+                SetState(AuthenticationStage.AccessDenied);
+            }
+            finally { _processingNfc = false; }
+        }
+
+        private async Task ProcessNfcScanAsync(string uid)
+        {
             if (_currentStage != AuthenticationStage.Idle &&
                 _currentStage != AuthenticationStage.AccessGranted &&
                 _currentStage != AuthenticationStage.AccessDenied)
@@ -651,7 +727,10 @@ namespace NFC_System
 
             Stopwatch nfcTimer = Stopwatch.StartNew();
 
-            var transType = KioskStateController.CurrentType;
+            await RefreshEventConfigurationAsync();
+            if (_isClosing) return;
+            int scanVersion = _stateChangeVersion;
+            var transType = _currentType;
             if (_originatingMode == "Event" && transType == TransactionType.Entry)
             {
                 transType = TransactionType.EventAttendance;
@@ -717,13 +796,13 @@ namespace NFC_System
             }
 
             VerificationOutcome outcome = await _engine.BeginNfcVerificationAsync(uid, _currentMode, transType, _eventId);
+            if (_isClosing || scanVersion != _stateChangeVersion) return;
 
             if (outcome.Session != null) _activeSession = outcome.Session;
 
             CaptureAttendanceResult(outcome);
             OnKioskOutcome?.Invoke(outcome);
 
-            DispatcherQueue.TryEnqueue(async () =>
             {
                 _tempStudentName = outcome.Student != null ? outcome.Student.FullName : "UNKNOWN USER";
                 _tempStudentId = outcome.Student != null ? outcome.Student.StudentId : "---";
@@ -751,7 +830,9 @@ namespace NFC_System
                 else
                 {
                     ExecuteStateChange(AuthenticationStage.NFCVerified);
+                    int presentationVersion = _stateChangeVersion;
                     await Task.Delay(400);
+                    if (_isClosing || presentationVersion != _stateChangeVersion) return;
 
                     _outcomeTitle = outcome.ResultTitle;
                     _outcomeMessage = outcome.ResultMessage;
@@ -767,7 +848,7 @@ namespace NFC_System
                         ExecuteStateChange(AuthenticationStage.WaitingForPIN);
                     }
                 }
-            });
+            }
         }
 
         public async void ProcessHardwareKeypadStroke(string digit, bool isEnter, bool isClear, bool isCancel)
@@ -828,14 +909,15 @@ namespace NFC_System
                     CaptureAttendanceResult(outcome);
                     OnKioskOutcome?.Invoke(outcome);
 
-                    if (!outcome.IsGranted && outcome.Step == VerificationStep.Completed)
+                    if (!outcome.IsGranted && (outcome.Step == VerificationStep.Completed || outcome.Step == VerificationStep.RequiresPin))
                     {
                         _currentPinBuffer = "";
                         UpdatePinDots();
 
-                        if (outcome.ErrorCategory == "PIN_LOCKED" || outcome.ErrorCategory == "ATTENDANCE_STORAGE_UNAVAILABLE" || outcome.ErrorCategory == "ATTENDANCE_SEQUENCE_CONFLICT" || outcome.ErrorCategory == "ATTENDANCE_CONFIRMATION_PENDING")
+                        if (outcome.Step == VerificationStep.Completed)
                         {
-                            PlaySecurityAlert();
+                            if (outcome.ErrorCategory == "PIN_LOCKED" || outcome.ErrorCategory == "ATTENDANCE_STORAGE_UNAVAILABLE" || outcome.ErrorCategory == "ATTENDANCE_SEQUENCE_CONFLICT" || outcome.ErrorCategory == "ATTENDANCE_CONFIRMATION_PENDING")
+                                PlaySecurityAlert();
                             _outcomeTitle = outcome.ResultTitle;
                             _outcomeMessage = outcome.ResultMessage;
                             SetState(AuthenticationStage.AccessDenied);
@@ -845,6 +927,7 @@ namespace NFC_System
                             System.Threading.Tasks.Task.Run(() => { Console.Beep(1500, 200); });
                             PinErrorText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                             PinErrorText.Text = outcome.ResultMessage;
+                            PinErrorText.Visibility = Visibility.Visible;
 
                             _pinEntryTimer.Reset();
                         }
@@ -887,7 +970,7 @@ namespace NFC_System
 
         public async void ProcessQrScan(string payload)
         {
-            if (_processingQr || _currentStage != AuthenticationStage.WaitingForQR) return;
+            if (_initializing || _processingNfc || _processingQr || _currentStage != AuthenticationStage.WaitingForQR) return;
             _processingQr = true;
             int scanVersion = _stateChangeVersion;
             try { await ProcessQrScanAsync(payload); }
@@ -916,7 +999,12 @@ namespace NFC_System
 
             VerificationOutcome outcome;
 
-            var transType = KioskStateController.CurrentType;
+            if (scanSession == null)
+            {
+                await RefreshEventConfigurationAsync();
+                if (_isClosing || scanVersion != _stateChangeVersion) return;
+            }
+            var transType = scanSession?.TransactionType ?? _currentType;
             if (_originatingMode == "Event" && transType == TransactionType.Entry)
             {
                 transType = TransactionType.EventAttendance;
