@@ -205,6 +205,7 @@ public sealed partial class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
         await RequireGraduationTransactionsAsync(connection);
+        await EnsurePinSchemaAsync(connection);
         using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
         var current = await LockGraduationStudentAsync(connection, transaction, originalStudentId);
         StudentProfileRules.ValidateEdit(student.StudentId, student.FullName, student.Status, student.NfcUid, current.HasNfc);
@@ -253,6 +254,8 @@ public sealed partial class DatabaseService
         AddStudentParameters(update, student, salt, hash);
         update.Parameters.AddWithValue("@original_id", originalStudentId);
         await update.ExecuteNonQueryAsync();
+        if (salt != null || originalStudentId != student.StudentId)
+            await RotatePinResetAsync(connection, transaction, student.StudentId);
         if (current.EnrollmentStatus != student.Status)
             await AddGraduationAuditAsync(connection, transaction, current, "EnrollmentStatus", current.EnrollmentStatus,
                 student.Status, "Individual profile update", actor, device);

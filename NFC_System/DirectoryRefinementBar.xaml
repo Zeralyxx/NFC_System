@@ -1,0 +1,42 @@
+<UserControl
+    x:Class="NFC_System.DirectoryRefinementBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid RowSpacing="8" ColumnSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="40"/>
+        </Grid.ColumnDefinitions>
+        <ComboBox x:Name="SortBox" Header="Sort by" SelectedIndex="1" HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed">
+            <ComboBoxItem Content="Student ID" Tag="StudentId"/>
+            <ComboBoxItem Content="Name" Tag="FullName"/>
+            <ComboBoxItem Content="Course" Tag="Course"/>
+            <ComboBoxItem Content="Year" Tag="Year"/>
+            <ComboBoxItem Content="Section" Tag="Section"/>
+            <ComboBoxItem Content="Status" Tag="Status"/>
+        </ComboBox>
+        <ComboBox x:Name="OrderBox" Grid.Column="1" Header="Order" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed">
+            <ComboBoxItem Content="Ascending"/>
+            <ComboBoxItem Content="Descending"/>
+        </ComboBox>
+        <Button Grid.Column="2" Width="40" Height="32" VerticalAlignment="Bottom" ToolTipService.ToolTip="Year and section filters" AutomationProperties.Name="Year and section filters">
+            <FontIcon Glyph="&#xE71C;" FontSize="16"/>
+            <Button.Flyout>
+                <Flyout>
+                    <StackPanel Width="240" Spacing="12">
+                        <ComboBox x:Name="YearBox" Header="Year" HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed"/>
+                        <ComboBox x:Name="SectionBox" Header="Section" HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed"/>
+                    </StackPanel>
+                </Flyout>
+            </Button.Flyout>
+        </Button>
+        <CheckBox x:Name="LatestBox" Grid.Row="1" Grid.ColumnSpan="3" Content="Latest import (this window)" IsEnabled="False" Checked="Latest_Changed" Unchecked="Latest_Changed"/>
+        <TextBlock x:Name="ResultText" Grid.Row="2" Grid.ColumnSpan="3" TextWrapping="Wrap" FontSize="12"/>
+    </Grid>
+</UserControl>

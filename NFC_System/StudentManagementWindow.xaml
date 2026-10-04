@@ -80,22 +80,31 @@
                         </Grid>
 
                         <!-- Search and Filter Toolbar -->
-                        <Grid Grid.Row="1" Margin="0,0,0,24" ColumnSpacing="16">
+                        <StackPanel Grid.Row="1" Margin="0,0,0,16" Spacing="8">
+                        <TextBox x:Name="SearchBox" Header="Search Directory" PlaceholderText="Search by ID, Name, or UID..." TextChanged="SearchBox_TextChanged"/>
+                        <Grid ColumnSpacing="12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="40"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBox x:Name="SearchBox" Grid.Column="0" Header="Search Directory" PlaceholderText="Search by ID, Name, or UID..." TextChanged="SearchBox_TextChanged" VerticalAlignment="Stretch"/>
-                            <ComboBox x:Name="CourseFilterComboBox" Grid.Column="1" Header="Course" Width="180" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch"/>
-                            <ComboBox x:Name="StatusFilterComboBox" Grid.Column="2" Header="Filter Status" SelectedIndex="0" Width="160" SelectionChanged="Filter_SelectionChanged" VerticalAlignment="Stretch">
+                            <ComboBox x:Name="CourseFilterComboBox" Header="Course" HorizontalAlignment="Stretch" SelectionChanged="Filter_SelectionChanged"/>
+                            <ComboBox x:Name="StatusFilterComboBox" Grid.Column="1" Header="Status" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="Filter_SelectionChanged">
                                 <ComboBoxItem Content="All Students"/>
                                 <ComboBoxItem Content="Active Only"/>
                                 <ComboBoxItem Content="Locked Out"/>
                                 <ComboBoxItem Content="Inactive"/>
+                                <ComboBoxItem Content="Pending Enrollment"/>
+                                <ComboBoxItem Content="Graduated"/>
+                                <ComboBoxItem Content="Expelled"/>
                             </ComboBox>
+                            <Button Grid.Column="2" Click="ClearDirectoryFilters_Click" Width="40" Height="32" VerticalAlignment="Bottom" ToolTipService.ToolTip="Reset filters and sorting" AutomationProperties.Name="Reset filters and sorting">
+                                <FontIcon Glyph="&#xE711;" FontSize="14"/>
+                            </Button>
                         </Grid>
+                        <local:DirectoryRefinementBar x:Name="DirectoryRefinements" Changed="DirectoryRefinements_Changed"/>
+                        </StackPanel>
 
                         <!-- Pseudo-DataGrid Header -->
                         <Border Grid.Row="2" Background="#0AFFFFFF" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
@@ -327,7 +336,8 @@
                     <ToggleButton x:Name="PopupExpandToggle" Grid.Column="1" Content="⛶ Expand View" Click="PopupExpandToggle_Click" Background="Transparent" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
                 </Grid>
 
-                <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,16">
+                <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,16">
+                <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="2*"/>
                         <ColumnDefinition Width="1.5*"/>
@@ -341,9 +351,16 @@
                         <ComboBoxItem Content="Active Only"/>
                         <ComboBoxItem Content="Locked Out"/>
                         <ComboBoxItem Content="Inactive"/>
+                        <ComboBoxItem Content="Pending Enrollment"/>
+                        <ComboBoxItem Content="Graduated"/>
+                        <ComboBoxItem Content="Expelled"/>
                     </ComboBox>
-                    <Button Grid.Column="3" Content="Clear" Click="PopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
+                    <Button Grid.Column="3" Width="40" Height="32" Click="PopupClear_Click" ToolTipService.ToolTip="Reset filters and sorting" AutomationProperties.Name="Reset filters and sorting">
+                        <FontIcon Glyph="&#xE711;" FontSize="14"/>
+                    </Button>
                 </Grid>
+                <local:DirectoryRefinementBar x:Name="PopupRefinements" Changed="PopupRefinements_Changed"/>
+                </StackPanel>
 
                 <Border Grid.Row="2" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="8" Background="#05FFFFFF">
                     <Grid>

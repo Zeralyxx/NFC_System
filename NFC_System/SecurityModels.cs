@@ -50,6 +50,7 @@ public sealed class EventRecord
 
 public sealed class VerificationSession
 {
+    public PinState? PinState { get; set; }
     public StudentRecord Student { get; init; } = new();
     public string Uid { get; init; } = "";
     public VerificationMode Mode { get; init; }

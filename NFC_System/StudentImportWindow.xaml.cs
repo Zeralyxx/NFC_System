@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Windows.Graphics;
@@ -13,7 +14,7 @@ public sealed partial class StudentImportWindow : Window
     private SpreadsheetImportDocument? _document;
     private bool _ready;
     private bool _busy;
-    public event EventHandler? StudentsImported;
+    public event EventHandler<IReadOnlyList<string>>? StudentsImported;
 
     public StudentImportWindow()
     {
@@ -84,10 +85,11 @@ public sealed partial class StudentImportWindow : Window
             };
             if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
             int count = await _database.ImportStudentsAsync(_document);
+            var importedIds = _document.Rows.Select(row => row.Values["StudentId"].Trim()).ToArray();
             _ready = false;
             _document = null;
             Notice("Import complete", $"{count} profiles saved as Pending Enrollment.", InfoBarSeverity.Success);
-            StudentsImported?.Invoke(this, EventArgs.Empty);
+            StudentsImported?.Invoke(this, importedIds);
         }
         catch (Exception ex)
         {

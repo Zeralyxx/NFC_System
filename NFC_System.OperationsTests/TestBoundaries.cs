@@ -12,4 +12,8 @@ public sealed class StaffDetails { public string? Role { get; set; } public stri
 public static class DatabaseMonitor { public static bool IsOnline { get; set; } = true; }
 public sealed record DeviceAttribution(string DeviceId, string DeviceName);
 public static class DeviceIdentity { public static DeviceAttribution CaptureCurrent() => new("00000000000000000000000000000001", "Operations test device"); }
-public static class OfflineCacheService { public static void UpdateCachedCredential(string id, StudentRecord student, bool pinReplaced = false) { } }
+public static class OfflineCacheService
+{
+    public static DurablePinJournal PinJournal { get; set; } = new(Path.Combine(Path.GetTempPath(), "nfc-pin-operations-" + Guid.NewGuid().ToString("N")));
+    public static void UpdateCachedCredential(string id, StudentRecord student, bool pinReplaced = false) { }
+}

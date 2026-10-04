@@ -21,7 +21,7 @@ public sealed partial class DatabaseService
                 vl.qr_system_ms, vl.total_workflow_ms, vl.total_system_ms, vl.db_query_speed_ms,
                 vl.device_id, vl.device_name
                 FROM {table} vl LEFT JOIN students s
-                ON (s.student_id = vl.student_id OR (vl.nfc_uid != '' AND s.nfc_uid = vl.nfc_uid))
+                ON s.student_id = vl.student_id
                 ORDER BY vl.timestamp DESC", connection);
             using var reader = await command.ExecuteReaderAsync();
             var rows = new List<object?[]>();

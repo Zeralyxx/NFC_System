@@ -10,6 +10,7 @@ using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace NFC_System.WinUiSmoke;
 
@@ -77,6 +78,10 @@ public sealed partial class SmokeApplication : Application
         {
             await CheckBrandingAsync(root);
             await CheckGraduationDialogsAsync(root);
+            await CheckSettingsLayoutAsync(root);
+            await CheckDirectoryFiltersAsync(root);
+            await CheckReportNotesAsync(root);
+            await CheckCompletionDialogsAsync(root);
             foreach (var pair in new[] { ("00-00010", "00-00010"), (" 2026-001 ", "2026-001"), ("A/B:C", "A_B_C"), ("...", "Student-QR"), ("CON", "Student-CON") })
                 if (QrCredentialDisplay.GetExportFileName(pair.Item1) != pair.Item2)
                     throw new Exception($"Unexpected QR export filename for {pair.Item1}.");
@@ -107,10 +112,202 @@ public sealed partial class SmokeApplication : Application
             if (picker.SuggestedFileName != "00-00010") throw new Exception("Student ID was not used as the picker filename.");
             picker.FileTypeChoices.Add("PNG", new[] { ".png" });
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(_window!));
-            File.WriteAllText(Program.ResultPath, "PASS: WinUI startup; clearance directory/editor/confirmation dialogs rendered without body overflow; held-only graduation confirmation disabled; branding image load and layout at 320/640 pixels; ICO assignment; XamlRoot; awaited dialog closure; QR bitmap preview; replacement success notice; ordinary preview without stale success notice; editor reopening; unsaved fields; student-ID export filenames; desktop file-picker owner initialization. Interactive export selection was not exercised.");
+            File.WriteAllText(Program.ResultPath, "PASS: WinUI startup; directory refinement controls render at 320/640 pixels, retain selections, synchronize sorting, reset and disable uncached fields offline; dashboard settings XAML/device controls rendered at 640x480 and 1000x800 without body overflow (save handler not invoked); clearance directory/editor/confirmation dialogs rendered without body overflow; held-only graduation confirmation disabled; branding image load and layout at 320/640 pixels; ICO assignment; XamlRoot; awaited dialog closure; QR bitmap preview; replacement success notice; ordinary preview without stale success notice; editor reopening; unsaved fields; student-ID export filenames; desktop file-picker owner initialization. Interactive export selection was not exercised.");
         }
         catch (Exception ex) { File.WriteAllText(Program.ResultPath, $"FAIL: {ex}"); }
         finally { _window?.Close(); Exit(); }
+    }
+
+    private async Task CheckReportNotesAsync(Grid root)
+    {
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var source = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Fixtures", "EventReportsWindow.xaml.txt"));
+        foreach (int width in new[] { 320, 640 })
+        {
+            var panel = new StackPanel { Width = width, Spacing = 12, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+            root.Children.Add(panel);
+            try
+            {
+                foreach (string name in new[] { "CampusLedgerNote", "EventReportNote", "RetentionSubText" })
+                {
+                    var markup = new XElement(source.Descendants().Single(e => (string?)e.Attribute(x + "Name") == name));
+                    markup.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+                    markup.SetAttributeValue("Foreground", "Gray");
+                    var note = (TextBlock)Microsoft.UI.Xaml.Markup.XamlReader.Load(markup.ToString());
+                    note.Text = name == "RetentionSubText"
+                        ? "12345 of 20000 attendees last recorded as PRESENT. Completion is not established by scan logs."
+                        : "Daily totals cover all retained gate logs. Explorer/export: 10,000 rows for 2026-10-01 (limit 10,000 reached; may be incomplete).";
+                    panel.Children.Add(note);
+                }
+                await Task.Delay(100);
+                panel.UpdateLayout();
+                foreach (TextBlock note in panel.Children)
+                    if (note.TextWrapping != TextWrapping.Wrap || note.ActualWidth > width + 1 || note.ActualHeight <= 0 ||
+                        (width == 320 && note.ActualHeight < 24) || note.IsTextTrimmed)
+                        throw new Exception($"Reporting scope note layout failed: {note.Name}, width={note.ActualWidth}, height={note.ActualHeight}, panel={width}, trimmed={note.IsTextTrimmed}.");
+            }
+            finally { root.Children.Remove(panel); }
+        }
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "reporting-smoke-result.txt"), "PASS: production report scope/state TextBlocks wrap without truncation at 320 and 640 pixels. Full report navigation and database handlers are not exercised by this UI fixture.");
+    }
+
+    private async Task CheckDirectoryFiltersAsync(Grid root)
+    {
+        foreach (int width in new[] { 320, 640 })
+        {
+            var bar = new DirectoryRefinementBar { Width = width, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                RequestedTheme = ElementTheme.Dark, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 35, 42)) };
+            root.Children.Add(bar);
+            try
+            {
+                bar.SetOptions(new[] { "1", "2", "10" }, new[] { "A", "B" }, true, true);
+                var year = (ComboBox)bar.FindName("YearBox");
+                var section = (ComboBox)bar.FindName("SectionBox");
+                int changes = 0;
+                bar.Changed += (_, _) => changes++;
+                year.SelectedItem = "2";
+                section.SelectedItem = "B";
+                if (changes != 2 || bar.Year != "2" || bar.Section != "B") throw new Exception("Directory filter events failed.");
+                bar.SetOptions(new[] { "1", "2", "10" }, new[] { "A", "B" }, true, true);
+                if (bar.Year != "2" || bar.Section != "B" || changes != 2) throw new Exception("Reload lost directory filters.");
+                bar.SetSort("Year", false);
+                if (bar.SortColumn != "Year" || bar.Ascending || changes != 2) throw new Exception("Header sort synchronization recursed.");
+                ((ComboBox)bar.FindName("OrderBox")).SelectedIndex = 0;
+                if (!bar.Ascending || changes != 3) throw new Exception("Order selection did not notify directory.");
+                bar.Reset(true);
+                if (!bar.LatestOnly || bar.Year != "All Years" || bar.Section != "All Sections" || bar.SortColumn != "FullName" || !bar.Ascending)
+                    throw new Exception("Latest import reset failed.");
+                bar.ShowCount(12, 100, true);
+                await Task.Delay(100);
+                bar.UpdateLayout();
+                if (bar.ActualWidth != width || bar.ActualHeight <= 0) throw new Exception("Directory toolbar dimensions invalid.");
+                foreach (string name in new[] { "SortBox", "OrderBox", "LatestBox", "ResultText" })
+                {
+                    var element = (FrameworkElement)bar.FindName(name);
+                    var bounds = element.TransformToVisual(bar).TransformBounds(new Windows.Foundation.Rect(0, 0, element.ActualWidth, element.ActualHeight));
+                    if (bounds.X < -1 || bounds.Right > width + 1) throw new Exception($"Directory {name} overflows at {width}px.");
+                }
+                var bitmap = new RenderTargetBitmap();
+                await bitmap.RenderAsync(bar);
+                byte[] pixels = (await bitmap.GetPixelsAsync()).ToArray();
+                if (pixels.Length == 0 || !pixels.Any(b => b != 0)) throw new Exception("Directory filters rendered blank.");
+                using var output = File.Create(Path.Combine(AppContext.BaseDirectory, $"Directory-Filters-{width}.png"));
+                var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, output.AsRandomAccessStream());
+                encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
+                    (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
+                await encoder.FlushAsync();
+                bar.Reset();
+                if (bar.LatestOnly) throw new Exception("Clear left latest import selected.");
+                bar.SetOptions(Array.Empty<string>(), Array.Empty<string>(), false, false);
+                if (year.IsEnabled || section.IsEnabled || ((CheckBox)bar.FindName("LatestBox")).IsEnabled)
+                    throw new Exception("Unavailable directory fields remain enabled.");
+            }
+            finally { root.Children.Remove(bar); }
+        }
+    }
+
+    private async Task CheckSettingsLayoutAsync(Grid root)
+    {
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var source = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml.txt"));
+        var markup = new XElement(source.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SettingsDialog"));
+        markup.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+        // Render the real dialog without creating MainWindow or contacting the production database.
+        foreach (var attribute in markup.DescendantsAndSelf().Attributes().Where(a =>
+            a.Name.LocalName is "Click" or "PrimaryButtonClick" or "Closing").ToArray()) attribute.Remove();
+        foreach (var attribute in markup.DescendantsAndSelf().Attributes().Where(a => a.Value == "{StaticResource TextSecondaryBrush}"))
+            attribute.Value = "Gray";
+
+        foreach (var size in new[] { new Windows.Graphics.SizeInt32(640, 480), new Windows.Graphics.SizeInt32(1000, 800) })
+        {
+            _window!.AppWindow.Resize(size);
+            await Task.Delay(200);
+            var dialog = (ContentDialog)Microsoft.UI.Xaml.Markup.XamlReader.Load(markup.ToString());
+            dialog.XamlRoot = root.XamlRoot;
+            var opened = new TaskCompletionSource<bool>();
+            dialog.Opened += (_, _) => opened.TrySetResult(true);
+            var operation = dialog.ShowAsync();
+            try
+            {
+                await opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                await Task.Delay(150);
+                var body = (ScrollViewer)dialog.Content;
+                body.UpdateLayout();
+                if (body.ActualWidth <= 0 || body.ActualHeight <= 0 ||
+                    body.ActualWidth > root.XamlRoot.Size.Width || body.ActualHeight > root.XamlRoot.Size.Height)
+                    throw new Exception("Settings dialog body overflows its window.");
+                if (dialog.FindName("SettingsDeviceNameBox") is not TextBox name || name.MaxLength != 100 ||
+                    dialog.FindName("SettingsDeviceIdBox") is not TextBox id || !id.IsReadOnly ||
+                    dialog.FindName("SettingsSaveDeviceNameButton") is not Button)
+                    throw new Exception("Settings device controls are missing.");
+                var bitmap = new RenderTargetBitmap();
+                await bitmap.RenderAsync(body);
+                if ((await bitmap.GetPixelsAsync()).Length == 0) throw new Exception("Settings body rendered empty.");
+            }
+            finally { dialog.Hide(); await operation; }
+        }
+    }
+
+    private async Task CheckCompletionDialogsAsync(Grid root)
+    {
+        DateTime start = new(2026, 9, 1, 9, 0, 0);
+        var policy = new EventCompletionPolicy(start, start.AddHours(1), 50, 5, 5, 1, start.AddDays(-1));
+        var decision = new EventCompletionDecision("Needs Review", 25, "The last check-in is missing a check-out.");
+        var row = new EventCompletionRow("00-00010", "Student With A Longer Display Name", decision, decision, "stamp", null, false);
+        var report = new EventCompletionReport("event", policy, false, false, start.AddHours(2), new[] { row });
+        foreach (var size in new[] { new Windows.Graphics.SizeInt32(640, 480), new Windows.Graphics.SizeInt32(1000, 800) })
+        {
+            _window!.AppWindow.Resize(size);
+            await Task.Delay(150);
+            foreach (string title in new[] { "Attendance Requirements", "Event Completion", "Review Completion" })
+            {
+                var observed = new TaskCompletionSource<bool>();
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+                int ticks = 0;
+                timer.Tick += async (_, _) =>
+                {
+                    if (++ticks > 70) { timer.Stop(); observed.TrySetException(new Exception("Completion dialog did not open.")); return; }
+                    var dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot).Select(p => p.Child).OfType<ContentDialog>().FirstOrDefault();
+                    if (dialog == null) return;
+                    timer.Stop();
+                    try
+                    {
+                        if (dialog.Title?.ToString() != title || dialog.Content is not ScrollViewer scroll || scroll.Content is not StackPanel body)
+                            throw new Exception("Unexpected completion dialog content.");
+                        scroll.UpdateLayout();
+                        if (scroll.ActualWidth <= 0 || scroll.ActualWidth > root.XamlRoot.Size.Width || scroll.ActualHeight > root.XamlRoot.Size.Height)
+                            throw new Exception("Completion dialog overflow.");
+                        if (title == "Event Completion")
+                        {
+                            body.Children.OfType<ListView>().Single().SelectedIndex = 0;
+                            if (dialog.IsPrimaryButtonEnabled) throw new Exception("Unready attendance enabled review.");
+                        }
+                        if (title == "Attendance Requirements" && body.Children.OfType<NumberBox>().Count() != 3)
+                            throw new Exception("Duration requirement controls are missing.");
+                        var bitmap = new RenderTargetBitmap(); await bitmap.RenderAsync(scroll);
+                        byte[] pixels = (await bitmap.GetPixelsAsync()).ToArray();
+                        if (pixels.Length == 0 || pixels.All(b => b == 0)) throw new Exception("Completion dialog is blank.");
+                        using var output = File.Create(Path.Combine(AppContext.BaseDirectory, $"{title.Replace(' ', '-')}-{size.Width}.png"));
+                        var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, output.AsRandomAccessStream());
+                        encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
+                            (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
+                        await encoder.FlushAsync();
+                        observed.TrySetResult(true);
+                    }
+                    catch (Exception ex) { observed.TrySetException(ex); }
+                    finally { dialog.Hide(); }
+                };
+                timer.Start();
+                Task operation = title switch
+                {
+                    "Attendance Requirements" => EventCompletionDialogs.EditRequirementsAsync(root.XamlRoot, report),
+                    "Event Completion" => EventCompletionDialogs.SelectReviewAsync(root.XamlRoot, report, true),
+                    _ => EventCompletionDialogs.ReviewAsync(root.XamlRoot, row)
+                };
+                try { await observed.Task; await operation; } finally { timer.Stop(); }
+            }
+        }
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "completion-smoke-result.txt"), "PASS: requirements, completion list and review dialogs render at 640x480 and 1000x800, with bounded scroll bodies, nonblank pixels, duration controls and unready-review gating. Database writes and interactive file selection are covered separately or require manual testing.");
     }
 
     private async Task CheckGraduationDialogsAsync(Grid root)

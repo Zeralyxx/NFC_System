@@ -163,6 +163,7 @@
                                 </StackPanel>
                                 <Button x:Name="CloseEventButton" Grid.Column="1" Content="Close Selected Event" Click="CloseEventButton_Click" Background="#30F87171" Foreground="#F87171" BorderThickness="0" FontWeight="SemiBold" IsEnabled="False" VerticalAlignment="Top"/>
                             </Grid>
+                            <Button Content="Attendance Requirements" Click="EventRequirements_Click" HorizontalAlignment="Left"/>
 
                             <Border Background="#0AFFFFFF" CornerRadius="8" Padding="16,12">
                                 <Grid>

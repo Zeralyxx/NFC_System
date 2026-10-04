@@ -1,5 +1,7 @@
 namespace NFC_System;
 
+public static class DatabaseMonitor { public static bool IsOnline { get; set; } = true; }
+
 // Only the connection, student cache, and unrelated service methods are substituted.
 // Queue persistence, SQL transactions, reconciliation and readiness are production code.
 public sealed partial class DatabaseService
@@ -28,6 +30,7 @@ public sealed partial class DatabaseService
 
 public static class OfflineCacheService
 {
+    public static DurablePinJournal PinJournal { get; set; } = new(Path.Combine(Path.GetTempPath(), "nfc-pin-attendance-" + Guid.NewGuid().ToString("N")));
     public static DurableAttendanceQueue AttendanceQueue { get; set; } = null!;
     public static string CachedState { get; set; } = "OUTSIDE";
     public static void UpdateCachedStudentStateLocally(string student, string state) => CachedState = state;

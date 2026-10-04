@@ -53,20 +53,6 @@ public sealed class SystemAuditLog
     public Microsoft.UI.Xaml.Media.Brush StatusColor { get; set; } = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray);
 }
 
-public sealed class AttendanceLog
-{
-    public string DeviceId { get; set; } = "";
-    public string DeviceName { get; set; } = DeviceIdentity.UnknownName;
-    public DateTime RawTimestamp { get; set; }
-    public string Timestamp { get; set; } = "";
-    public string StudentId { get; set; } = "";
-    public string FullName { get; set; } = "";
-    public string Course { get; set; } = "";
-    public string Section { get; set; } = "";
-    public string Mode { get; set; } = "";
-    public string Status { get; set; } = "";
-}
-
 public sealed partial class DatabaseService
 {
     public static string ServerIp { get; private set; } = "127.0.0.1";
@@ -373,7 +359,7 @@ public sealed partial class DatabaseService
                      @clearance, @clearanceReason, @clearanceActor, @clearanceTime, @clearanceRevision)
                     ON DUPLICATE KEY UPDATE 
                     full_name=@name, email=@email, course=@course, year_level=@year, section_name=@section, nfc_uid=@nfc,
-                    qr_credential=@qr, pin_hash=@hash, pin_salt=@salt, pin_locked=@locked, failed_pin_attempts=@failed, photo_data=@photo, is_temporary=@temp";
+                    qr_credential=@qr, photo_data=@photo, is_temporary=@temp";
 
                 using var cmd = new MySqlCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@id", studentId);
@@ -1254,6 +1240,7 @@ public sealed partial class DatabaseService
 
     private async Task<bool> UpdateShadowCacheCoreAsync()
     {
+        await RefreshPinSecurityAsync();
         // THE FIX: Protect local cache from being overwritten by stale cloud data before offline sync completes
         if (OfflineCacheService.HasPendingLogs()) return false;
 
@@ -1393,7 +1380,7 @@ public sealed partial class DatabaseService
                        CASE WHEN cl.is_granted = 1 THEN 'GRANTED' ELSE 'DENIED' END as status, 
                        cl.error_code, cl.remarks as details, 'GATE LOG' as log_type, cl.device_id, cl.device_name
                 FROM ({CombinedLogsQuery}) cl 
-                LEFT JOIN students s ON (s.student_id = cl.student_id OR (cl.nfc_uid != '' AND s.nfc_uid = cl.nfc_uid))
+                LEFT JOIN students s ON s.student_id = cl.student_id
                 WHERE cl.transaction_type != 'EventAttendance'
                 
                 UNION ALL 
@@ -1496,7 +1483,7 @@ public sealed partial class DatabaseService
                            vl.transaction_type, vl.verification_mode, vl.is_granted, vl.error_code, 
                            vl.nfc_system_ms, vl.pin_workflow_ms, vl.pin_system_ms, vl.qr_workflow_ms, vl.qr_system_ms, vl.total_workflow_ms, vl.total_system_ms, vl.db_query_speed_ms 
                     FROM {table} vl
-                    LEFT JOIN students s ON (s.student_id = vl.student_id OR (vl.nfc_uid != '' AND s.nfc_uid = vl.nfc_uid))
+                    LEFT JOIN students s ON s.student_id = vl.student_id
                     ORDER BY vl.timestamp DESC";
 
                 using var cmd = new MySqlCommand(sql, connection);
@@ -1658,12 +1645,7 @@ public sealed partial class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 
-        using var command = new MySqlCommand($@"
-            SELECT DATE_FORMAT(timestamp, '%b %d, %Y') as DateLbl, COUNT(*) as Total 
-            FROM ({CombinedLogsQuery}) vl 
-            WHERE transaction_type != 'EventAttendance' AND is_granted = 0 AND timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-            GROUP BY DATE(timestamp), DateLbl
-            ORDER BY Total DESC", connection);
+        using var command = new MySqlCommand(ReportingQueries.AlertExtremes, connection);
 
         var list = new List<(string DateLbl, int Count)>();
         using var reader = await command.ExecuteReaderAsync();
@@ -1743,7 +1725,7 @@ public sealed partial class DatabaseService
         return list;
     }
 
-    public async Task<IReadOnlyList<VerificationLogRecord>> GetGeneralLedgerAsync()
+    public async Task<IReadOnlyList<VerificationLogRecord>> GetGeneralLedgerAsync(DateTime? day = null)
     {
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
@@ -1755,10 +1737,16 @@ public sealed partial class DatabaseService
                s.course, s.section_name, 
                vl.transaction_type, vl.is_granted, vl.verification_mode, vl.db_query_speed_ms, vl.device_id, vl.device_name
         FROM ({CombinedLogsQuery}) vl
-        LEFT JOIN students s ON (s.student_id = vl.student_id OR (vl.nfc_uid != '' AND s.nfc_uid = vl.nfc_uid))
+        LEFT JOIN students s ON s.student_id = vl.student_id
         WHERE vl.transaction_type != 'EventAttendance'
-        ORDER BY vl.timestamp DESC
-        LIMIT 500", connection);
+            {(day.HasValue ? "AND vl.timestamp >= @day AND vl.timestamp < @end" : "")}
+        ORDER BY vl.timestamp DESC, vl.source_table, vl.id DESC
+        LIMIT {(day.HasValue ? 10000 : 500)}", connection);
+        if (day.HasValue)
+        {
+            command.Parameters.AddWithValue("@day", day.Value.Date);
+            command.Parameters.AddWithValue("@end", day.Value.Date.AddDays(1));
+        }
 
         var list = new List<VerificationLogRecord>();
         using var reader = await command.ExecuteReaderAsync();
@@ -2047,20 +2035,6 @@ public sealed partial class DatabaseService
         await ApplyStudentStatusUpdateAsync(preview, AppSession.CurrentStaffName);
     }
 
-    public async Task UnlockAccountAsync(string studentId)
-    {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            UPDATE students
-            SET pin_locked = FALSE,
-                failed_pin_attempts = 0
-            WHERE student_id = @student_id", connection);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-    }
-
     public Task UpdateEntryStateAsync(string studentId, string state) => SetAttendanceStateManuallyAsync(studentId, state);
 
     public async Task UpdateLastScanTimestampAsync(string studentId, DateTime timestamp)
@@ -2070,42 +2044,6 @@ public sealed partial class DatabaseService
 
         using var command = new MySqlCommand("UPDATE students SET last_scan_timestamp = @time WHERE student_id = @student_id", connection);
         command.Parameters.AddWithValue("@time", timestamp);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task UpdatePinFailureAsync(string studentId, int failedAttempts, bool locked)
-    {
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            UPDATE students
-            SET failed_pin_attempts = @attempts,
-                pin_locked = @locked
-            WHERE student_id = @student_id", connection);
-        command.Parameters.AddWithValue("@attempts", failedAttempts);
-        command.Parameters.AddWithValue("@locked", locked ? 1 : 0);
-        command.Parameters.AddWithValue("@student_id", studentId);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task ResetPinAsync(string studentId, string pin)
-    {
-        var (salt, hash) = PinHasher.HashPin(pin);
-
-        using var connection = new MySqlConnection(ConnectionString);
-        await connection.OpenAsync();
-
-        using var command = new MySqlCommand(@"
-            UPDATE students
-            SET pin_salt = @salt,
-                pin_hash = @hash,
-                failed_pin_attempts = 0,
-                pin_locked = FALSE
-            WHERE student_id = @student_id", connection);
-        command.Parameters.AddWithValue("@salt", salt);
-        command.Parameters.AddWithValue("@hash", hash);
         command.Parameters.AddWithValue("@student_id", studentId);
         await command.ExecuteNonQueryAsync();
     }

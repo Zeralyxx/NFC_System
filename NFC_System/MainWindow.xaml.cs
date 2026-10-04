@@ -736,6 +736,7 @@ namespace NFC_System
 
         private async void DashboardSettingsButton_Click(object sender, RoutedEventArgs e)
         {
+            LoadSettingsDeviceIdentity();
             SettingsIpBox.Text = DatabaseService.ServerIp;
             SettingsStatusText.Visibility = Visibility.Collapsed;
 
@@ -768,6 +769,11 @@ namespace NFC_System
 
         private async void SettingsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
         {
+            if (_savingDeviceName)
+            {
+                args.Cancel = true;
+                return;
+            }
             var deferral = args.GetDeferral();
             try
             {

@@ -6,6 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../NFC_System/PinSecurity.cs" Link="Production/PinSecurity.cs" />
+    <Compile Include="../NFC_System/DatabaseService.PinSecurity.cs" Link="Production/DatabaseService.PinSecurity.cs" />
+    <Compile Include="../NFC_System/EventCompletion.cs" Link="Production/EventCompletion.cs" />
+    <Compile Include="../NFC_System/DatabaseService.EventCompletion.cs" Link="Production/DatabaseService.EventCompletion.cs" />
+    <Compile Include="../NFC_System/DatabaseService.EventCompletionSchema.cs" Link="Production/DatabaseService.EventCompletionSchema.cs" />
+    <Compile Include="../NFC_System/ReportingAnalytics.cs" Link="Production/ReportingAnalytics.cs" />
+    <Compile Include="../NFC_System/DatabaseService.Reporting.cs" Link="Production/DatabaseService.Reporting.cs" />
+    <Compile Include="../NFC_System/StudentDirectoryQuery.cs" Link="Production/StudentDirectoryQuery.cs" />
     <Compile Include="../NFC_System/EventRosterSync.cs" Link="Production/EventRosterSync.cs" />
     <Compile Include="../NFC_System/DatabaseService.EventRosterSync.cs" Link="Production/DatabaseService.EventRosterSync.cs" />
     <Compile Include="../NFC_System/StudentProfileRules.cs" Link="Production/StudentProfileRules.cs" />

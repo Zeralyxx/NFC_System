@@ -96,6 +96,7 @@ public sealed partial class DatabaseService
         if (Convert.ToInt32(await metadataEngines.ExecuteScalarAsync()) != 0)
             throw new InvalidOperationException("Attendance metadata must use InnoDB before synchronization or restore can proceed.");
         await EnsureDeviceAttributionSchemaAsync(connection);
+        await EnsureEventCompletionSchemaAsync(connection);
     }
 
     public async Task<AttendanceCommitResult> RecordAttendanceTransactionAsync(VerificationSession session, string remarks)
@@ -108,6 +109,8 @@ public sealed partial class DatabaseService
             var student = session.Student;
             var log = OfflineCacheService.AttendanceQueue.Enqueue(new PendingGateLog
             {
+                PinResetToken = session.PinState?.ResetToken ?? "",
+                PinCredentialTag = session.PinState?.CredentialTag ?? "",
                 Timestamp = now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
                 StudentId = student.StudentId,
                 StudentName = student.IsTemporary ? $"[TEMP] {student.FullName}" : student.FullName,
@@ -174,6 +177,7 @@ public sealed partial class DatabaseService
         if (!await AttendanceLock.WaitAsync(0)) return;
         try
         {
+            await RecoverPinAttemptsAsync();
             if (!_attendanceActive)
             {
                 if (OfflineCacheService.AttendanceQueue.Snapshot().DeviceNameChanges.Count == 0) return;
@@ -214,6 +218,7 @@ public sealed partial class DatabaseService
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
         await EnsureAttendanceSchemaAsync(connection);
+        await EnsurePinSchemaAsync(connection);
         try
         {
             await FlushDeviceNameChangesAsync(connection);
@@ -297,6 +302,16 @@ public sealed partial class DatabaseService
         }
         if (gate != null)
         {
+            if (!recovered && !gate.WasOffline && gate.IsGranted && gate.PinResetToken.Length != 0)
+            {
+                var pin = await ReadPinStateAsync(connection, transaction, gate.StudentId);
+                if (pin.Locked || pin.ResetToken != gate.PinResetToken || pin.CredentialTag != gate.PinCredentialTag)
+                {
+                    gate.IsGranted = false;
+                    gate.ErrorCode = "PIN_STATE_CHANGED";
+                    gate.Remarks = "PIN security state changed before admission; a fresh scan is required.";
+                }
+            }
             if (recovered && gate.OnlineAttempt)
             {
                 // An abandoned online request is not evidence that the person was admitted.
@@ -329,7 +344,8 @@ public sealed partial class DatabaseService
                 if (!string.IsNullOrWhiteSpace(gate.EventId))
                     await InsertQueuedEventAsync(connection, transaction, gate.EventId, gate.StudentId, gate.VerificationMode,
                         gate.TransactionType == "Exit" ? "DEPARTED" : "PRESENT", gate.Remarks, gate.Timestamp,
-                        gate.IsLegacy ? "" : gate.DeviceId, gate.DeviceName);
+                        gate.IsLegacy ? "" : gate.DeviceId, gate.DeviceName, gate.TransactionId, gate.DeviceSequence,
+                        recovered || gate.WasOffline, gate.IsLegacy);
                 if (string.IsNullOrWhiteSpace(gate.EventId) && (gate.TransactionType == "Entry" || gate.TransactionType == "Exit"))
                     await ApplyGateVisitAsync(connection, transaction, gate, recovered || gate.WasOffline);
                 else if (gate.TransactionType == "EventAttendance")
@@ -339,7 +355,7 @@ public sealed partial class DatabaseService
         else
         {
             await InsertQueuedEventAsync(connection, transaction, evt!.EventId, evt.StudentId, evt.VerificationMode, evt.Status, evt.Remarks, evt.Timestamp,
-                evt.IsLegacy ? "" : evt.DeviceId, evt.DeviceName);
+                evt.IsLegacy ? "" : evt.DeviceId, evt.DeviceName, evt.TransactionId, evt.DeviceSequence, recovered, evt.IsLegacy);
             if (evt.Status == "PRESENT") await InvalidateEventGateStateAsync(connection, transaction, evt.StudentId, evt.Timestamp, evt.DeviceId, evt.DeviceSequence);
         }
         using (var ack = new MySqlCommand("UPDATE attendance_devices SET acknowledged_sequence=GREATEST(acknowledged_sequence,@seq) WHERE device_id=@device", connection, transaction))
@@ -384,7 +400,8 @@ public sealed partial class DatabaseService
     private static DateTime ParseAttendanceTimestamp(string value) => DateTime.ParseExact(value, "yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
 
     private static async Task InsertQueuedEventAsync(MySqlConnection connection, MySqlTransaction transaction, string eventId,
-        string studentId, string mode, string status, string remarks, string timestamp, string deviceId, string deviceName)
+        string studentId, string mode, string status, string remarks, string timestamp, string deviceId, string deviceName,
+        string transactionId, long sequence, bool recovered, bool legacy)
     {
         using var command = new MySqlCommand(@"INSERT INTO event_attendance
             (timestamp,event_id,student_id,verification_mode,status,remarks,device_id,device_name) VALUES (@ts,@event,@sid,@mode,@status,@remarks,@device,@device_name)", connection, transaction);
@@ -397,6 +414,8 @@ public sealed partial class DatabaseService
         command.Parameters.AddWithValue("@device", deviceId);
         command.Parameters.AddWithValue("@device_name", DeviceIdentity.DisplayName(deviceName));
         await command.ExecuteNonQueryAsync();
+        await InsertEventCompletionEvidenceAsync(connection, transaction, transactionId, eventId, studentId,
+            command.LastInsertedId, ParseAttendanceTimestamp(timestamp), status, deviceId, sequence, recovered, legacy);
     }
 
     private static async Task ApplyGateVisitAsync(MySqlConnection connection, MySqlTransaction transaction, PendingGateLog log, bool recovered)
@@ -419,6 +438,8 @@ public sealed partial class DatabaseService
         var previousVisit = state.Visit;
         bool updateState = state.Apply(log.TransactionId, log.DeviceId, log.DeviceSequence,
             ParseAttendanceTimestamp(log.Timestamp), log.TransactionType == "Entry", recovered, log.IsLegacy);
+        if (!updateState && !recovered && !log.IsLegacy)
+            throw new InvalidOperationException("Live gate decision could not update occupancy. Device sequence reconciliation is required.");
         if (previousVisit != null) await SaveVisitAsync(connection, transaction, log.StudentId, previousVisit);
         if (state.Visit != null) await SaveVisitAsync(connection, transaction, log.StudentId, state.Visit);
         await SaveAttendanceStateAsync(connection, transaction, log.StudentId, state);

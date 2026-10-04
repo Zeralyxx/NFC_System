@@ -15,6 +15,31 @@ internal static class AuditRegressionTests
 
     public static async Task RunAsync(Func<string, Func<Task>, Task> test)
     {
+        await StudentDirectoryTests.RunAsync(test);
+        await test("Dashboard settings expose device identity and its independent save action", () =>
+        {
+            string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../..", "NFC_System"));
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var document = XDocument.Load(Path.Combine(root, "MainWindow.xaml"));
+            var button = document.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "DashboardSettingsButton");
+            Assert((string?)button.Attribute("Click") == "DashboardSettingsButton_Click");
+            var dialog = document.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SettingsDialog");
+            var name = dialog.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SettingsDeviceNameBox");
+            var id = dialog.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SettingsDeviceIdBox");
+            var save = dialog.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SettingsSaveDeviceNameButton");
+            Assert((string?)name.Attribute("MaxLength") == "100");
+            Assert((string?)id.Attribute("IsReadOnly") == "True");
+            Assert((string?)save.Attribute("Click") == "SettingsSaveDeviceNameButton_Click");
+            Assert((string?)dialog.Attribute("DefaultButton") == "None");
+            Assert((string?)dialog.Attribute("Closing") == "SettingsDialog_Closing");
+            Assert(name.Ancestors().Any(e => e.Name.LocalName == "ScrollViewer"));
+            string code = File.ReadAllText(Path.Combine(root, "MainWindow.xaml.cs"));
+            int opening = code.IndexOf("private async void DashboardSettingsButton_Click", StringComparison.Ordinal);
+            int load = code.IndexOf("LoadSettingsDeviceIdentity();", opening, StringComparison.Ordinal);
+            int show = code.IndexOf("SettingsDialog.ShowAsync()", opening, StringComparison.Ordinal);
+            Assert(load > opening && load < show);
+            return Task.CompletedTask;
+        });
         await test("Alphanumeric and leading-zero IDs survive shared import/edit validation", () =>
         {
             foreach (string id in new[] { "STU-001", "000123" })

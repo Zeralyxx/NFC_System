@@ -25,11 +25,21 @@ public sealed class AttendanceState
     public bool Apply(string transactionId, string deviceId, long sequence, DateTime timestamp,
         bool entry, bool recovered, bool legacy)
     {
+        bool staleSequence = LastDeviceId == deviceId && sequence <= LastSequence;
         if (LastTimestamp.HasValue && (timestamp <= LastTimestamp.Value ||
-            (LastDeviceId == deviceId && sequence <= LastSequence)))
+            staleSequence))
         {
             Unresolved = true;
             if (Visit != null) Visit.Confirmed = false;
+            if (!recovered && !legacy && !staleSequence)
+            {
+                // A live, row-locked gate decision controls occupancy even when the clock moved back.
+                // Keep the timestamp watermark so older offline records cannot overwrite this decision.
+                EntryState = entry ? "INSIDE" : "OUTSIDE";
+                LastDeviceId = deviceId;
+                LastSequence = sequence;
+                return true;
+            }
             return false;
         }
 

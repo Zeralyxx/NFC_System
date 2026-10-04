@@ -14,23 +14,28 @@ namespace NFC_System;
 
 public sealed class AttendanceBackupSnapshot
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public DateTime CapturedAtUtc { get; set; }
     public Dictionary<string, List<Dictionary<string, JsonElement>>> Tables { get; set; } = new();
     public Dictionary<string, long> NextLogIds { get; set; } = new();
 
-    public static readonly string[] TableNames =
+    public static readonly string[] LegacyTableNames =
     {
         "attendance_devices", "attendance_receipts", "attendance_decisions", "attendance_current", "attendance_visits",
         "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance"
     };
+    public static readonly string[] LogTableNames = LegacyTableNames.Skip(5).ToArray();
+    public static readonly string[] TableNames = LegacyTableNames.Concat(new[]
+        { "event_completion_policies", "event_completion_scans", "event_completion_audit" }).ToArray();
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string[] RequiredTables => Version == 1 ? LegacyTableNames : TableNames;
 
     public void Validate()
     {
-        if (Version != 1 || CapturedAtUtc == default || Tables == null || NextLogIds == null ||
-            Tables.Count != TableNames.Length || TableNames.Any(t => !Tables.ContainsKey(t) || Tables[t] == null))
+        if (Version is not (1 or 2) || CapturedAtUtc == default || Tables == null || NextLogIds == null ||
+            Tables.Count != RequiredTables.Length || RequiredTables.Any(t => !Tables.ContainsKey(t) || Tables[t] == null))
             throw new InvalidDataException("The attendance backup is incomplete or uses an unsupported format.");
-        foreach (string table in TableNames.Skip(5))
+        foreach (string table in LogTableNames)
         {
             if (!NextLogIds.TryGetValue(table, out long next) || next < 1 || next > int.MaxValue ||
                 Tables[table].Any(row => !row.TryGetValue("id", out var id) || id.GetInt64() >= next))
@@ -77,7 +82,7 @@ public sealed class AttendanceBackupStore
         {
             fields = new
             {
-                version = new { integerValue = "1" },
+                version = new { integerValue = snapshot.Version.ToString(CultureInfo.InvariantCulture) },
                 captured_at = new { timestampValue = snapshot.CapturedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) },
                 chunk_count = new { integerValue = count.ToString(CultureInfo.InvariantCulture) },
                 sha256 = new { stringValue = Convert.ToHexString(SHA256.HashData(bytes)) },
@@ -97,7 +102,7 @@ public sealed class AttendanceBackupStore
         var fields = manifest.GetProperty("fields");
         int count = int.Parse(fields.GetProperty("chunk_count").GetProperty("integerValue").GetString()!, CultureInfo.InvariantCulture);
         if (!fields.GetProperty("complete").GetProperty("booleanValue").GetBoolean() ||
-            fields.GetProperty("version").GetProperty("integerValue").GetString() != "1" || count <= 0 || count > MaximumChunks)
+            fields.GetProperty("version").GetProperty("integerValue").GetString() is not ("1" or "2") || count <= 0 || count > MaximumChunks)
             throw new InvalidDataException("Attendance backup manifest is incomplete or invalid.");
         string generation = manifest.GetProperty("name").GetString()!.Split('/').Last();
         if (!Guid.TryParseExact(generation, "N", out _)) throw new InvalidDataException("Invalid backup generation identifier.");
@@ -128,6 +133,8 @@ public sealed class AttendanceBackupStore
         var snapshot = JsonSerializer.Deserialize<AttendanceBackupSnapshot>(output.ToArray())
             ?? throw new InvalidDataException("Attendance snapshot is empty.");
         snapshot.Validate();
+        if (snapshot.Version.ToString(CultureInfo.InvariantCulture) != fields.GetProperty("version").GetProperty("integerValue").GetString())
+            throw new InvalidDataException("Attendance backup version does not match its manifest.");
         return snapshot;
     }
 

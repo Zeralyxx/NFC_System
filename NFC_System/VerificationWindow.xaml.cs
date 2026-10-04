@@ -413,7 +413,7 @@ namespace NFC_System
                     return;
                 }
 
-                await _database.UpdatePinFailureAsync(studentId, 0, false);
+                await _database.UnlockAccountAsync(studentId);
 
                 try
                 {

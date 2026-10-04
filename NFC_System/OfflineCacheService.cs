@@ -53,6 +53,7 @@ public static class OfflineCacheService
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly object FileLock = new();
     public static DurableAttendanceQueue AttendanceQueue { get; } = new(CacheDirectory);
+    public static DurablePinJournal PinJournal { get; } = new(CacheDirectory);
 
     private static List<CachedStudent> _inMemoryStudents = new();
     private static List<CachedEvent> _inMemoryEvents = new();
@@ -187,8 +188,7 @@ public static class OfflineCacheService
         if (!student.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
             return (false, student, "INACTIVE_STATUS", $"Student status is currently '{student.Status}'.");
 
-        if (student.PinLocked)
-            return (false, student, "ACCOUNT_LOCKED", "Student account is locked due to PIN failures.");
+        // PIN locks are checked against the durable PIN journal by VerificationEngine.
 
         if (transactionType == "Entry" && student.EntryState.Equals("INSIDE", StringComparison.OrdinalIgnoreCase))
             return (false, student, "ANTI_TAILGATING_VIOLATION", "Consecutive entry attempt detected in offline mode.");

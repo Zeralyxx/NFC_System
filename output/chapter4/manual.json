@@ -1,0 +1,298 @@
+{
+  "source": "C:\\Users\\justine mendoza\\Documents\\METRICS first batch\\Manual Process Baseline Testing - Sheet1.pdf",
+  "sha256": "5e22d44c7ec6ea4b36363e78254a4ecb36e3ecc980e98177c2f9534445fe04fe",
+  "observations": [
+    {
+      "respondent": 1,
+      "seconds": 26.23
+    },
+    {
+      "respondent": 2,
+      "seconds": 16.56
+    },
+    {
+      "respondent": 3,
+      "seconds": 27.0
+    },
+    {
+      "respondent": 4,
+      "seconds": 20.68
+    },
+    {
+      "respondent": 5,
+      "seconds": 23.12
+    },
+    {
+      "respondent": 6,
+      "seconds": 27.22
+    },
+    {
+      "respondent": 7,
+      "seconds": 20.63
+    },
+    {
+      "respondent": 8,
+      "seconds": 22.29
+    },
+    {
+      "respondent": 9,
+      "seconds": 27.11
+    },
+    {
+      "respondent": 10,
+      "seconds": 21.13
+    },
+    {
+      "respondent": 11,
+      "seconds": 21.35
+    },
+    {
+      "respondent": 12,
+      "seconds": 22.64
+    },
+    {
+      "respondent": 13,
+      "seconds": 15.19
+    },
+    {
+      "respondent": 14,
+      "seconds": 26.0
+    },
+    {
+      "respondent": 15,
+      "seconds": 13.21
+    },
+    {
+      "respondent": 16,
+      "seconds": 22.22
+    },
+    {
+      "respondent": 17,
+      "seconds": 15.98
+    },
+    {
+      "respondent": 18,
+      "seconds": 25.42
+    },
+    {
+      "respondent": 19,
+      "seconds": 30.17
+    },
+    {
+      "respondent": 20,
+      "seconds": 25.03
+    },
+    {
+      "respondent": 21,
+      "seconds": 17.41
+    },
+    {
+      "respondent": 22,
+      "seconds": 16.18
+    },
+    {
+      "respondent": 23,
+      "seconds": 20.06
+    },
+    {
+      "respondent": 24,
+      "seconds": 17.13
+    },
+    {
+      "respondent": 25,
+      "seconds": 19.02
+    },
+    {
+      "respondent": 26,
+      "seconds": 16.51
+    },
+    {
+      "respondent": 27,
+      "seconds": 24.05
+    },
+    {
+      "respondent": 28,
+      "seconds": 27.5
+    },
+    {
+      "respondent": 29,
+      "seconds": 19.74
+    },
+    {
+      "respondent": 30,
+      "seconds": 18.41
+    },
+    {
+      "respondent": 31,
+      "seconds": 22.29
+    },
+    {
+      "respondent": 32,
+      "seconds": 21.06
+    },
+    {
+      "respondent": 33,
+      "seconds": 17.52
+    },
+    {
+      "respondent": 34,
+      "seconds": 20.37
+    },
+    {
+      "respondent": 35,
+      "seconds": 18.17
+    },
+    {
+      "respondent": 36,
+      "seconds": 30.27
+    },
+    {
+      "respondent": 37,
+      "seconds": 22.99
+    },
+    {
+      "respondent": 38,
+      "seconds": 20.26
+    },
+    {
+      "respondent": 39,
+      "seconds": 18.03
+    },
+    {
+      "respondent": 40,
+      "seconds": 18.48
+    },
+    {
+      "respondent": 41,
+      "seconds": 22.45
+    },
+    {
+      "respondent": 42,
+      "seconds": 26.91
+    },
+    {
+      "respondent": 43,
+      "seconds": 37.63
+    },
+    {
+      "respondent": 44,
+      "seconds": 21.59
+    },
+    {
+      "respondent": 45,
+      "seconds": 16.34
+    },
+    {
+      "respondent": 46,
+      "seconds": 20.67
+    },
+    {
+      "respondent": 47,
+      "seconds": 23.59
+    },
+    {
+      "respondent": 48,
+      "seconds": 17.74
+    },
+    {
+      "respondent": 49,
+      "seconds": 24.23
+    },
+    {
+      "respondent": 50,
+      "seconds": 20.13
+    },
+    {
+      "respondent": 51,
+      "seconds": 20.34
+    },
+    {
+      "respondent": 52,
+      "seconds": 17.7
+    },
+    {
+      "respondent": 53,
+      "seconds": 30.4
+    },
+    {
+      "respondent": 54,
+      "seconds": 26.08
+    },
+    {
+      "respondent": 55,
+      "seconds": 24.11
+    },
+    {
+      "respondent": 56,
+      "seconds": 18.22
+    },
+    {
+      "respondent": 57,
+      "seconds": 25.24
+    },
+    {
+      "respondent": 58,
+      "seconds": 27.82
+    },
+    {
+      "respondent": 59,
+      "seconds": 24.38
+    },
+    {
+      "respondent": 60,
+      "seconds": 16.96
+    },
+    {
+      "respondent": 61,
+      "seconds": 16.06
+    },
+    {
+      "respondent": 62,
+      "seconds": 23.66
+    },
+    {
+      "respondent": 63,
+      "seconds": 21.14
+    },
+    {
+      "respondent": 64,
+      "seconds": 18.93
+    },
+    {
+      "respondent": 65,
+      "seconds": 23.21
+    },
+    {
+      "respondent": 66,
+      "seconds": 18.93
+    },
+    {
+      "respondent": 67,
+      "seconds": 25.99
+    },
+    {
+      "respondent": 68,
+      "seconds": 24.82
+    },
+    {
+      "respondent": 69,
+      "seconds": 19.77
+    },
+    {
+      "respondent": 70,
+      "seconds": 16.57
+    }
+  ],
+  "n": 70,
+  "sum_s": 1526.24,
+  "mean_s": 21.803428571428572,
+  "median_s": 21.134999999999998,
+  "sample_sd_s": 4.436062324190157,
+  "min_s": 13.21,
+  "max_s": 37.63,
+  "service_equivalent_per_min": 2.751860782052626,
+  "timing_boundary": "Awaiting researcher clarification",
+  "observation_date": "Awaiting researcher clarification",
+  "enrollment_check": "Awaiting researcher clarification",
+  "same_participants": "Awaiting researcher clarification"
+}

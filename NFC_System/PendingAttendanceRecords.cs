@@ -3,6 +3,8 @@ namespace NFC_System;
 // --- Pending Offline Log Models ---
 public class PendingGateLog
 {
+    public string PinResetToken { get; set; } = "";
+    public string PinCredentialTag { get; set; } = "";
     public string TransactionId { get; set; } = "";
     public string DeviceId { get; set; } = "";
     public string DeviceName { get; set; } = DeviceIdentity.UnknownName;

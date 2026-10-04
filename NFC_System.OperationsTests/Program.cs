@@ -47,7 +47,18 @@ await Test($"Later page failure returns no partial collection: {failure}", async
 });
 await FeatureTests.RunAsync(Test);
 await AuditRegressionTests.RunAsync(Test);
-if (args.Contains("--mysql")) await DatabaseTests.RunAsync(Test);
+await ReportingTests.RunAsync(Test);
+await EventCompletionTests.RunAsync(Test);
+await SystemCapacityTests.RunAsync(Test);
+await PinSecurityTests.RunAsync(Test);
+if (args.Contains("--mysql"))
+{
+    await DatabaseTests.RunAsync(Test);
+    await ReportingTests.RunDatabaseAsync(Test);
+    await EventCompletionTests.RunDatabaseAsync(Test);
+    await SystemCapacityTests.RunDatabaseAsync(Test);
+    await PinSecurityTests.RunDatabaseAsync(Test);
+}
 else Console.WriteLine("SQL integration tests skipped; use --mysql with the disposable server on port 23306.");
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

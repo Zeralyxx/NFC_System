@@ -1,0 +1,74 @@
+digraph architecture {
+ graph [rankdir=TB, bgcolor="white", fontname="Arial", fontsize=23, labelloc=t,
+ label="Figure 17 - System Architecture
+NFC, PIN and Signed QR Verification with Local Persistence and Cloud Synchronization",
+ pad=0.45, nodesep=0.55, ranksep=0.85, splines=polyline, compound=true, outputorder=edgesfirst];
+ node [fontname="Arial", fontsize=16, style="filled", color="#83909C", penwidth=1.2, margin="0.12,0.10"];
+ edge [fontname="Arial", fontsize=12, color="#596975", arrowsize=0.8, penwidth=1.3];
+
+ subgraph cluster_inputs {
+  label="USERS AND CONNECTED HARDWARE"; color="#BAC7C0"; bgcolor="#F4F8F5"; fontsize=19;
+  student [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Student</B></TD></TR><TR><TD>NFC card, PIN and printed QR</TD></TR></TABLE>>, fillcolor="#DDECE2"];
+  personnel [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Authorized Personnel</B></TD></TR><TR><TD>Administrator / Master Admin</TD></TR><TR><TD>Security Personnel / Event Organizer</TD></TR></TABLE>>, fillcolor="#DDECE2"];
+  terminal [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>ESP32 + PN532 Reader</B></TD></TR><TR><TD>NFC UID acquisition</TD></TR><TR><TD>Physical keypad input, when connected</TD></TR><TR><TD>Serial LED command support</TD></TR></TABLE>>, fillcolor="#E9F2EC"];
+  webcam [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>PC Camera</B></TD></TR><TR><TD>Integrated camera or USB webcam</TD></TR><TR><TD>Video frames captured by Windows</TD></TR></TABLE>>, fillcolor="#E9F2EC"];
+  student -> terminal [label="Tap card / enter PIN"];
+  student -> webcam [label="Present QR"];
+  { rank=same; terminal; webcam; personnel; }
+ }
+
+ subgraph cluster_pc {
+  label="WINDOWS PC - C# / WinUI 3 DESKTOP APPLICATION
+Verification logic and kiosk windows run on this host";
+  color="#7295AA"; bgcolor="#F4F8FC"; fontsize=20;
+  hardware [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Serial Hardware Service</B></TD></TR><TR><TD>COM port at 115200 baud</TD></TR><TR><TD>UID= and KEY= input messages</TD></TR><TR><TD>Reader status / reconnection</TD></TR></TABLE>>, fillcolor="#DCEBF5"];
+  camera [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Camera and QR Decoder</B></TD></TR><TR><TD>MediaCapture / MediaFrameReader</TD></TR><TR><TD>ZXing QR decoding</TD></TR><TR><TD>Preview and scan throttling</TD></TR></TABLE>>, fillcolor="#DCEBF5"];
+  ui [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Operator Interface and Session Control</B></TD></TR><TR><TD>Staff sign-in and role checks</TD></TR><TR><TD>Gate direction / configured mode</TD></TR><TR><TD>Registration and event selection</TD></TR></TABLE>>, fillcolor="#DCEBF5"];
+  kiosk [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Student Kiosk and Security Interface</B></TD></TR><TR><TD>Student profile, prompts and results</TD></TR><TR><TD>PIN entry / QR preview / attendance times</TD></TR><TR><TD>Security alerts and monitoring</TD></TR><TR><TD>Same PC; primary or extended display</TD></TR></TABLE>>, fillcolor="#DCEBF5"];
+  { rank=same; hardware; camera; ui; kiosk; }
+
+  verification [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Verification and Credential Services</B></TD></TR><TR><TD>Student status and restricted-event checks</TD></TR><TR><TD>Fast: NFC | Standard: NFC + PIN</TD></TR><TR><TD>High Security: NFC + PIN + signed QR</TD></TR><TR><TD>QR fallback with PIN when selected</TD></TR><TR><TD>PIN lockout / entry-exit sequence checks</TD></TR></TABLE>>, fillcolor="#E5E3F2"];
+  operations [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Administration and Reporting Services</B></TD></TR><TR><TD>Student directory / CSV-XLSX import</TD></TR><TR><TD>Event creation and roster management</TD></TR><TR><TD>Duration-based completion and review</TD></TR><TR><TD>Graduation clearance / analytics / exports</TD></TR></TABLE>>, fillcolor="#E5E3F2"];
+  attendance [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Attendance and Security Persistence</B></TD></TR><TR><TD>Campus visits / event scan evidence</TD></TR><TR><TD>Device identity and transaction sequences</TD></TR><TR><TD>Receipts / repeat-safe processing</TD></TR><TR><TD>PIN-state reconciliation / audit logging</TD></TR></TABLE>>, fillcolor="#E5E3F2"];
+  { rank=same; verification; operations; attendance; }
+
+  cache [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Persistent Local Cache and Journals</B></TD></TR><TR><TD>Cached students, events and rosters</TD></TR><TR><TD>Durable attendance outbox and PIN journal</TD></TR><TR><TD>Files on the Windows PC; RAM working cache</TD></TR><TR><TD>Database outage fallback / ordered replay</TD></TR></TABLE>>, fillcolor="#F7ECCF"];
+  trust [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>QR Signing and Trust Material</B></TD></TR><TR><TD>Enrollment private key: Windows certificate store</TD></TR><TR><TD>Trusted public certificates: local configuration</TD></TR><TR><TD>ECDSA P-256 signing / signature verification</TD></TR></TABLE>>, fillcolor="#F7ECCF"];
+  synchronization [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Database Monitoring and Synchronization</B></TD></TR><TR><TD>MySQL connectivity checks / queue recovery</TD></TR><TR><TD>Firestore collection push and pull</TD></TR><TR><TD>Roster conflict handling</TD></TR><TR><TD>Attendance snapshot backup / restore</TD></TR></TABLE>>, fillcolor="#F7ECCF"];
+  { rank=same; cache; trust; synchronization; }
+
+  hardware -> verification [label="UID / keypad events"];
+  camera -> verification [label="Decoded QR payload"];
+  ui -> verification [label="Configured transaction"];
+  ui -> operations [label="Authorized actions"];
+  verification -> kiosk [label="Prompts / result / alerts", constraint=false];
+  kiosk -> verification [label="PIN / QR input", constraint=false];
+  verification -> attendance [label="Outcome / evidence"];
+  operations -> attendance [label="Reviews / audit changes", constraint=false];
+  trust -> verification [constraint=false];
+  attendance -> cache [label="Durable pending records", dir=both];
+  verification -> cache [label="Fallback lookup", style=dashed];
+  synchronization -> cache [dir=both, constraint=false];
+ }
+
+ mysql [shape=cylinder, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>MySQL Database - 23 Tables</B></TD></TR><TR><TD>Student, staff and event records</TD></TR><TR><TD>Logs, alerts, visits and device metadata</TD></TR><TR><TD>PIN security, roster and completion evidence</TD></TR><TR><TD>Graduation records and audit history</TD></TR><TR><TD>Same PC or configured LAN database host</TD></TR></TABLE>>, fillcolor="#DDE9E2"];
+ cloud [shape=cylinder, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Firebase Firestore</B></TD></TR><TR><TD>Selected profile / event / log synchronization</TD></TR><TR><TD>Roster synchronization documents</TD></TR><TR><TD>Compressed attendance backup snapshots</TD></TR><TR><TD>Internet-dependent cloud storage</TD></TR></TABLE>>, fillcolor="#F5E1DF"];
+ browser [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Web PIN Recovery</B></TD></TR><TR><TD>Student browser / Firebase Hosting files</TD></TR><TR><TD>Firestore JavaScript SDK</TD></TR><TR><TD>PIN hash and salt updated in cloud</TD></TR><TR><TD>Local changes require subsequent pull</TD></TR></TABLE>>, fillcolor="#F5E1DF"];
+ email [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>EmailJS Email Service</B></TD></TR><TR><TD>Verification-code email delivery</TD></TR><TR><TD>Used by the web recovery page</TD></TR></TABLE>>, fillcolor="#F5E1DF"];
+ other [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Additional Verification PCs</B></TD></TR><TR><TD>Same desktop application and hardware pattern</TD></TR><TR><TD>Independent device ID / persistent local queues</TD></TR><TR><TD>Configured to the shared LAN MySQL host</TD></TR></TABLE>>, fillcolor="#EDF0F2"];
+ note [shape=box, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5"><TR><TD><B>Architecture Notes</B></TD></TR><TR><TD>Solid arrows: data or control paths</TD></TR><TR><TD>Dashed arrows: fallback or optional deployment paths</TD></TR><TR><TD>USB serial is distinct from LAN communication</TD></TR><TR><TD>Mode selection follows configured policy</TD></TR><TR><TD>Cloud synchronization is separate from local queue replay</TD></TR></TABLE>>, fillcolor="#FFFFFF"];
+
+ terminal -> hardware [label="USB serial / COM", dir=both, color="#367555", penwidth=2];
+ webcam -> camera [label="Windows camera API", color="#367555", penwidth=2];
+ personnel -> ui [label="Operator actions"];
+ attendance -> mysql [label="Async SQL / transactions", dir=both, color="#3B708F", penwidth=2];
+ operations -> mysql [label="Async queries / updates", dir=both, color="#3B708F"];
+ synchronization -> mysql [label="Refresh / replay / snapshot", dir=both, color="#3B708F"];
+ synchronization -> cloud [label="HTTPS REST / push-pull", dir=both, color="#A3535A", penwidth=2];
+ browser -> cloud [label="HTTPS / read-update", dir=both, color="#A3535A"];
+ browser -> email [label="Send verification code", color="#A3535A"];
+ other -> mysql [label="LAN / MySQL protocol", dir=both, style=dashed, color="#3B708F"];
+ mysql -> note [style=invis];
+ { rank=same; mysql; cloud; browser; other; }
+ { rank=same; email; note; }
+}

@@ -20,15 +20,6 @@ namespace NFC_System
         public string SubValue { get; set; } = "";
     }
 
-    public class DailyTrafficSummary
-    {
-        public DateTime DateValue { get; set; }
-        public string DisplayDate { get; set; } = "";
-        public int TotalScans { get; set; }
-        public int Granted { get; set; }
-        public int Denied { get; set; }
-    }
-
     public class EventAttendanceViewModel
     {
         public string Timestamp { get; set; } = "";
@@ -55,8 +46,8 @@ namespace NFC_System
         private readonly DatabaseService _database = new();
 
         private List<AttendanceLog> _eventMasterLogs = new();
-        private List<string> _completedStudentIds = new();
-        private List<string> _incompleteStudentIds = new();
+        private EventReportSummary _eventSummary = ReportingAnalytics.SummarizeEvent(Array.Empty<AttendanceLog>());
+        private int _eventLoadVersion;
         private List<EventDropdownItem> _allEventDropdownItems = new();
         private EventDropdownItem? _currentSelectedEvent = null;
         private List<VerificationLogRecord> _univMasterLogs = new();
@@ -312,6 +303,9 @@ namespace NFC_System
 
         private void Window_Closed(object sender, WindowEventArgs args)
         {
+            _reportsClosed = true;
+            ++_eventLoadVersion;
+            ++_campusLoadVersion;
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
             CloseSerialPort();
         }
@@ -360,8 +354,24 @@ namespace NFC_System
         // ====================================================================
         private async Task InitializeAsync()
         {
+            if (_refreshingReports || _reportsClosed) return;
+            _refreshingReports = true;
+            RefreshReportsButton.IsEnabled = EventSearchBox.IsEnabled = UnivPopupDatePicker.IsEnabled = false;
+            ++_eventLoadVersion;
+            ++_campusLoadVersion;
+            ClearCampusReport();
+            ClearEventReport();
+            ReportingStatus.Severity = InfoBarSeverity.Informational;
+            ReportingStatus.Title = "Loading reports";
+            ReportingStatus.Message = "";
+            if (AppSession.IsEventOrganizer)
+            {
+                UniversityModeBtn.Visibility = Visibility.Collapsed;
+                SwitchToEventMode();
+            }
             try
             {
+                if (!DatabaseMonitor.IsOnline) throw new InvalidOperationException("Connect to the database and refresh reports.");
                 if (DatabaseMonitor.IsOnline)
                 {
                     await _database.EnsureSchemaAsync();
@@ -390,6 +400,7 @@ namespace NFC_System
                 .ToList();
 
                 EventSearchBox.ItemsSource = _allEventDropdownItems;
+                if (_reportsClosed) return;
 
                 if (AppSession.IsEventOrganizer)
                 {
@@ -417,28 +428,38 @@ namespace NFC_System
                         var allTimeThreats = await _database.GetDailySecurityAlertsAsync();
                         HistoricalThreatsListView.ItemsSource = allTimeThreats;
 
-                        var univLogs = await _database.GetGeneralLedgerAsync();
-                        _univMasterLogs = univLogs.ToList();
-
-                        var dailySummaries = _univMasterLogs
-                            .Where(l => l.RawTimestamp != DateTime.MinValue)
-                            .GroupBy(l => l.RawTimestamp.Date)
-                            .Select(g => new DailyTrafficSummary
-                            {
-                                DateValue = g.Key,
-                                DisplayDate = g.Key.ToString("MMMM dd, yyyy"),
-                                TotalScans = g.Count(),
-                                Granted = g.Count(x => x.Status == "GRANTED"),
-                                Denied = g.Count(x => x.Status == "DENIED")
-                            })
-                            .OrderByDescending(x => x.DateValue)
-                            .ToList();
-
-                        DailyTrafficListView.ItemsSource = dailySummaries;
+                        DailyTrafficListView.ItemsSource = await _database.GetDailyTrafficSummariesAsync();
+                        _updatingCampusFilters = true;
+                        UnivPopupDatePicker.Date = null;
+                        _updatingCampusFilters = false;
+                        if (!await LoadCampusLedgerAsync(null)) throw new InvalidOperationException("Campus ledger could not be loaded. Refresh to retry.");
                     }
                 }
+                if (_reportsClosed) return;
+                if (_currentSelectedEvent != null)
+                {
+                    _currentSelectedEvent = _allEventDropdownItems.FirstOrDefault(e => e.Event.EventId == _currentSelectedEvent.Event.EventId);
+                    if (_currentSelectedEvent != null) await ProcessEventSelectionAsync(_currentSelectedEvent);
+                    else { EventSearchBox.Text = ""; EventReportNote.Text = "Selected event is no longer available."; }
+                }
+                ReportingStatus.Title = $"Database reports loaded {DateTime.Now:g}";
+                ReportingStatus.Message = "Retained database records only. Pending device uploads and purged history are excluded. Inside is an estimate, not confirmed physical occupancy.";
             }
-            catch { }
+            catch (Exception ex)
+            {
+                if (!_reportsClosed)
+                {
+                    ClearCampusReport();
+                    ReportingStatus.Severity = InfoBarSeverity.Error;
+                    ReportingStatus.Title = "Reports unavailable";
+                    ReportingStatus.Message = ex.Message;
+                }
+            }
+            finally
+            {
+                _refreshingReports = false;
+                if (!_reportsClosed) RefreshReportsButton.IsEnabled = EventSearchBox.IsEnabled = UnivPopupDatePicker.IsEnabled = true;
+            }
         }
 
         private void UniversityModeBtn_Click(object sender, RoutedEventArgs e) => SwitchToUniversityMode();
@@ -575,44 +596,30 @@ namespace NFC_System
         private async Task ProcessEventSelectionAsync(EventDropdownItem selectedWrapper)
         {
             EventRecord selectedEvent = selectedWrapper.Event;
-            ExportButton.IsEnabled = true;
+            int version = ++_eventLoadVersion;
+            ClearEventReport();
+            EventReportNote.Text = "Loading event report...";
 
             try
             {
+                if (!DatabaseMonitor.IsOnline) throw new InvalidOperationException("Event reports require a database connection.");
                 var logs = await _database.GetEventAttendanceLogsAsync(selectedEvent.EventId);
+                var approvedList = selectedEvent.IsRestricted ? await _database.GetEventAttendeesAsync(selectedEvent.EventId) : Array.Empty<StudentRecord>();
+                if (version != _eventLoadVersion || _reportsClosed) return;
                 _eventMasterLogs = logs.ToList();
-
-                var allAttendees = logs.Where(l => l.Status == "PRESENT").Select(l => l.StudentId).Distinct().ToList();
-
-                var latestStudentLogs = logs.GroupBy(l => l.StudentId)
-                                            .Select(g => g.First())
-                                            .ToList();
-
-                bool isEventLive = selectedWrapper.DisplayText.Contains("🟢 LIVE");
-
-                if (isEventLive)
-                {
-                    _completedStudentIds = latestStudentLogs.Where(l => l.Status == "PRESENT").Select(l => l.StudentId).ToList();
-                    _incompleteStudentIds = latestStudentLogs.Where(l => l.Status == "DEPARTED").Select(l => l.StudentId).ToList();
-                }
-                else
-                {
-                    _completedStudentIds = allAttendees.ToList();
-                    _incompleteStudentIds = new List<string>();
-                }
-
-                int totalEntered = allAttendees.Count;
-                int totalCompleted = _completedStudentIds.Count;
+                _eventSummary = ReportingAnalytics.SummarizeEvent(logs);
+                int totalEntered = _eventSummary.Arrivals.Count;
+                int lastPresent = _eventSummary.LastPresent;
 
                 AttendedCountText.Text = totalEntered.ToString();
 
                 if (totalEntered > 0)
                 {
-                    double retention = ((double)totalCompleted / totalEntered) * 100;
+                    double retention = ((double)lastPresent / totalEntered) * 100;
                     RetentionRateText.Text = $"{retention:F1}%";
-                    RetentionSubText.Text = $"{totalCompleted} out of {totalEntered} attendees completed the event";
+                    RetentionSubText.Text = $"{lastPresent} of {totalEntered} attendees last recorded as PRESENT. Completion is not established by scan logs.";
 
-                    var arrivalsOnly = logs.Where(l => l.Status == "PRESENT").ToList();
+                    var arrivalsOnly = _eventSummary.Arrivals;
 
                     var courseStats = arrivalsOnly
                         .GroupBy(l => string.IsNullOrWhiteSpace(l.Course) ? "Unregistered Course" : l.Course)
@@ -621,7 +628,7 @@ namespace NFC_System
                     CourseBreakdownItemsControl.ItemsSource = courseStats;
 
                     var sectionStats = arrivalsOnly
-                        .GroupBy(l => string.IsNullOrWhiteSpace(l.Section) ? "Unassigned" : l.Section)
+                        .GroupBy(l => $"{(string.IsNullOrWhiteSpace(l.Course) ? "Unassigned course" : l.Course)} / {(string.IsNullOrWhiteSpace(l.Section) ? "Unassigned" : l.Section)}")
                         .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
                         .OrderByDescending(x => int.Parse(x.Value)).Take(5).ToList();
                     SectionBreakdownItemsControl.ItemsSource = sectionStats;
@@ -634,7 +641,7 @@ namespace NFC_System
                 }
                 else
                 {
-                    RetentionRateText.Text = "0%";
+                    RetentionRateText.Text = "N/A";
                     RetentionSubText.Text = "No arrivals recorded";
                     CourseBreakdownItemsControl.ItemsSource = new List<StatItem>();
                     SectionBreakdownItemsControl.ItemsSource = new List<StatItem>();
@@ -643,21 +650,17 @@ namespace NFC_System
 
                 if (selectedEvent.IsRestricted)
                 {
-                    var approvedList = await _database.GetEventAttendeesAsync(selectedEvent.EventId);
-                    int expected = approvedList.Count;
-                    ExpectedCountText.Text = $"{expected} Registered Students";
+                    int expected = approvedList.Select(s => s.StudentId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                    ExpectedCountText.Text = $"{expected} students on current roster";
 
                     if (expected > 0)
                     {
-                        double rate = ((double)totalEntered / expected) * 100;
+                        double rate = _eventSummary.Turnout(approvedList.Select(s => s.StudentId))!.Value;
                         TurnoutRateText.Text = $"{rate:F1}%";
-                        TurnoutRateText.Foreground = rate > 75
-                            ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153))
-                            : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                     }
                     else
                     {
-                        TurnoutRateText.Text = "0%";
+                        TurnoutRateText.Text = "N/A";
                     }
                 }
                 else
@@ -675,21 +678,26 @@ namespace NFC_System
                 sections.Insert(0, "All Sections");
                 FilterSectionComboBox.ItemsSource = sections;
 
-                if (FilterStatusComboBox.Items.Count > 1 && FilterStatusComboBox.Items[1] is ComboBoxItem statusItem)
-                {
-                    statusItem.Content = isEventLive ? "Ongoing" : "Completed Event";
-                }
-
                 ClearFilters_Click(null, null);
+                ApplyLedgerFilters();
+                EventReportNote.Text = $"{logs.Count:N0} retained scan rows; {totalEntered:N0} unique arrivals. Updated {DateTime.Now:g}. " +
+                    "Breakdowns use each student's first recorded arrival and current profile; filters below affect ledger rows only. " +
+                    (selectedEvent.IsRestricted ? "Turnout compares attendees with the current roster, not a historical roster snapshot." : "No fixed turnout denominator for open events.");
+                ExportButton.IsEnabled = logs.Count > 0;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                if (version != _eventLoadVersion || _reportsClosed) return;
+                ClearEventReport();
+                EventReportNote.Text = $"Event report unavailable: {ex.Message}";
+            }
         }
 
         private void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (FilterCourseComboBox == null || FilterSectionComboBox == null) return;
 
-            if (sender == FilterCourseComboBox && _eventMasterLogs != null)
+            if (ReferenceEquals(sender, FilterCourseComboBox) && _eventMasterLogs != null)
             {
                 string course = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
                 var sectionQuery = _eventMasterLogs.AsEnumerable();
@@ -738,12 +746,6 @@ namespace NFC_System
                 AttendanceListView == null)
                 return;
 
-            bool isEventLive = false;
-            if (_currentSelectedEvent != null)
-            {
-                isEventLive = _currentSelectedEvent.DisplayText.Contains("🟢 LIVE");
-            }
-
             var filtered = _eventMasterLogs.AsEnumerable();
 
             string searchQuery = SearchEventNameTextBox.Text?.Trim().ToLower() ?? "";
@@ -768,25 +770,12 @@ namespace NFC_System
             if (section != "All Sections")
                 filtered = filtered.Where(l => l.Section == section);
 
-            if (status == "Completed Event" || status == "Ongoing")
-                filtered = filtered.Where(l => _completedStudentIds.Contains(l.StudentId));
-            else if (status == "Incomplete / Left Early")
-                filtered = filtered.Where(l => _incompleteStudentIds.Contains(l.StudentId));
-
-            if (time == "Morning (AM)")
-                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("AM"));
-            else if (time == "Afternoon (PM)")
-                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.Contains("PM"));
+            if (status != "All Attendees") filtered = filtered.Where(l => _eventSummary.StateFor(l.StudentId) == status);
+            filtered = filtered.Where(l => ReportingAnalytics.MatchesTime(l.RawTimestamp, time));
 
             var viewModels = filtered.Select(l => {
-                bool isCompleted = _completedStudentIds.Contains(l.StudentId);
-
-                string statusText = isCompleted ? (isEventLive ? "Ongoing" : "Completed") : "Incomplete";
-                SolidColorBrush statusColor = isCompleted
-                    ? (isEventLive
-                        ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250))
-                        : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)))
-                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                string statusText = _eventSummary.StateFor(l.StudentId);
+                var statusColor = new SolidColorBrush(statusText == ReportingAnalytics.Unresolved ? Microsoft.UI.Colors.Orange : Microsoft.UI.Colors.LightGray);
 
                 return new EventAttendanceViewModel
                 {
@@ -814,8 +803,7 @@ namespace NFC_System
             var finalData = viewModels;
             AttendanceListView.ItemsSource = finalData;
 
-            if (EventPopupListView != null)
-                EventPopupListView.ItemsSource = finalData;
+            // The explorer maintains its own filter scope.
         }
 
         private async void OpenUnivExplorer_Click(object sender, RoutedEventArgs e)
@@ -855,7 +843,8 @@ namespace NFC_System
         private void UnivPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyUnivPopupFilters();
         private void UnivPopupFilter_Changed(object sender, SelectionChangedEventArgs e)
         {
-            if (UnivPopupCourseFilter != null && UnivPopupSectionFilter != null && sender == UnivPopupCourseFilter && _univMasterLogs != null)
+            if (_updatingCampusFilters) return;
+            if (UnivPopupCourseFilter != null && UnivPopupSectionFilter != null && ReferenceEquals(sender, UnivPopupCourseFilter) && _univMasterLogs != null)
             {
                 string course = UnivPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
                 var sectionQuery = _univMasterLogs.AsEnumerable();
@@ -877,7 +866,10 @@ namespace NFC_System
             ApplyUnivPopupFilters();
         }
 
-        private void UnivPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyUnivPopupFilters();
+        private async void UnivPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args)
+        {
+            if (!_updatingCampusFilters) await LoadCampusLedgerAsync(sender.Date?.Date);
+        }
 
         private void UnivPopupClear_Click(object sender, RoutedEventArgs e)
         {
@@ -926,7 +918,7 @@ namespace NFC_System
             string sortOrder = (UnivPopupSortBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Newest First";
             if (sortOrder == "Oldest First")
             {
-                filtered = filtered.Reverse();
+                filtered = filtered.OrderBy(l => l.RawTimestamp);
             }
             else if (sortOrder == "Name (A-Z)")
             {
@@ -977,7 +969,7 @@ namespace NFC_System
         private void EventPopupFilter_Changed(object sender, RoutedEventArgs e) => ApplyEventPopupFilters();
         private void EventPopupFilter_Changed(object sender, SelectionChangedEventArgs e)
         {
-            if (EventPopupCourseFilter != null && EventPopupSectionFilter != null && sender == EventPopupCourseFilter && _eventMasterLogs != null)
+            if (EventPopupCourseFilter != null && EventPopupSectionFilter != null && ReferenceEquals(sender, EventPopupCourseFilter) && _eventMasterLogs != null)
             {
                 string course = EventPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
                 var sectionQuery = _eventMasterLogs.AsEnumerable();
@@ -1018,12 +1010,6 @@ namespace NFC_System
             if (_eventMasterLogs == null || EventPopupListView == null || EventPopupCourseFilter == null || EventPopupSectionFilter == null || EventPopupStatusFilter == null || EventPopupSortBox == null)
                 return;
 
-            bool isEventLive = false;
-            if (_currentSelectedEvent != null)
-            {
-                isEventLive = _currentSelectedEvent.DisplayText.Contains("🟢 LIVE");
-            }
-
             var filtered = _eventMasterLogs.AsEnumerable();
 
             string searchQuery = EventPopupSearchBox?.Text?.Trim().ToLower() ?? "";
@@ -1039,8 +1025,8 @@ namespace NFC_System
 
             if (EventPopupDatePicker != null && EventPopupDatePicker.Date.HasValue)
             {
-                string targetDateStr = EventPopupDatePicker.Date.Value.ToString("MMM dd");
-                filtered = filtered.Where(l => l.Timestamp != null && l.Timestamp.StartsWith(targetDateStr));
+                DateTime targetDate = EventPopupDatePicker.Date.Value.Date;
+                filtered = filtered.Where(l => ReportingAnalytics.MatchesDate(l.RawTimestamp, targetDate));
             }
 
             string course = EventPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
@@ -1053,20 +1039,11 @@ namespace NFC_System
             if (section != "All Sections")
                 filtered = filtered.Where(l => l.Section == section);
 
-            if (status == "Completed Event" || status == "Ongoing")
-                filtered = filtered.Where(l => _completedStudentIds.Contains(l.StudentId));
-            else if (status == "Incomplete / Left Early")
-                filtered = filtered.Where(l => _incompleteStudentIds.Contains(l.StudentId));
+            if (status != "All Attendees") filtered = filtered.Where(l => _eventSummary.StateFor(l.StudentId) == status);
 
             var viewModels = filtered.Select(l => {
-                bool isCompleted = _completedStudentIds.Contains(l.StudentId);
-
-                string statusText = isCompleted ? (isEventLive ? "Ongoing" : "Completed") : "Incomplete";
-                SolidColorBrush statusColor = isCompleted
-                    ? (isEventLive
-                        ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250))
-                        : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153)))
-                    : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                string statusText = _eventSummary.StateFor(l.StudentId);
+                var statusColor = new SolidColorBrush(statusText == ReportingAnalytics.Unresolved ? Microsoft.UI.Colors.Orange : Microsoft.UI.Colors.LightGray);
 
                 return new EventAttendanceViewModel
                 {
@@ -1088,7 +1065,7 @@ namespace NFC_System
 
             if (sortOrder == "Oldest First")
             {
-                viewModels.Reverse();
+                viewModels = viewModels.OrderBy(l => l.RawTimestamp).ToList();
             }
             else if (sortOrder == "Name (A-Z)")
             {
@@ -1110,7 +1087,7 @@ namespace NFC_System
                 if (rawLogs == null || rawLogs.Count == 0) throw new InvalidOperationException("There are no attendance records matching the current filters.");
                 ExportConfigDialog.XamlRoot = Content.XamlRoot;
                 if (await ExportConfigDialog.ShowAsync() != ContentDialogResult.Primary) return;
-                var logs = rawLogs.GroupBy(l => l.StudentId).Select(g => g.First()).ToList();
+                var logs = rawLogs.GroupBy(l => l.StudentId).Select(g => g.OrderByDescending(l => l.RawTimestamp).First()).ToList();
                 string sort = (ExportSortComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
                 logs = sort switch
                 {
@@ -1132,8 +1109,8 @@ namespace NFC_System
                 Add(ExportColName.IsChecked, "Student Name", l => l.FullName);
                 Add(ExportColCourse.IsChecked, "Course", l => l.Course);
                 Add(ExportColSection.IsChecked, "Section", l => l.Section);
-                Add(ExportColAction.IsChecked, "Latest Action", l => l.Action);
-                Add(ExportColStatus.IsChecked, "Event Completion Status", l => l.CompletionStatus);
+                Add(ExportColAction.IsChecked, "Latest Action Within Filters", l => l.Action);
+                Add(ExportColStatus.IsChecked, "Last Recorded State (Whole Event)", l => l.CompletionStatus);
                 if (columns.Count == 0) throw new InvalidOperationException("Select at least one report column.");
                 Add(true, "Device ID", l => l.DeviceId);
                 Add(true, "Device Name", l => l.DeviceName);

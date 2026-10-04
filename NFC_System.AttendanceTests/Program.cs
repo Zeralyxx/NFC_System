@@ -67,7 +67,7 @@ AttendanceBackupSnapshot EmptyBackup(DateTime captured) => new()
 {
     CapturedAtUtc = captured,
     Tables = AttendanceBackupSnapshot.TableNames.ToDictionary(t => t, _ => new List<Dictionary<string, JsonElement>>()),
-    NextLogIds = AttendanceBackupSnapshot.TableNames.Skip(5).ToDictionary(t => t, _ => 1L)
+    NextLogIds = AttendanceBackupSnapshot.LogTableNames.ToDictionary(t => t, _ => 1L)
 };
 await Test("Cloud snapshot roundtrip includes every table and multiple chunks", async () =>
 {
@@ -78,7 +78,7 @@ await Test("Cloud snapshot roundtrip includes every table and multiple chunks", 
     snapshot.NextLogIds["fast_mode_logs"] = 2;
     await store.UploadAsync(snapshot);
     var restored = await store.DownloadLatestAsync();
-    Assert(restored!.Tables.Count == 9 && restored.Tables["fast_mode_logs"][0]["remarks"].GetString() == snapshot.Tables["fast_mode_logs"][0]["remarks"].GetString());
+    Assert(restored!.Version == 2 && restored.Tables.Count == AttendanceBackupSnapshot.TableNames.Length && restored.Tables["fast_mode_logs"][0]["remarks"].GetString() == snapshot.Tables["fast_mode_logs"][0]["remarks"].GetString());
 });
 await Test("Incomplete upload never publishes a restorable generation", async () =>
 {
@@ -118,6 +118,11 @@ if (sqlEnabled)
     async Task Sql(string sql) { using var cmd = new MySqlCommand(sql, connection); await cmd.ExecuteNonQueryAsync(); }
     async Task<string> Scalar(string sql) { using var cmd = new MySqlCommand(sql, connection); return (await cmd.ExecuteScalarAsync())?.ToString() ?? ""; }
     await Sql("CREATE TABLE IF NOT EXISTS students (student_id VARCHAR(50) PRIMARY KEY, entry_state VARCHAR(20)) ENGINE=InnoDB");
+    foreach (var (name, type) in new[] { ("pin_salt", "VARCHAR(255) DEFAULT ''"), ("pin_hash", "VARCHAR(255) DEFAULT ''"),
+        ("failed_pin_attempts", "INT NOT NULL DEFAULT 0"), ("pin_locked", "BOOLEAN NOT NULL DEFAULT FALSE") })
+        if (await Scalar($"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='students' AND column_name='{name}'") == "0")
+            await Sql($"ALTER TABLE students ADD COLUMN {name} {type}");
+    await DatabaseService.EnsurePinSchemaAsync(connection);
     foreach (string table in new[] { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs" })
         await Sql($@"CREATE TABLE IF NOT EXISTS {table} (id INT AUTO_INCREMENT PRIMARY KEY, timestamp DATETIME(3), student_id VARCHAR(50),
             student_name VARCHAR(100), nfc_uid VARCHAR(50), transaction_type VARCHAR(30), verification_mode VARCHAR(30), is_granted BOOLEAN,
@@ -131,8 +136,9 @@ if (sqlEnabled)
     var db = new DatabaseService(); db.ActivateAttendanceDevice();
     async Task Reset()
     {
-        foreach (string table in new[] { "attendance_decisions", "attendance_receipts", "attendance_devices", "attendance_current", "attendance_visits", "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs", "event_attendance", "students", "alerts" }) await Sql($"DELETE FROM {table}");
-        await Sql("INSERT INTO students VALUES ('A','OUTSIDE'),('B','OUTSIDE')");
+        foreach (string table in AttendanceBackupSnapshot.TableNames.Concat(new[] { "students", "alerts" })) await Sql($"DELETE FROM {table}");
+        await Sql("INSERT INTO students (student_id,entry_state) VALUES ('A','OUTSIDE'),('B','OUTSIDE')");
+        await Sql("DELETE FROM pin_security_versions; DELETE FROM pin_attempt_receipts");
         OfflineCacheService.AttendanceQueue = new DurableAttendanceQueue(NewDirectory());
         OfflineCacheService.CachedState = "OUTSIDE";
         OfflineCacheService.FailCacheFlush = false;
@@ -157,6 +163,57 @@ if (sqlEnabled)
         Assert(exit.Visit?.VisitId == entry.Visit!.VisitId && exit.Visit?.TimeOut == DatabaseService.Clock);
         Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "OUTSIDE");
     });
+    foreach (var mode in new[] { VerificationMode.Fast, VerificationMode.Standard, VerificationMode.HighSecurity })
+    {
+        async Task<AttendanceCommitResult> VerifiedGateScan(TransactionType type, int minute)
+        {
+            DatabaseService.Clock = new(2026, 9, 19, 9, minute, 0);
+            PinState pin;
+            using (var tx = await connection.BeginTransactionAsync())
+            {
+                pin = await DatabaseService.ReadPinStateAsync(connection, tx, "A"); await tx.CommitAsync();
+            }
+            return await db.RecordAttendanceTransactionAsync(new VerificationSession
+            {
+                Student = new StudentRecord { StudentId = "A", FullName = "Student A" }, PinState = pin,
+                TransactionType = type, Mode = mode
+            }, "Verified normal gate scan");
+        }
+        await Test($"{mode} normal gate entry then exit persists both directions with PIN security enabled", async () =>
+        {
+            await Reset();
+            Assert((await VerifiedGateScan(TransactionType.Entry, 0)).IsGranted);
+            Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "INSIDE");
+            var exit = await VerifiedGateScan(TransactionType.Exit, 1);
+            Assert(exit.Committed && exit.IsGranted && exit.Visit?.TimeOut.HasValue == true);
+            Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "OUTSIDE");
+        });
+        await Test($"{mode} live gate entry after clock rollback cannot grant while leaving student outside", async () =>
+        {
+            await Reset();
+            await VerifiedGateScan(TransactionType.Entry, 10); await VerifiedGateScan(TransactionType.Exit, 11);
+            var entry = await VerifiedGateScan(TransactionType.Entry, 0);
+            Assert(entry.Committed && entry.IsGranted && entry.Visit == null);
+            Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "INSIDE", "Granted entry left database OUTSIDE; next exit will be rejected as irregular.");
+            var exit = await VerifiedGateScan(TransactionType.Exit, 1);
+            Assert(exit.Committed && exit.IsGranted && exit.Visit == null);
+            Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "OUTSIDE");
+            OfflineCacheService.AttendanceQueue.Enqueue(Log("Entry", minute: 5));
+            await db.PulseAttendanceAsync();
+            Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "OUTSIDE", "Late offline entry overwrote the live exit after clock rollback.");
+            var freshEntry = await VerifiedGateScan(TransactionType.Entry, 12);
+            var freshExit = await VerifiedGateScan(TransactionType.Exit, 13);
+            Assert(freshEntry.Visit?.Confirmed == true && freshExit.Visit?.TimeOut.HasValue == true);
+        });
+        await Test($"{mode} live gate exit with equal timestamp updates occupancy without inventing paired history", async () =>
+        {
+            await Reset();
+            await VerifiedGateScan(TransactionType.Entry, 0);
+            var exit = await VerifiedGateScan(TransactionType.Exit, 0);
+            Assert(exit.Committed && exit.IsGranted && exit.Visit == null);
+            Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "OUTSIDE", "Granted exit left database INSIDE.");
+        });
+    }
     await Test("Offline display has no history; ordered recovery pairs one-device visits", async () =>
     {
         await Reset(); var entry = await Scan("Entry", 0, true); var exit = await Scan("Exit", 1, true);
@@ -250,6 +307,7 @@ if (sqlEnabled)
         await Reset(); await Scan("EventAttendance", 0, true, "event-1"); await Scan("Exit", 1, true, "event-1");
         await db.PulseAttendanceAsync(); await db.PulseAttendanceAsync();
         Assert(await Scalar("SELECT COUNT(*) FROM event_attendance") == "2");
+        Assert(await Scalar("SELECT COUNT(*) FROM event_completion_scans WHERE recovered=TRUE") == "2");
         Assert(await Scalar("SELECT COUNT(*) FROM attendance_visits") == "0");
         Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "INSIDE");
     });
@@ -258,6 +316,39 @@ if (sqlEnabled)
         await Reset(); await Scan("Entry", 0, true); await Scan("Exit", 1, true);
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => db.PulseAttendanceAsync()));
         Assert(await Scalar("SELECT COUNT(*) FROM fast_mode_logs") == "2");
+    });
+    await Test("Completion evidence failure rolls back receipt and logs, then retries once", async () =>
+    {
+        await Reset(); await Scan("EventAttendance", 0, true, "completion-event");
+        await Sql("CREATE TRIGGER fail_completion BEFORE INSERT ON event_completion_scans FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected failure'");
+        try
+        {
+            await db.PulseAttendanceAsync();
+            Assert(OfflineCacheService.HasPendingLogs());
+            foreach (var table in new[] { "event_attendance", "fast_mode_logs", "attendance_receipts", "event_completion_scans" })
+                Assert(await Scalar($"SELECT COUNT(*) FROM {table}") == "0", table);
+        }
+        finally { await Sql("DROP TRIGGER fail_completion"); }
+        await db.PulseAttendanceAsync(); await db.PulseAttendanceAsync();
+        Assert(!OfflineCacheService.HasPendingLogs());
+        Assert(await Scalar("SELECT COUNT(*) FROM event_completion_scans") == "1");
+    });
+    await Test("Snapshot v2 retains completion evidence, requirements and audits; v1 remains restorable", async () =>
+    {
+        await Reset(); await Scan("EventAttendance", 0, true, "completion-event"); await db.PulseAttendanceAsync();
+        await Sql("INSERT INTO event_completion_policies VALUES('completion-event','2026-09-19 09:00:00','2026-09-19 10:00:00',50,5,5,1,'2026-09-18 09:00:00')");
+        await Sql("INSERT INTO event_completion_audit(event_id,student_id,action,previous_status,new_status,reason,actor,actor_role,device_id,device_name,reviewed_at_utc,evidence_stamp,evidence_json) VALUES('completion-event','','Policy','None','1','Test','Admin','Admin','','Test',UTC_TIMESTAMP(3),'','{}')");
+        var snapshot = await db.CaptureAttendanceBackupAsync();
+        Assert(snapshot.Version == 2 && snapshot.Tables["event_completion_scans"].Count == 1);
+        await Reset(); await db.RestoreAttendanceSnapshotAsync(snapshot);
+        foreach (var table in new[] { "event_completion_scans", "event_completion_policies", "event_completion_audit" })
+            Assert(await Scalar($"SELECT COUNT(*) FROM {table}") == "1", table);
+        var legacy = new AttendanceBackupSnapshot { Version = 1, CapturedAtUtc = snapshot.CapturedAtUtc, NextLogIds = snapshot.NextLogIds,
+            Tables = snapshot.Tables.Where(p => AttendanceBackupSnapshot.LegacyTableNames.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value) };
+        legacy.Validate();
+        await Reset(); await db.RestoreAttendanceSnapshotAsync(legacy);
+        Assert(await Scalar("SELECT COUNT(*) FROM event_completion_scans") == "0");
+        Assert(await Scalar("SELECT COUNT(*) FROM event_attendance") == "1");
     });
     await Test("Concurrent online admissions grant only one entry", async () =>
     {
@@ -367,7 +458,8 @@ if (sqlEnabled)
         }
         await Scan("EventAttendance", 1, true, "event-1"); await db.PulseAttendanceAsync();
         var snapshot = await db.CaptureAttendanceBackupAsync();
-        Assert(snapshot.Tables.Values.All(rows => rows.Count > 0));
+        Assert(AttendanceBackupSnapshot.LegacyTableNames.All(t => snapshot.Tables[t].Count > 0));
+        Assert(snapshot.Tables["event_completion_scans"].Count > 0);
         await Reset(); int count = await db.RestoreAttendanceSnapshotAsync(snapshot);
         Assert(count == snapshot.Tables.Values.Sum(rows => rows.Count));
         foreach (string table in AttendanceBackupSnapshot.TableNames)
@@ -450,6 +542,34 @@ if (sqlEnabled)
         Assert(await Scalar("SELECT COUNT(*) FROM attendance_visits") == "1");
     });
     await DeviceAttributionTests.RunSqlAsync(Test, connection, Reset);
+    foreach (string change in new[] { "lock", "unlock", "credential" })
+    foreach (bool isEvent in new[] { false, true })
+    await Test($"Final {(isEvent ? "event" : "gate")} admission rejects PIN {change} after verification", async () =>
+    {
+        await Reset();
+        PinState state;
+        using (var tx = await connection.BeginTransactionAsync())
+        {
+            state = await DatabaseService.ReadPinStateAsync(connection, tx, "A"); await tx.CommitAsync();
+        }
+        if (change == "lock") await Sql("UPDATE students SET pin_locked=TRUE,failed_pin_attempts=3 WHERE student_id='A'");
+        else if (change == "credential") await Sql("UPDATE students SET pin_hash='replaced' WHERE student_id='A'");
+        else
+        {
+            using var tx = await connection.BeginTransactionAsync();
+            await DatabaseService.RotatePinResetAsync(connection, tx, "A"); await tx.CommitAsync();
+        }
+        var result = await db.RecordAttendanceTransactionAsync(new VerificationSession
+        {
+            Student = new StudentRecord { StudentId = "A", FullName = "Student A" }, PinState = state,
+            Mode = VerificationMode.HighSecurity, TransactionType = isEvent ? TransactionType.EventAttendance : TransactionType.Entry,
+            EventId = isEvent ? "pin-event" : null
+        }, "PIN accepted before remote security change");
+        Assert(result.Committed && !result.IsGranted && !result.ConfirmationPending);
+        Assert(await Scalar("SELECT error_code FROM high_security_mode_logs") == "PIN_STATE_CHANGED");
+        Assert(await Scalar("SELECT entry_state FROM students WHERE student_id='A'") == "OUTSIDE");
+        Assert(await Scalar("SELECT COUNT(*) FROM event_attendance") == "0");
+    });
 }
 else Console.WriteLine("SQL integration tests skipped; pass --mysql with the isolated test server on port 23306.");
 Console.WriteLine($"{passed} passed; {failed} failed.");

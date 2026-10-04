@@ -1,0 +1,946 @@
+{
+  "source": "C:\\Users\\justine mendoza\\Videos\\Final Draft Chapter 1-5 Thesis.pdf",
+  "tables": [
+    {
+      "group": "Students",
+      "characteristic": "Functional Suitability",
+      "n": 70,
+      "pages": [
+        125,
+        126
+      ],
+      "items": [
+        {
+          "question": "1. The system effectively meets the functional requirement of verifying my student identity using NFC, PIN, and QR codes.",
+          "mean": 3.71,
+          "sd": 0.54,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system performs the attendance and entry verification tasks accurately and completely.",
+          "mean": 3.81,
+          "sd": 0.39,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The features of the system are highly relevant to the problem of monitoring student attendance and campus entry.",
+          "mean": 3.8,
+          "sd": 0.4,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system provides appropriate outputs (e.g., visual or audio confirmation) when I input my credentials.",
+          "mean": 3.84,
+          "sd": 0.37,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The overall functionality successfully aligns with the objective of providing a secure attendance system.",
+          "mean": 3.89,
+          "sd": 0.32,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.81,
+      "reported_sd": 0.41,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Students",
+      "characteristic": "Performance Efficiency",
+      "n": 70,
+      "pages": [
+        126,
+        127
+      ],
+      "items": [
+        {
+          "question": "1. The system responds quickly when I tap my NFC card, enter my PIN, or scan my QR code.",
+          "mean": 3.84,
+          "sd": 0.37,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system performs well and verifies my entry smoothly even when there is a long line of students.",
+          "mean": 3.8,
+          "sd": 0.47,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The system maintains consistent verification speed and performance throughout the entire entry process.",
+          "mean": 3.81,
+          "sd": 0.39,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The overall speed and performance of the system meet my expectations for an attendance process.",
+          "mean": 3.74,
+          "sd": 0.44,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.8,
+      "reported_sd": 0.42,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Students",
+      "characteristic": "Usability",
+      "n": 70,
+      "pages": [
+        127
+      ],
+      "items": [
+        {
+          "question": "1. The physical interface of the verification terminal (keypad, scanner, screen) is intuitive and easy to navigate.",
+          "mean": 3.86,
+          "sd": 0.43,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system provides clear instructions and feedback on what step to do next (e.g., when to tap or scan).",
+          "mean": 3.84,
+          "sd": 0.35,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The design and layout of the verification terminal enhance my overall user experience.",
+          "mean": 3.79,
+          "sd": 0.4,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. I was able to learn how to operate the system (tap, PIN, scan) with minimal to no training.",
+          "mean": 3.79,
+          "sd": 0.49,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The system supports accessibility and is straightforward enough to be used by all types of students.",
+          "mean": 3.87,
+          "sd": 0.38,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.83,
+      "reported_sd": 0.41,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Students",
+      "characteristic": "Reliability",
+      "n": 70,
+      "pages": [
+        128
+      ],
+      "items": [
+        {
+          "question": "1. The system processes my verification consistently without unexpected failures or freezing.",
+          "mean": 3.76,
+          "sd": 0.43,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. If a minor error occurs (e.g., wrong PIN entered), the system allows me to recover easily and try again.",
+          "mean": 3.86,
+          "sd": 0.35,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. I trust that the system accurately records and maintains the integrity of my attendance data.",
+          "mean": 3.8,
+          "sd": 0.4,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system successfully reads my inputs under different physical conditions (e.g., fast tapping, minor screen glare).",
+          "mean": 3.77,
+          "sd": 0.49,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The system demonstrates stable performance from the start to the end of my verification process.",
+          "mean": 3.83,
+          "sd": 0.38,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.8,
+      "reported_sd": 0.41,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Students",
+      "characteristic": "Security",
+      "n": 70,
+      "pages": [
+        129
+      ],
+      "items": [
+        {
+          "question": "1. The system effectively protects my personal attendance data from unauthorized viewing by others in line.",
+          "mean": 3.77,
+          "sd": 0.49,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The two-factor authentication (NFC and PIN) successfully confirms my true identity.",
+          "mean": 3.9,
+          "sd": 0.3,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. I feel confident that my sensitive credentials (NFC, PIN, QR) are handled securely during verification.",
+          "mean": 3.76,
+          "sd": 0.43,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system's design includes measures that prevent common threats, such as others copying or stealing my credentials.",
+          "mean": 3.81,
+          "sd": 0.39,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The multi-factor process successfully maintains the confidentiality and security of my campus entry.",
+          "mean": 3.84,
+          "sd": 0.37,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.82,
+      "reported_sd": 0.4,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Security Personnel",
+      "characteristic": "Functional Suitability",
+      "n": 5,
+      "pages": [
+        129,
+        130
+      ],
+      "items": [
+        {
+          "question": "1. The system provides me with the necessary on-screen information (e.g., student name, ID number, entry status) to accurately verify the identities of individuals entering the campus.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The security dashboard correctly logs and displays real-time entry records as students pass through the gate.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The monitoring features provided by the system are highly relevant to my daily tasks of controlling campus entry and identifying unverified individuals.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system provides clear visual or audio alerts on the monitoring screen when access is either successfully granted or denied.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The overall functionality successfully supports security personnel in enforcing gate protocols more effectively than traditional methods.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.84,
+      "reported_sd": 0.37,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Security Personnel",
+      "characteristic": "Performance Efficiency",
+      "n": 5,
+      "pages": [
+        130,
+        131
+      ],
+      "items": [
+        {
+          "question": "1. The monitoring screen updates immediately without lag when a student taps their card or enters their PIN at the terminal.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The dashboard handles rapid, successive entries smoothly, allowing me to continuously monitor a fast-moving queue without system slowdowns.",
+          "mean": 3.2,
+          "sd": 0.45,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "question": "3. The system maintains a consistent response time and screen performance throughout my shift or the entire evaluation period.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The speed at which the system processes entries and alerts me to potential issues meets my expectations for an efficient gate monitoring process.",
+          "mean": 3.0,
+          "sd": 0.71,
+          "interpretation": "Agree / Satisfactory"
+        }
+      ],
+      "reported_mean": 3.45,
+      "reported_sd": 0.6,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Security Personnel",
+      "characteristic": "Usability",
+      "n": 5,
+      "pages": [
+        131,
+        132
+      ],
+      "items": [
+        {
+          "question": "1. The layout of the security monitoring screen is organized, intuitive, and easy to read at a quick glance.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system effectively highlights critical information (e.g., using clear color codes like green for \"Pass\" and red for \"Denied\") so I know exactly when to intervene.",
+          "mean": 3.8,
+          "sd": 0.46,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. I was able to learn how to monitor the dashboard and interpret system alerts with minimal to no training.",
+          "mean": 3.2,
+          "sd": 0.84,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "question": "4. The student information (e.g., Name, ID Number, Status) displayed on the monitoring screen is clear and easy to read from a comfortable standing distance.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. Navigating the security interface is straightforward enough to be used efficiently by all assigned security personnel, regardless of technical background.",
+          "mean": 3.4,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.6,
+      "reported_sd": 0.58,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Security Personnel",
+      "characteristic": "Reliability",
+      "n": 5,
+      "pages": [
+        132,
+        133
+      ],
+      "items": [
+        {
+          "question": "1. The security monitoring dashboard runs consistently without unexpected freezing, crashing, or losing connection.",
+          "mean": 3.2,
+          "sd": 0.45,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "question": "2. If a minor sync error occurs between the terminal and the monitor, the interface recovers quickly without disrupting the monitoring of the gate.",
+          "mean": 3.4,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. I trust that the alerts and statuses displayed on my screen accurately reflect what is happening at the student terminal in real-time.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system reliably and consistently flags suspicious activities (e.g., repeated failed PIN attempts) every time they occur during testing.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The system demonstrates stable and dependable monitoring capabilities from the start to the end of the evaluation process.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.48,
+      "reported_sd": 0.51,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Security Personnel",
+      "characteristic": "Security",
+      "n": 5,
+      "pages": [
+        133,
+        134
+      ],
+      "items": [
+        {
+          "question": "1. The monitoring screen displays only the necessary student information to me, preventing the unnecessary exposure of their private data to bystanders.",
+          "mean": 3.2,
+          "sd": 0.55,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "question": "2. The system provides me with enough reliable data to confidently confirm if the person at the gate is the true owner of the credentials.",
+          "mean": 3.4,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. I feel confident relying on the system's alerts to prevent unauthorized individuals or outsiders from bypassing the gate.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system effectively detects and alerts me to common security threats, such as students passing back IDs for others to use.",
+          "mean": 3.6,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The implementation of this system enhances the overall physical security of the campus compared to traditional visual-check methods.",
+          "mean": 3.6,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.48,
+      "reported_sd": 0.41,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Functional Suitability",
+      "n": 5,
+      "pages": [
+        134,
+        135
+      ],
+      "items": [
+        {
+          "question": "1. The dashboard provides all necessary features to successfully create, configure, and manage university events.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system effectively categorizes and generates accurate attendance records by College, Section, Year Level, and specific Event.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The system allows me to easily configure and switch between different verification modes as required for specific events or gate protocols.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The centralized monitoring and alert functions provide relevant and accurate information for administrative oversight.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. Overall, the system's administrative features completely align with the needs of event organizers and faculty members.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.96,
+      "reported_sd": 0.2,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Performance Efficiency",
+      "n": 5,
+      "pages": [
+        135
+      ],
+      "items": [
+        {
+          "question": "1. The centralized dashboard loads quickly and reflects real-time gate and event attendance data without noticeable delay.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. Generating complex attendance reports (e.g., filtering by multiple categories) is processed and completed in a reasonable amount of time.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The system handles multiple administrative actions smoothly, even when receiving rapid data inputs from the verification terminals.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The dashboard maintains consistent performance and does not slow down when processing or storing large amounts of attendance data.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The overall speed of the backend system meets my expectations for efficient event and attendance management.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.92,
+      "reported_sd": 0.28,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Compatibility",
+      "n": 5,
+      "pages": [
+        136
+      ],
+      "items": [
+        {
+          "question": "1. The exported attendance reports (e.g., CSV, Excel, PDF) are fully compatible with standard office software used by the university.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system operates smoothly without negatively interfering with other existing administrative software or network tools.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The generated data is structured in a way that could easily be integrated with existing university databases in the future.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system performs consistently regardless of the type of computer or operating system I use to access the admin dashboard.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.9,
+      "reported_sd": 0.31,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Usability",
+      "n": 5,
+      "pages": [
+        136,
+        137
+      ],
+      "items": [
+        {
+          "question": "1. The layout and navigation menus of the centralized dashboard are logical, well-organized, and easy to understand.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The process of generating reports and filtering attendance lists is straightforward and does not require complex steps.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. I am able to create a new event, assign verification modes, and launch the monitoring screen with minimal effort.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system provides clear visual feedback or error messages if I input incomplete or incorrect settings during event creation.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. I would require very minimal training to confidently use all the administrative functions of this system.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.88,
+      "reported_sd": 0.33,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Reliability",
+      "n": 5,
+      "pages": [
+        137,
+        138
+      ],
+      "items": [
+        {
+          "question": "1. The centralized dashboard operates consistently without unexpected crashes, freezing, or downtime during active monitoring.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. All configured event settings and recorded attendance data are saved securely without unexpected loss of records.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. In the event of a minor disruption (e.g., a brief internet drop), the dashboard recovers quickly and resumes synchronization properly.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. I can trust the system to accurately reflect exactly what is happening at the verification terminals without data discrepancies.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. The administrative system demonstrates a high level of stability from setup to the conclusion of the event evaluation.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.8,
+      "reported_sd": 0.41,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Security",
+      "n": 5,
+      "pages": [
+        138,
+        139
+      ],
+      "items": [
+        {
+          "question": "1. The system requires proper authentication (e.g., secure admin login) before granting access to the centralized dashboard.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. Administrative privileges are strictly enforced, ensuring unauthorized users or students cannot alter event settings or attendance records.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. Sensitive student data within the attendance database is adequately protected from unauthorized viewing or extraction.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system architecture prevents common data manipulations, ensuring that generated attendance reports are legitimate and untampered.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. I feel confident that the system provides a secure environment for managing university-level event data.",
+          "mean": 3.6,
+          "sd": 0.55,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.76,
+      "reported_sd": 0.44,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Maintainability",
+      "n": 5,
+      "pages": [
+        139,
+        140
+      ],
+      "items": [
+        {
+          "question": "1. The source code is clean, well-structured, and easy to read, following standard coding guidelines and best practices.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The codebase is thoroughly documented with clear comments and technical documentation, making it easy for other developers to understand and navigate.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. The system architecture uses modular design principles (e.g., separated components, reusable functions) that make it easy to isolate and update specific features.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The code allows for seamless debugging, error logging, and troubleshooting when identifying and fixing software bugs or system issues.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. Future updates, modifications, or scaling of the system can be implemented with minimal effort and without breaking existing core functionalities.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.88,
+      "reported_sd": 0.33,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "group": "Faculty Event Organizers Administrators",
+      "characteristic": "Portability",
+      "n": 5,
+      "pages": [
+        140,
+        141
+      ],
+      "items": [
+        {
+          "question": "1. The dashboard can be easily accessed from different devices (e.g., desktop PC or laptop) without losing essential functionality.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "2. The system interface adapts well to different monitor screen sizes and resolutions in various university offices.",
+          "mean": 3.6,
+          "sd": 0.89,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "3. Accessing the administrative system on a new computer requires no complex installations or difficult setup procedures.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "4. The system is flexible enough to be deployed and managed for events located in different buildings or areas across the campus.",
+          "mean": 3.8,
+          "sd": 0.45,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "question": "5. Transitioning the management of the system from one administrative user environment to another is a seamless process.",
+          "mean": 4.0,
+          "sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "reported_mean": 3.84,
+      "reported_sd": 0.47,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    }
+  ],
+  "demographics": [
+    [
+      "Demographic Variable",
+      "Category",
+      "Frequency (f)",
+      "Percentage (%)"
+    ],
+    [
+      "Security Personnel",
+      "",
+      "",
+      ""
+    ],
+    [
+      "Assigned Post / Gate",
+      "Gate Entrance",
+      "1",
+      "20.00%"
+    ],
+    [
+      "",
+      "Gate Exit",
+      "1",
+      "20.00%"
+    ],
+    [
+      "",
+      "Round Building",
+      "1",
+      "20.00%"
+    ],
+    [
+      "",
+      "Canteen",
+      "2",
+      "40.00%"
+    ],
+    [
+      "Years in Service",
+      "0-5 Years",
+      "4",
+      "80.00%"
+    ],
+    [
+      "",
+      "6-10 Years",
+      "1",
+      "20.00%"
+    ],
+    [
+      "",
+      "11+ Years",
+      "0",
+      "0.00%"
+    ],
+    [
+      "Students",
+      "",
+      "",
+      ""
+    ],
+    [
+      "Course",
+      "Computer Science",
+      "30",
+      "42.86%"
+    ],
+    [
+      "",
+      "Information System",
+      "40",
+      "57.14%"
+    ],
+    [
+      "Year Level",
+      "1st Year",
+      "40",
+      "57.14%"
+    ],
+    [
+      "",
+      "2nd Year",
+      "0",
+      "0.00%"
+    ],
+    [
+      "",
+      "3rd Year",
+      "20",
+      "28.57%"
+    ],
+    [
+      "",
+      "4th Year",
+      "10",
+      "14.29%"
+    ],
+    [
+      "Frequency of participation in university events",
+      "Rarely",
+      "8",
+      "11.43%"
+    ],
+    [
+      "",
+      "Sometimes",
+      "25",
+      "35.71%"
+    ],
+    [
+      "",
+      "Frequently",
+      "37",
+      "52.86%"
+    ],
+    [
+      "Faculty / Event Organizer / Administrator",
+      "",
+      "",
+      ""
+    ],
+    [
+      "Role / Position",
+      "Faculty",
+      "2",
+      "40.00%"
+    ],
+    [
+      "",
+      "Event Organizer",
+      "2",
+      "40.00%"
+    ],
+    [
+      "",
+      "Administrator",
+      "1",
+      "20.00%"
+    ],
+    [
+      "Years of Service",
+      "0-5 Years",
+      "3",
+      "60.00%"
+    ],
+    [
+      "",
+      "6-10 Years",
+      "2",
+      "40.00%"
+    ],
+    [
+      "",
+      "11-15 Years",
+      "0",
+      "0.00%"
+    ]
+  ],
+  "audit": [
+    {
+      "group": "Security Personnel",
+      "characteristic": "Security",
+      "question": "2. The system provides me with enough reliable data to confidently confirm if the person at the gate is the true owner of the credentials.",
+      "issue": "Zero SD incompatible with fractional mean of integer 1-4 responses"
+    },
+    {
+      "group": "Security Personnel",
+      "characteristic": "Security",
+      "question": "4. The system effectively detects and alerts me to common security threats, such as students passing back IDs for others to use.",
+      "issue": "Zero SD incompatible with fractional mean of integer 1-4 responses"
+    }
+  ]
+}

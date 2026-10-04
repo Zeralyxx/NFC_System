@@ -46,6 +46,26 @@ public sealed class DatabaseService
     public Task<bool> HasStudentEnteredEventAsync(string? eventId, string id) => Task.FromResult(EventEntered);
     public Task<bool> IsStudentAllowedForEventAsync(string? eventId, string id) => Task.FromResult(EventAllowed);
     public Task? PinUpdateBarrier { get; set; }
+    public bool FailPinPersistence { get; set; }
+    private readonly Dictionary<string, string> _pinTokens = new();
+    public Task<PinState> PreparePinStateAsync(StudentRecord student, bool offline)
+    {
+        var current = (offline ? OfflineCacheService.Students : Students).Single(s => s.StudentId == student.StudentId);
+        if (!_pinTokens.ContainsKey(student.StudentId)) _pinTokens[student.StudentId] = Guid.NewGuid().ToString("N");
+        return Task.FromResult(new PinState { StudentId = current.StudentId, ResetToken = _pinTokens[current.StudentId],
+            Attempts = current.FailedPinAttempts, Locked = current.PinLocked, CredentialTag = PinState.Tag(current.PinSalt, current.PinHash) });
+    }
+    public async Task<PinAttemptResult> SubmitSecurePinAsync(VerificationSession session, string pin)
+    {
+        if (FailPinPersistence) throw new IOException("Injected PIN persistence/confirmation failure");
+        if (PinUpdateBarrier != null) await PinUpdateBarrier;
+        var state = await PreparePinStateAsync(session.Student, session.IsOffline);
+        var result = PinRules.Apply(state, new PinAttempt { StudentId = state.StudentId,
+            ResetToken = session.PinState!.ResetToken, CredentialTag = session.PinState.CredentialTag,
+            Correct = PinHasher.VerifyPin(pin, session.Student.PinSalt, session.Student.PinHash) });
+        if (!session.IsOffline) await UpdatePinFailureAsync(state.StudentId, result.State.Attempts, result.State.Locked);
+        return result;
+    }
     public async Task UpdatePinFailureAsync(string id, int failed, bool locked)
     {
         if (PinUpdateBarrier != null) await PinUpdateBarrier;

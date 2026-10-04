@@ -394,7 +394,9 @@ namespace NFC_System
 
                 if (BatchCourseComboBox != null) BatchCourseComboBox.SelectedIndex = 0;
 
+                LoadDirectoryRefinements();
                 RefreshDataGrid();
+                ApplyPopupFilters();
 
                 UpdateSortIcons(isPopup: false);
                 UpdateSortIcons(isPopup: true);
@@ -418,6 +420,7 @@ namespace NFC_System
                 }
 
                 UpdateSortIcons(isPopup: false);
+                _currentPage = 1;
                 RefreshDataGrid();
             }
         }
@@ -443,6 +446,7 @@ namespace NFC_System
         {
             string activeColumn = isPopup ? _popupSortColumn : _currentSortColumn;
             bool isAsc = isPopup ? _isPopupSortAscending : _isSortAscending;
+            (isPopup ? PopupRefinements : DirectoryRefinements)?.SetSort(activeColumn, isAsc);
             string glyph = isAsc ? "\uE70E" : "\uE70D";
 
             if (!isPopup)
@@ -873,6 +877,8 @@ namespace NFC_System
 
         private void Window_Closed(object sender, WindowEventArgs args)
         {
+            _directoryClosed = true;
+            if (_importWindow != null) _importWindow.StudentsImported -= StudentsImported;
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
 
             // THE FIX: Unhook the hardware listener to prevent memory leaks
@@ -1029,38 +1035,14 @@ namespace NFC_System
 
         private void RefreshDataGrid()
         {
-            if (StudentListView == null) return;
+            if (StudentListView == null || DirectoryRefinements == null) return;
 
-            string searchTerm = SearchBox.Text.ToLower();
-            string statusFilter = StatusFilterComboBox.SelectedItem is ComboBoxItem item ? item.Content.ToString() : "All Students";
+            string statusFilter = (StatusFilterComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Students";
             string courseFilter = CourseFilterComboBox.SelectedItem?.ToString() ?? "All Courses";
-
-            var filteredData = _allStudents.Where(s =>
-                (string.IsNullOrEmpty(searchTerm) ||
-                 (s.FullName != null && s.FullName.ToLower().Contains(searchTerm)) ||
-                 (s.StudentId != null && s.StudentId.ToLower().Contains(searchTerm)) ||
-                 (s.Course != null && s.Course.ToLower().Contains(searchTerm)) ||
-                 (s.YearLevel != null && s.YearLevel.ToLower().Contains(searchTerm)) ||
-                 (s.SectionName != null && s.SectionName.ToLower().Contains(searchTerm)) ||
-                 (s.Status != null && s.Status.ToLower().Contains(searchTerm)) ||
-                 (s.NfcUid != null && s.NfcUid.ToLower().Contains(searchTerm))) &&
-                (statusFilter == "All Students" ||
-                 (statusFilter == "Active Only" && s.Status == "Active") ||
-                 (statusFilter == "Locked Out" && s.PinLocked) ||
-                 (statusFilter == "Inactive" && s.Status == "Inactive")) &&
-                (courseFilter == "All Courses" || s.Course == courseFilter)
-            ).ToList();
-
-            filteredData = _currentSortColumn switch
-            {
-                "StudentId" => _isSortAscending ? filteredData.OrderBy(s => s.StudentId).ToList() : filteredData.OrderByDescending(s => s.StudentId).ToList(),
-                "FullName" => _isSortAscending ? filteredData.OrderBy(s => s.FullName).ToList() : filteredData.OrderByDescending(s => s.FullName).ToList(),
-                "Course" => _isSortAscending ? filteredData.OrderBy(s => s.Course).ToList() : filteredData.OrderByDescending(s => s.Course).ToList(),
-                "Year" => _isSortAscending ? filteredData.OrderBy(s => s.YearLevel).ToList() : filteredData.OrderByDescending(s => s.YearLevel).ToList(),
-                "Section" => _isSortAscending ? filteredData.OrderBy(s => s.SectionName).ToList() : filteredData.OrderByDescending(s => s.SectionName).ToList(),
-                "Status" => _isSortAscending ? filteredData.OrderBy(s => s.Status).ToList() : filteredData.OrderByDescending(s => s.Status).ToList(),
-                _ => filteredData
-            };
+            var filteredData = StudentDirectoryQuery.Apply(_allStudents, SearchBox.Text, courseFilter, statusFilter,
+                DirectoryRefinements.Year, DirectoryRefinements.Section, _currentSortColumn, _isSortAscending,
+                DirectoryRefinements.LatestOnly ? _latestImportIds : null);
+            DirectoryRefinements.ShowCount(filteredData.Count, _allStudents.Count, DatabaseMonitor.IsOnline);
 
             int totalItems = filteredData.Count;
             int totalPages = (int)Math.Ceiling(totalItems / (double)PageSize);
@@ -1069,7 +1051,7 @@ namespace NFC_System
             var pagedData = filteredData.Skip((_currentPage - 1) * PageSize).Take(PageSize).ToList();
 
             StudentListView.ItemsSource = pagedData;
-            PageInfoText.Text = $"Page {_currentPage} of {totalPages}";
+            PageInfoText.Text = $"Page {_currentPage} of {Math.Max(1, totalPages)}";
             PrevBtn.IsEnabled = _currentPage > 1;
             NextBtn.IsEnabled = _currentPage < totalPages;
         }
@@ -1212,51 +1194,19 @@ namespace NFC_System
 
         private void PopupClear_Click(object sender, RoutedEventArgs e)
         {
-            PopupSearchBox.Text = "";
-            PopupCourseFilter.SelectedIndex = 0;
-            PopupStatusFilter.SelectedIndex = 0;
-            ApplyPopupFilters();
+            ClearPopupFilters();
         }
 
         private void ApplyPopupFilters()
         {
-            if (_allStudents == null || PopupStudentListView == null) return;
-
-            var filtered = _allStudents.AsEnumerable();
-
-            string query = PopupSearchBox.Text?.Trim().ToLower() ?? "";
-            if (!string.IsNullOrEmpty(query))
-            {
-                filtered = filtered.Where(s =>
-                    (s.FullName != null && s.FullName.ToLower().Contains(query)) ||
-                    (s.StudentId != null && s.StudentId.ToLower().Contains(query)) ||
-                    (s.NfcUid != null && s.NfcUid.ToLower().Contains(query)) ||
-                    (s.Course != null && s.Course.ToLower().Contains(query)) ||
-                    (s.YearLevel != null && s.YearLevel.ToLower().Contains(query)) ||
-                    (s.SectionName != null && s.SectionName.ToLower().Contains(query)) ||
-                    (s.Status != null && s.Status.ToLower().Contains(query)));
-            }
-
+            if (_allStudents == null || PopupStudentListView == null || PopupRefinements == null) return;
             string course = PopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
-            if (course != "All Courses") filtered = filtered.Where(s => s.Course == course);
-
             string status = (PopupStatusFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All Students";
-            if (status == "Active Only") filtered = filtered.Where(s => s.Status == "Active");
-            else if (status == "Locked Out") filtered = filtered.Where(s => s.PinLocked);
-            else if (status == "Inactive") filtered = filtered.Where(s => s.Status == "Inactive");
-
-            filtered = _popupSortColumn switch
-            {
-                "StudentId" => _isPopupSortAscending ? filtered.OrderBy(s => s.StudentId) : filtered.OrderByDescending(s => s.StudentId),
-                "FullName" => _isPopupSortAscending ? filtered.OrderBy(s => s.FullName) : filtered.OrderByDescending(s => s.FullName),
-                "Course" => _isPopupSortAscending ? filtered.OrderBy(s => s.Course) : filtered.OrderByDescending(s => s.Course),
-                "Year" => _isPopupSortAscending ? filtered.OrderBy(s => s.YearLevel) : filtered.OrderByDescending(s => s.YearLevel),
-                "Section" => _isPopupSortAscending ? filtered.OrderBy(s => s.SectionName) : filtered.OrderByDescending(s => s.SectionName),
-                "Status" => _isPopupSortAscending ? filtered.OrderBy(s => s.Status) : filtered.OrderByDescending(s => s.Status),
-                _ => filtered.OrderBy(s => s.FullName)
-            };
-
-            PopupStudentListView.ItemsSource = filtered.ToList();
+            var filtered = StudentDirectoryQuery.Apply(_allStudents, PopupSearchBox.Text, course, status,
+                PopupRefinements.Year, PopupRefinements.Section, _popupSortColumn, _isPopupSortAscending,
+                PopupRefinements.LatestOnly ? _latestImportIds : null);
+            PopupStudentListView.ItemsSource = filtered;
+            PopupRefinements.ShowCount(filtered.Count, _allStudents.Count, DatabaseMonitor.IsOnline);
         }
 
         private void MaximizeWindow()

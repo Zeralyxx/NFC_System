@@ -84,13 +84,14 @@
         <Border Grid.Row="0" x:Name="GlobalOfflineBanner" Background="#DC2626" Padding="16,8" Visibility="Collapsed" HorizontalAlignment="Stretch">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
                 <FontIcon Glyph="&#xEE71;" Foreground="White" FontSize="16" VerticalAlignment="Center"/>
-                <TextBlock Text="SYSTEM OFFLINE: Operating on Local Cache. Scans are being saved locally and will sync when the connection is restored." Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                <TextBlock Text="DATABASE OFFLINE: Reports cannot refresh. Any displayed figures are from the last successful load." TextWrapping="Wrap" Foreground="White" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
 
         <!-- The main content wrapper -->
         <Grid x:Name="ContentRoot" Grid.Row="1" Padding="48" Tapped="Background_Tapped">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
@@ -126,7 +127,14 @@
             <!-- ========================================================= -->
             <!-- VIEW 1: UNIVERSITY CAMPUS TRAFFIC                         -->
             <!-- ========================================================= -->
-            <Grid x:Name="UniversityViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Visible">
+            <InfoBar x:Name="ReportingStatus" Grid.Row="1" IsOpen="True" IsClosable="False" Severity="Informational" Title="Loading reports" Margin="0,0,0,12">
+                <InfoBar.ActionButton>
+                    <Button x:Name="RefreshReportsButton" Click="RefreshReports_Click" Width="40" Height="36" ToolTipService.ToolTip="Refresh reports" AutomationProperties.Name="Refresh reports">
+                        <FontIcon Glyph="&#xE72C;" FontSize="18"/>
+                    </Button>
+                </InfoBar.ActionButton>
+            </InfoBar>
+            <Grid x:Name="UniversityViewGrid" Grid.Row="2" ColumnSpacing="24" Visibility="Visible">
                 <Grid.RowDefinitions>
                     <RowDefinition x:Name="UnivRow1" Height="*"/>
                     <RowDefinition x:Name="UnivRow2" Height="0"/>
@@ -157,7 +165,7 @@
                                     </Border>
                                     <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
                                         <StackPanel>
-                                            <TextBlock Text="Currently Inside" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Inside (log estimate)" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
                                             <TextBlock x:Name="UnivInsideText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
                                         </StackPanel>
                                     </Border>
@@ -178,7 +186,7 @@
 
                                 <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,8"/>
 
-                                <TextBlock Text="Threat Extremes (Last 30 Days)" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <TextBlock Text="Denied Attempts (Recorded Days in Last 30 Days)" TextWrapping="Wrap" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,4"/>
 
                                 <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions>
@@ -215,7 +223,7 @@
                         <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                             <StackPanel Spacing="16">
                                 <TextBlock Text="Historical Threat Breakdown" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                <TextBlock Text="Daily log of all blocked access attempts since system deployment." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                <TextBlock Text="Retained database records only; purged and unsynchronized logs are not included." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
 
                                 <Border Background="#0AFFFFFF" CornerRadius="8" BorderBrush="#10FFFFFF" BorderThickness="1" Margin="0,8,0,0">
                                     <ListView x:Name="HistoricalThreatsListView" MaxHeight="250" Background="Transparent" Padding="0">
@@ -239,7 +247,7 @@
                         <!-- Valid Entries by Date -->
                         <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                             <StackPanel Spacing="16">
-                                <TextBlock Text="Valid Entries by Date" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock Text="Entries: Last 7 Recorded Dates" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" Margin="0"/>
                                 <ItemsControl x:Name="DailyEntriesItemsControl">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="local:StatItem">
@@ -275,7 +283,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                 <TextBlock Text="Daily Campus Traffic" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,4"/>
-                                <TextBlock Text="Double-click a date to view full student logs and apply filters." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="CampusLedgerNote" Text="Daily totals cover all retained gate logs. Explorer: latest 500 rows, or up to 10,000 for a selected date." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <Button Content="Export to Excel" Click="UnivExportButton_Click" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#101010" BorderBrush="#30FFFFFF" BorderThickness="1" FontWeight="SemiBold"/>
@@ -302,7 +310,7 @@
                                         <TextBlock Grid.Column="0" Text="Date" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                         <TextBlock Grid.Column="1" Text="Total Scans" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                         <TextBlock Grid.Column="2" Text="Granted" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                        <TextBlock Grid.Column="3" Text="Denied / Blocked" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="3" Text="Denied" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                     </Grid>
                                 </Border>
 
@@ -333,7 +341,7 @@
             <!-- ========================================================= -->
             <!-- VIEW 2: EVENT ANALYTICS                                   -->
             <!-- ========================================================= -->
-            <Grid x:Name="EventViewGrid" Grid.Row="1" ColumnSpacing="24" Visibility="Collapsed">
+            <Grid x:Name="EventViewGrid" Grid.Row="2" ColumnSpacing="24" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition x:Name="EventRow1" Height="*"/>
                     <RowDefinition x:Name="EventRow2" Height="0"/>
@@ -351,6 +359,7 @@
                         <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                             <StackPanel Spacing="16">
                                 <TextBlock Text="Event Report Configuration" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock x:Name="EventReportNote" Text="Select an event." TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
 
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="Select Event Database" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
@@ -364,6 +373,11 @@
                                                     HorizontalAlignment="Stretch" 
                                                     Height="36"/>
                                 </StackPanel>
+                                <Button Content="Attendance Requirements" Click="CompletionRequirements_Click" HorizontalAlignment="Stretch"/>
+                                <Button Content="Completion Review" Click="CompletionReview_Click" HorizontalAlignment="Stretch"/>
+                                <Button Click="CompletionExport_Click" HorizontalAlignment="Stretch" ToolTipService.ToolTip="Export completion report">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE896;" FontSize="16"/><TextBlock Text="Export Completion"/></StackPanel>
+                                </Button>
                             </StackPanel>
                         </Border>
 
@@ -378,14 +392,14 @@
                                     </Grid.ColumnDefinitions>
                                     <Border Grid.Column="0" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
                                         <StackPanel>
-                                            <TextBlock Text="Total Checked-In" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Unique Arrivals" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
                                             <TextBlock x:Name="AttendedCountText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Grid.Column="1" Background="#0AFFFFFF" CornerRadius="12" Padding="20">
                                         <StackPanel>
-                                            <TextBlock Text="Turnout Rate" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
-                                            <TextBlock x:Name="TurnoutRateText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="#34D399"/>
+                                            <TextBlock Text="Current Roster Turnout" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="TurnoutRateText" Text="--" FontSize="36" FontWeight="Bold" Margin="0,4,0,0" Foreground="White"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -399,12 +413,12 @@
                         <!-- Engagement & Retention -->
                         <Border Padding="32" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                             <StackPanel Spacing="16">
-                                <TextBlock Text="Retention &amp; Security" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                <TextBlock Text="Recorded Attendance State" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" Margin="0"/>
 
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="Full-Duration Stay Rate:" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                    <TextBlock Text="Attendees Whose Last Scan Is PRESENT:" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
                                     <TextBlock x:Name="RetentionRateText" Text="--" FontSize="32" FontWeight="Bold" Foreground="#60A5FA"/>
-                                    <TextBlock x:Name="RetentionSubText" Text="-- out of -- attendees completed the event" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                    <TextBlock x:Name="RetentionSubText" Text="No event selected" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
                                 </StackPanel>
 
                                 <StackPanel Spacing="4" Margin="0,8,0,0">
@@ -519,8 +533,9 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <ComboBox x:Name="FilterStatusComboBox" SelectedIndex="0" Width="190" SelectionChanged="Filter_SelectionChanged">
                                         <ComboBoxItem Content="All Attendees"/>
-                                        <ComboBoxItem Content="Completed Event"/>
-                                        <ComboBoxItem Content="Incomplete / Left Early"/>
+                                        <ComboBoxItem Content="Last scan: PRESENT"/>
+                                        <ComboBoxItem Content="Last scan: DEPARTED"/>
+                                        <ComboBoxItem Content="Unresolved"/>
                                     </ComboBox>
                                     <ComboBox x:Name="FilterTimeComboBox" SelectedIndex="0" Width="140" SelectionChanged="Filter_SelectionChanged">
                                         <ComboBoxItem Content="All Times"/>
@@ -552,7 +567,7 @@
                                         <TextBlock Grid.Column="1" Text="Student Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                         <TextBlock Grid.Column="2" Text="Course &amp; Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                         <TextBlock Grid.Column="3" Text="Action" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                        <TextBlock Grid.Column="4" Text="Completion Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                        <TextBlock Grid.Column="4" Text="Last Recorded State" TextWrapping="Wrap" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                     </Grid>
                                 </Border>
 
@@ -586,7 +601,7 @@
                                                 <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
 
                                                 <Border Grid.Column="4" Background="#10FFFFFF" CornerRadius="6" Padding="12,6" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                                    <TextBlock Text="{x:Bind CompletionStatus}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
+                                                    <TextBlock Text="{x:Bind CompletionStatus}" TextWrapping="Wrap" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
                                                 </Border>
                                             </Grid>
                                         </DataTemplate>
@@ -745,8 +760,9 @@
                         <ComboBox x:Name="EventPopupSectionFilter" PlaceholderText="Section" Width="130" SelectionChanged="EventPopupFilter_Changed"/>
                         <ComboBox x:Name="EventPopupStatusFilter" SelectedIndex="0" Width="190" SelectionChanged="EventPopupFilter_Changed">
                             <ComboBoxItem Content="All Attendees"/>
-                            <ComboBoxItem Content="Completed Event"/>
-                            <ComboBoxItem Content="Incomplete / Left Early"/>
+                            <ComboBoxItem Content="Last scan: PRESENT"/>
+                            <ComboBoxItem Content="Last scan: DEPARTED"/>
+                            <ComboBoxItem Content="Unresolved"/>
                         </ComboBox>
                         <Button Content="Clear Filters" Click="EventPopupClear_Click" Background="Transparent" BorderThickness="1" BorderBrush="#30FFFFFF"/>
                     </StackPanel>
@@ -772,7 +788,7 @@
                                 <TextBlock Grid.Column="1" Text="Student Name" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="2" Text="Course &amp; Section" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                                 <TextBlock Grid.Column="3" Text="Action" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
-                                <TextBlock Grid.Column="4" Text="Completion Status" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
+                                <TextBlock Grid.Column="4" Text="Last Recorded State" TextWrapping="Wrap" Style="{StaticResource DataLabelStyle}" FontWeight="Bold"/>
                             </Grid>
                         </Border>
 
@@ -807,7 +823,7 @@
                                         <TextBlock Grid.Column="3" Text="{x:Bind Action}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
 
                                         <Border Grid.Column="4" Background="#10FFFFFF" CornerRadius="6" Padding="12,6" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind CompletionStatus}" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
+                                            <TextBlock Text="{x:Bind CompletionStatus}" TextWrapping="Wrap" Style="{StaticResource BodyTextStyle}" Foreground="{x:Bind CompletionColor}" FontWeight="Bold" FontSize="13"/>
                                         </Border>
                                     </Grid>
                                 </DataTemplate>
@@ -829,8 +845,8 @@
                         <CheckBox x:Name="ExportColName" Content="Student Name" IsChecked="True"/>
                         <CheckBox x:Name="ExportColCourse" Content="Course" IsChecked="True"/>
                         <CheckBox x:Name="ExportColSection" Content="Section" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColAction" Content="Latest Action (Present/Departed)" IsChecked="True"/>
-                        <CheckBox x:Name="ExportColStatus" Content="Event Completion Status" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColAction" Content="Latest Action Within Filters" IsChecked="True"/>
+                        <CheckBox x:Name="ExportColStatus" Content="Last Recorded State (Whole Event)" IsChecked="True"/>
                     </StackPanel>
                 </Border>
 

@@ -80,12 +80,6 @@ public sealed class VerificationEngine
             if (student != null)
             {
                 student.EntryState = OfflineCacheService.GetPendingStudentEntryState(student.StudentId) ?? student.EntryState;
-                var localCache = OfflineCacheService.GetCachedStudents().FirstOrDefault(s => s.StudentId == student.StudentId);
-                if (localCache != null)
-                {
-                    student.FailedPinAttempts = localCache.FailedPinAttempts;
-                    student.PinLocked = localCache.PinLocked;
-                }
             }
         }
 
@@ -210,9 +204,23 @@ public sealed class VerificationEngine
             return Denied(uid, student, "INVALID CREDENTIAL", "QR credential has been replaced or does not match.", "QR_REPLACED_OR_MISMATCH", "QR fallback denied: credential mismatch.");
         }
 
+        PinState pinState;
+        try
+        {
+            pinState = await _database.PreparePinStateAsync(student!, isOffline);
+            student!.FailedPinAttempts = pinState.Attempts;
+            student.PinLocked = pinState.Locked;
+            OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, pinState.Attempts, pinState.Locked);
+        }
+        catch
+        {
+            return Denied(uid, student, "VERIFICATION UNAVAILABLE", "PIN security state needs synchronization. Please contact security personnel.",
+                "PIN_SYNC_PENDING", "PIN state could not be confirmed; no access granted.");
+        }
         authTimer.Stop();
         var session = new VerificationSession
         {
+            PinState = pinState,
             Student = student!,
             Uid = uid,
             Mode = mode,
@@ -277,31 +285,42 @@ public sealed class VerificationEngine
         StudentRecord student = session.Student;
         string scanTime = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss tt");
 
-        if (!PinHasher.VerifyPin(pin, student.PinSalt, student.PinHash))
+        PinAttemptResult pinResult;
+        try
         {
-            int failedAttempts = student.FailedPinAttempts + 1;
-            bool locked = failedAttempts >= 3;
+            dbTimer.Start();
+            pinResult = await _database.SubmitSecurePinAsync(session, pin);
+            dbTimer.Stop();
+            dbQueryMs = session.IsOffline ? 0 : dbTimer.Elapsed.TotalMilliseconds;
+        }
+        catch
+        {
+            return Denied(session.Uid, student, "CONFIRMATION PENDING", "PIN attempt could not be confirmed. Please reconnect and scan again.",
+                "PIN_SYNC_PENDING", "PIN persistence or synchronization failed; no offline grant inferred.");
+        }
+        session.PinState = pinResult.State;
+        student.FailedPinAttempts = pinResult.State.Attempts;
+        student.PinLocked = pinResult.State.Locked;
+        OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, student.FailedPinAttempts, student.PinLocked);
+        if (pinResult.Error == "PIN_STATE_CHANGED")
+            return Denied(session.Uid, student, "PLEASE SCAN AGAIN", "PIN security settings changed. Start a new verification attempt.",
+                "PIN_STATE_CHANGED", "PIN reset or credential replacement invalidated this session.");
 
-            student.FailedPinAttempts = failedAttempts;
-            student.PinLocked = locked;
+        if (!pinResult.Accepted)
+        {
+            int failedAttempts = pinResult.State.Attempts;
+            bool locked = pinResult.State.Locked;
 
             string error = locked ? "PIN_LOCKED" : "PIN_FAILURE";
 
-            if (!session.IsOffline)
+            if (!session.IsOffline && locked)
             {
                 try
                 {
-                    dbTimer.Start();
-                    await _database.UpdatePinFailureAsync(student.StudentId, failedAttempts, locked);
-                    dbTimer.Stop();
-                    dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
-                    if (locked) await _database.AddAlertAsync(student.StudentId, error, $"{student.FullName} reached three failed PIN attempts and has been locked.");
+                    await _database.AddAlertAsync(student.StudentId, error, $"{student.FullName} reached three failed PIN attempts and has been locked.");
                 }
-                catch { session.IsOffline = true; }
+                catch { /* Alert failure must not change the confirmed PIN decision. */ }
             }
-
-            // UNCONDITIONAL LOCAL STATE UPDATE: Always lock them out in RAM cache immediately
-            OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, failedAttempts, locked);
 
             authTimer.Stop();
             session.PinWorkflowMs = uiPinTimeMs;
@@ -314,24 +333,6 @@ public sealed class VerificationEngine
             if (!locked) session.NextStep = VerificationStep.RequiresPin;
             return Denied(session.Uid, student, "ACCESS DENIED", locked ? "PIN locked after three failed attempts" : $"Incorrect PIN ({failedAttempts}/3)", error, $"{scanTime} | {student.StudentId} | {student.FullName} | DENIED | {error}", retrySession: locked ? null : session);
         }
-
-        if (!session.IsOffline)
-        {
-            try
-            {
-                dbTimer.Restart();
-                await _database.UpdatePinFailureAsync(student.StudentId, 0, false);
-                dbTimer.Stop();
-                dbQueryMs = dbTimer.Elapsed.TotalMilliseconds;
-            }
-            catch { session.IsOffline = true; }
-        }
-
-        // UNCONDITIONAL LOCAL STATE UPDATE: Clear lockouts
-        OfflineCacheService.UpdateCachedStudentPinProgress(student.StudentId, 0, false);
-
-        student.FailedPinAttempts = 0;
-        student.PinLocked = false;
 
         authTimer.Stop();
         session.PinWorkflowMs = uiPinTimeMs;

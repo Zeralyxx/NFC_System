@@ -14,6 +14,8 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../NFC_System/EventCompletion.cs" Link="Production/EventCompletion.cs" />
+    <Compile Include="../NFC_System/EventCompletionDialogs.cs" Link="Production/EventCompletionDialogs.cs" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1721" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
@@ -22,7 +24,11 @@
     <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs" />
     <Compile Include="../NFC_System/GraduationClearance.cs" Link="Production/GraduationClearance.cs" />
     <Compile Include="../NFC_System/GraduationDialogs.cs" Link="Production/GraduationDialogs.cs" />
+    <Compile Include="../NFC_System/DirectoryRefinementBar.xaml.cs" Link="Production/DirectoryRefinementBar.xaml.cs" />
+    <Page Include="../NFC_System/DirectoryRefinementBar.xaml" Link="DirectoryRefinementBar.xaml" />
     <Content Include="../NFC_System/Assets/Branding/Icon.png" Link="Assets/Branding/Icon.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../NFC_System/Assets/Branding/AppIcon.ico" Link="Assets/Branding/AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../NFC_System/MainWindow.xaml" Link="Fixtures/MainWindow.xaml.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../NFC_System/EventReportsWindow.xaml" Link="Fixtures/EventReportsWindow.xaml.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

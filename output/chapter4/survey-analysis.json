@@ -1,0 +1,2131 @@
+{
+  "source": "C:/Users/justine mendoza/Documents/METRICS first batch/UnStudent Weighted Mean - Students (1).pdf",
+  "sha256": "59cbbc65ae0e5d625af1f7f8a87b2f605409de5eaeb1e754a66d798cdb480ee5",
+  "groups": [
+    {
+      "name": "Students",
+      "respondents": 70,
+      "categories": [
+        {
+          "name": "Functional Suitability",
+          "items": 5,
+          "mean": 3.7714285714285714,
+          "item_sd_min": 0.33472498611028517,
+          "item_sd_max": 0.5383269623261935,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Performance Efficiency",
+          "items": 4,
+          "mean": 3.7607142857142857,
+          "item_sd_min": 0.4103259033241449,
+          "item_sd_max": 0.4831867007225075,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Usability",
+          "items": 5,
+          "mean": 3.7542857142857144,
+          "item_sd_min": 0.4288094577086753,
+          "item_sd_max": 0.5324184329595493,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Reliability",
+          "items": 5,
+          "mean": 3.7314285714285718,
+          "item_sd_min": 0.4103259033241449,
+          "item_sd_max": 0.47487914681699034,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Security",
+          "items": 5,
+          "mean": 3.7857142857142856,
+          "item_sd_min": 0.3,
+          "item_sd_max": 0.5260557897006277,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "items": [
+        {
+          "category": "Functional Suitability",
+          "number": 1,
+          "question": "The system effectively meets the functional requirement of verifying my student identity using NFC, PIN, and QR codes.",
+          "frequencies": [
+            56,
+            13,
+            1,
+            0
+          ],
+          "n": 70,
+          "score": 265,
+          "mean": 3.7857142857142856,
+          "sample_sd": 0.44698205854656614,
+          "population_sd": 0.44377784477168764,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 2,
+          "question": "The system performs the attendance and entry verification tasks accurately and completely.",
+          "frequencies": [
+            61,
+            9,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 271,
+          "mean": 3.8714285714285714,
+          "sample_sd": 0.3371418043988196,
+          "population_sd": 0.33472498611028517,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 3,
+          "question": "The features of the system are highly relevant to the problem of monitoring student attendance and campus entry.",
+          "frequencies": [
+            55,
+            13,
+            2,
+            0
+          ],
+          "n": 70,
+          "score": 263,
+          "mean": 3.757142857142857,
+          "sample_sd": 0.4944830204940669,
+          "population_sd": 0.4909382936411309,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 4,
+          "question": "The system provides appropriate outputs (e.g., visual or audio confirmation) when I input my credentials.",
+          "frequencies": [
+            51,
+            19,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 261,
+          "mean": 3.7285714285714286,
+          "sample_sd": 0.44790748822990484,
+          "population_sd": 0.4446966404649538,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 5,
+          "question": "The overall functionality successfully aligns with the objective of providing a secure attendance system.",
+          "frequencies": [
+            53,
+            14,
+            3,
+            0
+          ],
+          "n": 70,
+          "score": 260,
+          "mean": 3.7142857142857144,
+          "sample_sd": 0.5422138500750885,
+          "population_sd": 0.5383269623261935,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 1,
+          "question": "The system responds quickly when I tap my NFC card, enter my PIN, or scan my QR code.",
+          "frequencies": [
+            55,
+            15,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 265,
+          "mean": 3.7857142857142856,
+          "sample_sd": 0.4132885836992707,
+          "population_sd": 0.4103259033241449,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 2,
+          "question": "The system performs well and verifies my entry smoothly even when there is a long line of students.",
+          "frequencies": [
+            51,
+            19,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 261,
+          "mean": 3.7285714285714286,
+          "sample_sd": 0.44790748822990484,
+          "population_sd": 0.4446966404649538,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 3,
+          "question": "The system maintains consistent verification speed and performance throughout the entire entry process.",
+          "frequencies": [
+            53,
+            17,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 263,
+          "mean": 3.757142857142857,
+          "sample_sd": 0.4319055950832105,
+          "population_sd": 0.4288094577086753,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 4,
+          "question": "The overall speed and performance of the system meet my expectations for an attendance process.",
+          "frequencies": [
+            56,
+            12,
+            2,
+            0
+          ],
+          "n": 70,
+          "score": 264,
+          "mean": 3.7714285714285714,
+          "sample_sd": 0.48667545866870393,
+          "population_sd": 0.4831867007225075,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 1,
+          "question": "The physical interface of the verification terminal (keypad, scanner, screen) is intuitive and easy to navigate.",
+          "frequencies": [
+            53,
+            17,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 263,
+          "mean": 3.757142857142857,
+          "sample_sd": 0.4319055950832105,
+          "population_sd": 0.4288094577086753,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 2,
+          "question": "The system provides clear instructions and feedback on what step to do next (e.g., when to tap or scan).",
+          "frequencies": [
+            52,
+            18,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 262,
+          "mean": 3.742857142857143,
+          "sample_sd": 0.4402145157486023,
+          "population_sd": 0.43705881545081016,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 3,
+          "question": "The design and layout of the verification terminal enhance my overall user experience.",
+          "frequencies": [
+            53,
+            17,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 263,
+          "mean": 3.757142857142857,
+          "sample_sd": 0.4319055950832105,
+          "population_sd": 0.4288094577086753,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 4,
+          "question": "I was able to learn how to operate the system (tap, PIN, scan) with minimal to no training.",
+          "frequencies": [
+            54,
+            13,
+            3,
+            0
+          ],
+          "n": 70,
+          "score": 261,
+          "mean": 3.7285714285714286,
+          "sample_sd": 0.5362626592925829,
+          "population_sd": 0.5324184329595493,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 5,
+          "question": "The system supports accessibility and is straightforward enough to be used by all types of students.",
+          "frequencies": [
+            58,
+            9,
+            3,
+            0
+          ],
+          "n": 70,
+          "score": 265,
+          "mean": 3.7857142857142856,
+          "sample_sd": 0.5077046140772009,
+          "population_sd": 0.5040651075536385,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 1,
+          "question": "The system processes my verification consistently without unexpected failures or freezing.",
+          "frequencies": [
+            46,
+            24,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 256,
+          "mean": 3.657142857142857,
+          "sample_sd": 0.4780914437337575,
+          "population_sd": 0.4746642207381757,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 2,
+          "question": "If a minor error occurs (e.g., wrong PIN entered), the system allows me to recover easily and try again.",
+          "frequencies": [
+            53,
+            17,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 263,
+          "mean": 3.757142857142857,
+          "sample_sd": 0.4319055950832105,
+          "population_sd": 0.4288094577086753,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 3,
+          "question": "I trust that the system accurately records and maintains the integrity of my attendance data.",
+          "frequencies": [
+            47,
+            23,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 257,
+          "mean": 3.6714285714285713,
+          "sample_sd": 0.47308511264837305,
+          "population_sd": 0.46969377779353133,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 4,
+          "question": "The system successfully reads my inputs under different physical conditions (e.g., fast tapping, minor screen glare).",
+          "frequencies": [
+            57,
+            11,
+            2,
+            0
+          ],
+          "n": 70,
+          "score": 265,
+          "mean": 3.7857142857142856,
+          "sample_sd": 0.4783079216455679,
+          "population_sd": 0.47487914681699034,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 5,
+          "question": "The system demonstrates stable performance from the start to the end of my verification process.",
+          "frequencies": [
+            55,
+            15,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 265,
+          "mean": 3.7857142857142856,
+          "sample_sd": 0.4132885836992707,
+          "population_sd": 0.4103259033241449,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 1,
+          "question": "The system effectively protects my personal attendance data from unauthorized viewing by others in line.",
+          "frequencies": [
+            51,
+            19,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 261,
+          "mean": 3.7285714285714286,
+          "sample_sd": 0.44790748822990484,
+          "population_sd": 0.4446966404649538,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 2,
+          "question": "The two-factor authentication (PIN and QR) successfully confirms my true identity.",
+          "frequencies": [
+            63,
+            7,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 273,
+          "mean": 3.9,
+          "sample_sd": 0.30216609311120096,
+          "population_sd": 0.3,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 3,
+          "question": "I feel confident that my sensitive credentials (NFC, PIN, QR) are handled securely during verification.",
+          "frequencies": [
+            53,
+            17,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 263,
+          "mean": 3.757142857142857,
+          "sample_sd": 0.4319055950832105,
+          "population_sd": 0.4288094577086753,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 4,
+          "question": "The system's design includes measures that prevent common threats, such as others copying or stealing my credentials.",
+          "frequencies": [
+            56,
+            14,
+            0,
+            0
+          ],
+          "n": 70,
+          "score": 266,
+          "mean": 3.8,
+          "sample_sd": 0.4028881241482679,
+          "population_sd": 0.4,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 5,
+          "question": "The multi-factor process successfully maintains the confidentiality and security of my campus entry.",
+          "frequencies": [
+            54,
+            15,
+            0,
+            1
+          ],
+          "n": 70,
+          "score": 262,
+          "mean": 3.742857142857143,
+          "sample_sd": 0.5298540757745541,
+          "population_sd": 0.5260557897006277,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "overall_category_mean": 3.760714285714286,
+      "overall_item_mean": 3.7607142857142857,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "name": "Security Personnel",
+      "respondents": 5,
+      "categories": [
+        {
+          "name": "Functional Suitability",
+          "items": 5,
+          "mean": 3.84,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Performance Efficiency",
+          "items": 4,
+          "mean": 3.45,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.6324555320336759,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Usability",
+          "items": 5,
+          "mean": 3.6,
+          "item_sd_min": 0.39999999999999997,
+          "item_sd_max": 0.7483314773547882,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Reliability",
+          "items": 5,
+          "mean": 3.4799999999999995,
+          "item_sd_min": 0.39999999999999997,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Security",
+          "items": 5,
+          "mean": 3.8,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "items": [
+        {
+          "category": "Functional Suitability",
+          "number": 1,
+          "question": "The system provides me with the necessary on-screen information (e.g., student name, ID number, entry status) to accurately verify the identities of individuals entering the campus.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 2,
+          "question": "The security dashboard correctly logs and displays real-time entry records as students pass through the gate.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 3,
+          "question": "The monitoring features provided by the system are highly relevant to my daily tasks of controlling campus entry and identifying unverified individuals.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 4,
+          "question": "The system provides clear visual or audio alerts on the monitoring screen when access is either successfully granted or denied.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 5,
+          "question": "The overall functionality successfully supports security personnel in enforcing gate protocols more effectively than traditional methods.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 1,
+          "question": "The monitoring screen updates immediately without lag when a student taps their card or enters their PIN at the terminal.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 2,
+          "question": "The dashboard handles rapid, successive entries smoothly, allowing me to continuously monitor a fast-moving queue without system slowdowns.",
+          "frequencies": [
+            1,
+            4,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 16,
+          "mean": 3.2,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 3,
+          "question": "The system maintains a consistent response time and screen performance throughout my shift or the entire evaluation period.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 4,
+          "question": "The speed at which the system processes entries and alerts me to potential issues meets my expectations for an efficient gate monitoring process.",
+          "frequencies": [
+            1,
+            3,
+            1,
+            0
+          ],
+          "n": 5,
+          "score": 15,
+          "mean": 3.0,
+          "sample_sd": 0.7071067811865476,
+          "population_sd": 0.6324555320336759,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 1,
+          "question": "The layout of the security monitoring screen is organized, intuitive, and easy to read at a quick glance.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 2,
+          "question": "The system effectively highlights critical information (e.g., using clear color codes like green for \"Pass\" and red for \"Denied\") so I know exactly when to intervene.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 3,
+          "question": "I was able to learn how to monitor the dashboard and interpret system alerts with minimal to no training.",
+          "frequencies": [
+            2,
+            2,
+            1,
+            0
+          ],
+          "n": 5,
+          "score": 16,
+          "mean": 3.2,
+          "sample_sd": 0.8366600265340756,
+          "population_sd": 0.7483314773547882,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 4,
+          "question": "The student information (e.g., Name, ID Number, Status) displayed on the monitoring screen is clear and easy to read from a comfortable standing distance.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 5,
+          "question": "Navigating the security interface is straightforward enough to be used efficiently by all assigned security personnel, regardless of technical background.",
+          "frequencies": [
+            2,
+            3,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 17,
+          "mean": 3.4,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 1,
+          "question": "The security monitoring dashboard runs consistently without unexpected freezing, crashing, or losing connection.",
+          "frequencies": [
+            1,
+            4,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 16,
+          "mean": 3.2,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 2,
+          "question": "If a minor sync error occurs between the terminal and the monitor, the interface recovers quickly without disrupting the monitoring of the gate.",
+          "frequencies": [
+            2,
+            3,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 17,
+          "mean": 3.4,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 3,
+          "question": "I trust that the alerts and statuses displayed on my screen accurately reflect what is happening at the student terminal in real-time.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 4,
+          "question": "The system reliably and consistently flags suspicious activities (e.g., repeated failed PIN attempts) every time they occur during testing.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 5,
+          "question": "The system demonstrates stable and dependable monitoring capabilities from the start to the end of the evaluation process.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 1,
+          "question": "The monitoring screen displays only the necessary student information to me, preventing the unnecessary exposure of their private data to bystanders.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 2,
+          "question": "The system provides me with enough reliable data to confidently confirm if the person at the gate is the true owner of the credentials.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 3,
+          "question": "I feel confident relying on the system's alerts to prevent unauthorized individuals or outsiders from bypassing the gate.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 4,
+          "question": "The system effectively detects and alerts me to common security threats, such as students passing back IDs for others to use.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 5,
+          "question": "The implementation of this system enhances the overall physical security of the campus compared to traditional visual- check methods.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "overall_category_mean": 3.6339999999999995,
+      "overall_item_mean": 3.641666666666667,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "name": "Faculty / Event Organizer / Admin",
+      "respondents": 5,
+      "categories": [
+        {
+          "name": "Functional Suitability",
+          "items": 5,
+          "mean": 3.8,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Performance Efficiency",
+          "items": 5,
+          "mean": 3.6799999999999997,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.8,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Compatibility",
+          "items": 4,
+          "mean": 3.75,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Usability",
+          "items": 5,
+          "mean": 3.88,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Reliability",
+          "items": 5,
+          "mean": 3.7600000000000002,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Security",
+          "items": 5,
+          "mean": 3.84,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Maintainability",
+          "items": 5,
+          "mean": 3.88,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "name": "Portability",
+          "items": 5,
+          "mean": 3.9200000000000004,
+          "item_sd_min": 0.0,
+          "item_sd_max": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "items": [
+        {
+          "category": "Functional Suitability",
+          "number": 1,
+          "question": "The dashboard provides all necessary features to successfully create, configure, and manage university events.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 2,
+          "question": "The system effectively categorizes and generates accurate attendance records by College, Section, Year Level, and specific Event.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 3,
+          "question": "The system allows me to easily configure and switch between different verification modes as required for specific events or gate protocols.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 4,
+          "question": "The centralized monitoring and alert functions provide relevant and accurate information for administrative oversight.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 5,
+          "question": "Overall, the system's administrative features completely align with the needs of event organizers and faculty members.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 1,
+          "question": "The centralized dashboard loads quickly and reflects real-time gate and event attendance data without noticeable delay.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 2,
+          "question": "Generating complex attendance reports (e.g., filtering by multiple categories) is processed and completed in a reasonable amount of time.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 3,
+          "question": "The system handles multiple administrative actions smoothly, even when receiving rapid data inputs from the verification terminals.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 4,
+          "question": "The dashboard maintains consistent performance and does not slow down when processing or storing large amounts of attendance data.",
+          "frequencies": [
+            3,
+            1,
+            1,
+            0
+          ],
+          "n": 5,
+          "score": 17,
+          "mean": 3.4,
+          "sample_sd": 0.8944271909999159,
+          "population_sd": 0.8,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 5,
+          "question": "The overall speed of the backend system meets my expectations for efficient event and attendance management.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Compatibility",
+          "number": 1,
+          "question": "The exported attendance reports (e.g., CSV , Excel, PDF) are fully compatible with standard office software used by the university.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Compatibility",
+          "number": 2,
+          "question": "The system operates smoothly without negatively interfering with other existing administrative software or network tools.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Compatibility",
+          "number": 3,
+          "question": "The generated data is structured in a way that could easily be integrated with existing university databases in the future.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Compatibility",
+          "number": 4,
+          "question": "The system performs consistently regardless of the type of computer or operating system I use to access the admin dashboard.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 1,
+          "question": "The layout and navigation menus of the centralized dashboard are logical, well-organized, and easy to understand.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 2,
+          "question": "The process of generating reports and filtering attendance lists is straightforward and does not require complex steps.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 3,
+          "question": "I am able to create a new event, assign verification modes, and launch the monitoring screen with minimal effort.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 4,
+          "question": "The system provides clear visual feedback or error messages if I input incomplete or incorrect settings during event creation.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 5,
+          "question": "I would require very minimal training to confidently use all the administrative functions of this system.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 1,
+          "question": "The centralized dashboard operates consistently without unexpected crashes, freezing, or downtime during active monitoring.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 2,
+          "question": "All configured event settings and recorded attendance data are saved securely without unexpected loss of records.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 3,
+          "question": "In the event of a minor disruption (e.g., a brief internet drop), the dashboard recovers quickly and resumes synchronization properly.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 4,
+          "question": "I can trust the system to accurately reflect exactly what is happening at the verification terminals without data discrepancies.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 5,
+          "question": "The administrative system demonstrates a high level of stability from setup to the conclusion of the event evaluation.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 1,
+          "question": "The system requires proper authentication (e.g., secure admin login) before granting access to the centralized dashboard.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 2,
+          "question": "Administrative privileges are strictly enforced, ensuring unauthorized users or students cannot alter event settings or attendance records.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 3,
+          "question": "Sensitive student data within the attendance database is adequately protected from unauthorized viewing or extraction.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 4,
+          "question": "The system architecture prevents common data manipulations, ensuring that generated attendance reports are legitimate and untampered.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 5,
+          "question": "I feel confident that the system provides a secure environment for managing university-level event data.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Maintainability",
+          "number": 1,
+          "question": "The source code is clean, well-structured, and easy to read, following standard coding guidelines and best practices.",
+          "frequencies": [
+            3,
+            2,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 18,
+          "mean": 3.6,
+          "sample_sd": 0.5477225575051661,
+          "population_sd": 0.4898979485566356,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Maintainability",
+          "number": 2,
+          "question": "The codebase is thoroughly documented with clear comments and technical documentation, making it easy for other developers to understand and navigate.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Maintainability",
+          "number": 3,
+          "question": "The system architecture uses modular design principles (e.g., separated components, reusable functions) that make it easy to isolate and update specific features.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Maintainability",
+          "number": 4,
+          "question": "The code allows for seamless debugging, error logging, and troubleshooting when identifying and fixing software bugs or system issues.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Maintainability",
+          "number": 5,
+          "question": "Future updates, modifications, or scaling of the system can be implemented with minimal effort and without breaking existing core functionalities.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Portability",
+          "number": 1,
+          "question": "The dashboard can be easily accessed from different devices (e.g., desktop PC or laptop) without losing essential functionality.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Portability",
+          "number": 2,
+          "question": "The system interface adapts well to different monitor screen sizes and resolutions in various university offices.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Portability",
+          "number": 3,
+          "question": "Accessing the administrative system on a new computer requires no complex installations or difficult setup procedures.",
+          "frequencies": [
+            5,
+            0,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 20,
+          "mean": 4.0,
+          "sample_sd": 0.0,
+          "population_sd": 0.0,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Portability",
+          "number": 4,
+          "question": "The system is flexible enough to be deployed and managed for events located in different buildings or areas across the campus.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        },
+        {
+          "category": "Portability",
+          "number": 5,
+          "question": "Transitioning the management of the system from one administrative user environment to another is a seamless process.",
+          "frequencies": [
+            4,
+            1,
+            0,
+            0
+          ],
+          "n": 5,
+          "score": 19,
+          "mean": 3.8,
+          "sample_sd": 0.4472135954999579,
+          "population_sd": 0.39999999999999997,
+          "interpretation": "Strongly Agree / Highly Satisfactory"
+        }
+      ],
+      "overall_category_mean": 3.8137499999999998,
+      "overall_item_mean": 3.8153846153846156,
+      "interpretation": "Strongly Agree / Highly Satisfactory"
+    },
+    {
+      "name": "Manual Pre-Evaluation",
+      "respondents": 70,
+      "categories": [
+        {
+          "name": "Functional Suitability",
+          "items": 5,
+          "mean": 2.6142857142857143,
+          "item_sd_min": 1.0381498456585236,
+          "item_sd_max": 1.1284810090360857,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "name": "Performance Efficiency",
+          "items": 4,
+          "mean": 1.9607142857142859,
+          "item_sd_min": 0.9062143729802118,
+          "item_sd_max": 0.9963197585235825,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "name": "Usability",
+          "items": 5,
+          "mean": 2.66,
+          "item_sd_min": 0.9209577977877828,
+          "item_sd_max": 1.0603234008007718,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "name": "Reliability",
+          "items": 5,
+          "mean": 2.2914285714285714,
+          "item_sd_min": 0.9284615319583954,
+          "item_sd_max": 1.0641658609407825,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "name": "Security",
+          "items": 5,
+          "mean": 2.331428571428572,
+          "item_sd_min": 1.0629185850136156,
+          "item_sd_max": 1.1303783004113341,
+          "interpretation": "Disagree / Unsatisfactory"
+        }
+      ],
+      "items": [
+        {
+          "category": "Functional Suitability",
+          "number": 1,
+          "question": "The manual process provides a clear way to verify my identity when attending a university event.",
+          "frequencies": [
+            21,
+            13,
+            21,
+            15
+          ],
+          "n": 70,
+          "score": 180,
+          "mean": 2.5714285714285716,
+          "sample_sd": 1.136628992168733,
+          "population_sd": 1.1284810090360857,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 2,
+          "question": "The manual process accurately and completely records my entry information.",
+          "frequencies": [
+            20,
+            18,
+            18,
+            14
+          ],
+          "n": 70,
+          "score": 184,
+          "mean": 2.6285714285714286,
+          "sample_sd": 1.1056040197318409,
+          "population_sd": 1.097678440702774,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 3,
+          "question": "The paper-based attendance procedures are relevant to monitoring student attendance.",
+          "frequencies": [
+            19,
+            20,
+            20,
+            11
+          ],
+          "n": 70,
+          "score": 187,
+          "mean": 2.6714285714285713,
+          "sample_sd": 1.045645609755441,
+          "population_sd": 1.0381498456585236,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 4,
+          "question": "The manual process provides clear confirmation that my attendance has been recorded (e.g., staff confirmation or completed sign-in).",
+          "frequencies": [
+            18,
+            11,
+            28,
+            13
+          ],
+          "n": 70,
+          "score": 174,
+          "mean": 2.4857142857142858,
+          "sample_sd": 1.0732971972878733,
+          "population_sd": 1.065603211369801,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Functional Suitability",
+          "number": 5,
+          "question": "Overall, the manual process meets the basic requirements for recording event attendance.",
+          "frequencies": [
+            21,
+            19,
+            19,
+            11
+          ],
+          "n": 70,
+          "score": 190,
+          "mean": 2.7142857142857144,
+          "sample_sd": 1.065164573837385,
+          "population_sd": 1.057528887046957,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 1,
+          "question": "The manual process is completed quickly when I sign the attendance sheet.",
+          "frequencies": [
+            9,
+            9,
+            34,
+            18
+          ],
+          "n": 70,
+          "score": 149,
+          "mean": 2.1285714285714286,
+          "sample_sd": 0.9467171129357839,
+          "population_sd": 0.9399305228340561,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 2,
+          "question": "The manual process remains manageable even when there is a long line of students.",
+          "frequencies": [
+            6,
+            8,
+            30,
+            26
+          ],
+          "n": 70,
+          "score": 134,
+          "mean": 1.9142857142857144,
+          "sample_sd": 0.9127575220154908,
+          "population_sd": 0.9062143729802118,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 3,
+          "question": "The manual process maintains a consistent processing speed throughout the attendance procedure.",
+          "frequencies": [
+            9,
+            5,
+            27,
+            29
+          ],
+          "n": 70,
+          "score": 134,
+          "mean": 1.9142857142857144,
+          "sample_sd": 1.0035134964085535,
+          "population_sd": 0.9963197585235825,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Performance Efficiency",
+          "number": 4,
+          "question": "The overall speed of the manual process meets my expectations for event attendance.",
+          "frequencies": [
+            9,
+            3,
+            29,
+            29
+          ],
+          "n": 70,
+          "score": 132,
+          "mean": 1.8857142857142857,
+          "sample_sd": 0.9860307950457065,
+          "population_sd": 0.9789623828006752,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 1,
+          "question": "The steps for paper sign-in are easy to understand and follow.",
+          "frequencies": [
+            19,
+            21,
+            23,
+            7
+          ],
+          "n": 70,
+          "score": 192,
+          "mean": 2.742857142857143,
+          "sample_sd": 0.9733509173374079,
+          "population_sd": 0.966373401445015,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 2,
+          "question": "The instructions provided by the event staff clearly explain what I need to do.",
+          "frequencies": [
+            16,
+            23,
+            21,
+            10
+          ],
+          "n": 70,
+          "score": 185,
+          "mean": 2.642857142857143,
+          "sample_sd": 0.9932484296812063,
+          "population_sd": 0.9861282774527038,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 3,
+          "question": "The arrangement of the sign-in sheet, identification-checking procedure, and related materials makes the process easy to use.",
+          "frequencies": [
+            10,
+            23,
+            26,
+            11
+          ],
+          "n": 70,
+          "score": 172,
+          "mean": 2.4571428571428573,
+          "sample_sd": 0.9276073989260991,
+          "population_sd": 0.9209577977877828,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 4,
+          "question": "I can complete the paper sign-in process with minimal or no assistance.",
+          "frequencies": [
+            19,
+            24,
+            14,
+            13
+          ],
+          "n": 70,
+          "score": 189,
+          "mean": 2.7,
+          "sample_sd": 1.0679792648478375,
+          "population_sd": 1.0603234008007718,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Usability",
+          "number": 5,
+          "question": "The manual process is straightforward enough to be used by students with different levels of familiarity with the procedure.",
+          "frequencies": [
+            20,
+            24,
+            15,
+            11
+          ],
+          "n": 70,
+          "score": 193,
+          "mean": 2.757142857142857,
+          "sample_sd": 1.041678053767988,
+          "population_sd": 1.0342107312993294,
+          "interpretation": "Agree / Satisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 1,
+          "question": "My attendance is recorded consistently without being missed, duplicated, or improperly recorded.",
+          "frequencies": [
+            13,
+            12,
+            29,
+            16
+          ],
+          "n": 70,
+          "score": 162,
+          "mean": 2.3142857142857145,
+          "sample_sd": 1.0291808638512467,
+          "population_sd": 1.021803128128438,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 2,
+          "question": "If an error occurs in the written information or identity check, it can be corrected before the record is finalized.",
+          "frequencies": [
+            12,
+            15,
+            31,
+            12
+          ],
+          "n": 70,
+          "score": 167,
+          "mean": 2.3857142857142857,
+          "sample_sd": 0.9674837697452588,
+          "population_sd": 0.9605483128008138,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 3,
+          "question": "I trust that the paper attendance sheet or manual record accurately reflects my attendance.",
+          "frequencies": [
+            9,
+            21,
+            27,
+            13
+          ],
+          "n": 70,
+          "score": 166,
+          "mean": 2.3714285714285714,
+          "sample_sd": 0.9351653123863626,
+          "population_sd": 0.9284615319583954,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 4,
+          "question": "The manual process can still be completed under different physical conditions, such as crowded queues or limited writing space.",
+          "frequencies": [
+            12,
+            10,
+            25,
+            23
+          ],
+          "n": 70,
+          "score": 151,
+          "mean": 2.157142857142857,
+          "sample_sd": 1.0718494687426459,
+          "population_sd": 1.0641658609407825,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Reliability",
+          "number": 5,
+          "question": "The manual verification and attendance process remains stable from the beginning to the end of the procedure.",
+          "frequencies": [
+            12,
+            13,
+            24,
+            21
+          ],
+          "n": 70,
+          "score": 156,
+          "mean": 2.2285714285714286,
+          "sample_sd": 1.0655532491190078,
+          "population_sd": 1.057914776089921,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 1,
+          "question": "The manual process limits unnecessary exposure of my personal information on attendance sheets.",
+          "frequencies": [
+            13,
+            15,
+            23,
+            19
+          ],
+          "n": 70,
+          "score": 162,
+          "mean": 2.3142857142857145,
+          "sample_sd": 1.0705931870961671,
+          "population_sd": 1.0629185850136156,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 2,
+          "question": "Manual identity checking provides enough information to verify that the person presenting the identification is the rightful student.",
+          "frequencies": [
+            17,
+            9,
+            24,
+            20
+          ],
+          "n": 70,
+          "score": 163,
+          "mean": 2.3285714285714287,
+          "sample_sd": 1.1385399825765743,
+          "population_sd": 1.1303783004113341,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 3,
+          "question": "I feel confident that my student and attendance information is handled securely during the manual process.",
+          "frequencies": [
+            14,
+            14,
+            23,
+            19
+          ],
+          "n": 70,
+          "score": 163,
+          "mean": 2.3285714285714287,
+          "sample_sd": 1.086430514547506,
+          "population_sd": 1.0786423817721524,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 4,
+          "question": "The manual process includes measures that help prevent common problems such as proxy attendance, or unauthorized signing.",
+          "frequencies": [
+            14,
+            16,
+            17,
+            23
+          ],
+          "n": 70,
+          "score": 161,
+          "mean": 2.3,
+          "sample_sd": 1.1338021195856054,
+          "population_sd": 1.1256744010338233,
+          "interpretation": "Disagree / Unsatisfactory"
+        },
+        {
+          "category": "Security",
+          "number": 5,
+          "question": "The attendance process adequately protects the confidentiality and security of event attendance information.",
+          "frequencies": [
+            15,
+            15,
+            22,
+            18
+          ],
+          "n": 70,
+          "score": 167,
+          "mean": 2.3857142857142857,
+          "sample_sd": 1.0940266952583415,
+          "population_sd": 1.086184108872592,
+          "interpretation": "Disagree / Unsatisfactory"
+        }
+      ],
+      "overall_category_mean": 2.371571428571429,
+      "overall_item_mean": 2.3886904761904764,
+      "interpretation": "Disagree / Unsatisfactory"
+    }
+  ],
+  "notes": [
+    "Category means are calculated from unrounded item means.",
+    "Overall group means give equal weight to categories, consistent with the worksheet description.",
+    "The administrative worksheet displays overall 3.8. The unrounded equal-category mean is 3.81375, displayed as 3.81 when reporting two decimal places.",
+    "Student usability category recomputes to 3.754285714 (3.75); averaging the printed rounded item means yields 3.76.",
+    "Chapter 3 uses N in the SD denominator. The chapter uses population-form item SD; the audit also preserves sample-form SD for comparison with the worksheet.",
+    "Worksheet category SD values appear to average item sample SDs; such an average is not the SD of respondents' category scores.",
+    "Item-frequency tables do not identify respondent-level cross-item scores; composite-score SD cannot be recovered.",
+    "No manual/system participant linkage or pre-evaluation timing is assumed."
+  ]
+}

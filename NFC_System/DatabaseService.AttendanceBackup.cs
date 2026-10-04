@@ -47,7 +47,7 @@ public sealed partial class DatabaseService
                 }
                 snapshot.Tables.Add(table, rows);
             }
-            foreach (string table in AttendanceBackupSnapshot.TableNames.Skip(5))
+            foreach (string table in AttendanceBackupSnapshot.LogTableNames)
             {
                 using var counter = new MySqlCommand("SELECT AUTO_INCREMENT FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=@table", connection, transaction);
                 counter.Parameters.AddWithValue("@table", table);
@@ -107,7 +107,7 @@ public sealed partial class DatabaseService
                 await clearBootstrap.ExecuteNonQueryAsync();
 
             int restored = 0;
-            foreach (string table in AttendanceBackupSnapshot.TableNames)
+            foreach (string table in snapshot.RequiredTables)
             {
                 var columns = new HashSet<string>(StringComparer.Ordinal);
                 using (var schema = new MySqlCommand($"SELECT * FROM {table} LIMIT 0", connection, transaction))
@@ -147,7 +147,7 @@ public sealed partial class DatabaseService
             }
             // Reserve historical IDs even when their old log rows were purged. Do not reuse cloud document IDs.
             // InnoDB keeps the allocated counter after this transaction-local reservation row is deleted.
-            foreach (string table in AttendanceBackupSnapshot.TableNames.Skip(5))
+            foreach (string table in AttendanceBackupSnapshot.LogTableNames)
             {
                 long reserved = snapshot.NextLogIds[table] - 1;
                 if (reserved <= 0 || snapshot.Tables[table].Any(row => row["id"].GetInt64() == reserved)) continue;
@@ -169,7 +169,7 @@ public sealed partial class DatabaseService
         if (value.ValueKind == JsonValueKind.Number) return value.TryGetInt64(out long integer) ? (object)integer : value.GetDouble();
         if (value.ValueKind != JsonValueKind.String) throw new InvalidDataException("Unsupported backup field type.");
         string text = value.GetString()!;
-        return column is "timestamp" or "last_seen" or "time_in" or "time_out"
+        return column is "timestamp" or "last_seen" or "time_in" or "time_out" or "start_time" or "end_time" or "coverage_since" or "scan_time" or "reviewed_at_utc"
             ? DateTime.Parse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind) : text;
     }
 }

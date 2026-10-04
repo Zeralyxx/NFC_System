@@ -6,6 +6,8 @@ using System.Text.Json;
 using ZXing;
 using ZXing.Common;
 
+if (args.Contains("--qr-stress")) return QrDecodeDiagnostics.Run();
+
 AppSession.IsLoggedIn = true;
 AppSession.IsAdmin = true;
 AppSession.CurrentStaffRoleLabel = "Admin";
@@ -53,6 +55,16 @@ async Task<VerificationSession> HighSession(VerificationEngine engine)
     Assert(pinResult.Step == VerificationStep.RequiresQr && !pinResult.IsGranted);
     return pinResult.Session!;
 }
+await Test("Unconfirmed online PIN submission is denied without switching to offline or granting", async () =>
+{
+    var f = Fixture(cache: true);
+    var begin = await f.Engine.BeginNfcVerificationAsync("AA:01", VerificationMode.Standard, TransactionType.Entry);
+    f.Db.FailPinPersistence = true;
+    var result = await f.Engine.SubmitPinAsync(begin.Session!, "1234");
+    Assert(!result.IsGranted && result.ErrorCategory == "PIN_SYNC_PENDING");
+    Assert(!begin.Session!.IsOffline && begin.Session.NextStep == VerificationStep.Completed);
+    Assert(f.A.EntryState == "OUTSIDE" && !f.Db.Logs.Any(x => x.Granted));
+});
 string Encode(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 string SignedCustom(QrCredentialPayload payload)
 {
@@ -111,6 +123,24 @@ await Test("Key rotation overlap and removal", () => Check(() =>
     trust.PublicCertificates.Remove(otherCertificate.Thumbprint);
     Assert(!qr.TryVerify(rotated, out _, out _));
 }));
+await Test("Online database PIN lock cannot be cleared by an older unlocked cache", async () =>
+{
+    var f = Fixture(cache: true);
+    f.A.PinLocked = true;
+    f.A.FailedPinAttempts = 3;
+    var outcome = await f.Engine.BeginNfcVerificationAsync("AA:01", VerificationMode.Standard, TransactionType.Entry);
+    Assert(outcome.ErrorCategory == "PIN_LOCKED" && outcome.Session == null,
+        $"Database was locked, but verification returned {outcome.Step}/{outcome.ErrorCategory}.");
+});
+await Test("Online administrator PIN unlock is not reversed by an older locked cache", async () =>
+{
+    var f = Fixture(cache: true);
+    OfflineCacheService.Students.Single().PinLocked = true;
+    OfflineCacheService.Students.Single().FailedPinAttempts = 3;
+    var outcome = await f.Engine.BeginNfcVerificationAsync("AA:01", VerificationMode.Standard, TransactionType.Entry);
+    Assert(outcome.Step == VerificationStep.RequiresPin,
+        $"Database was unlocked, but verification returned {outcome.Step}/{outcome.ErrorCategory}.");
+});
 await Test("Dense signed QR encodes/decodes exactly", () => Check(() =>
 {
     string longest = Sign(new string('9', 50));
