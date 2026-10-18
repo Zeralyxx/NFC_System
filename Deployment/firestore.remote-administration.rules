@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function member(site) {
+      return get(/databases/$(database)/documents/remote_sites/$(site)/members/$(request.auth.uid)).data;
+    }
+    function approved(site, role) {
+      return verified() && member(site).active == true && member(site).role == role
+        && member(site).email.lower() == request.auth.token.email.lower();
+    }
+    function server(site) { return approved(site, 'server'); }
+    function administrator(site) { return approved(site, 'administrator'); }
+    function primaryServer() {
+      let config = get(/databases/$(database)/documents/cloud_configuration/primary).data;
+      return verified() && request.auth.uid == config.serverUid && server(config.siteId);
+    }
+
+    match /remote_sites/{site} {
+      allow get: if server(site) || administrator(site);
+      allow list, delete: if false;
+      allow create, update: if server(site)
+        && request.resource.data.keys().hasOnly(['keyId','publicKey','updatedAt'])
+        && request.resource.data.keyId is string && request.resource.data.keyId.size() == 64
+        && request.resource.data.publicKey is string && request.resource.data.publicKey.size() < 2048;
+
+      match /members/{uid} {
+        allow get: if verified() && (request.auth.uid == uid || server(site));
+        allow list: if server(site);
+        // Server identities are bootstrapped only by the Firebase project owner.
+        allow create, update: if server(site) && uid != request.auth.uid
+          && request.resource.data.keys().hasOnly(['email','name','role','active'])
+          && request.resource.data.role == 'administrator'
+          && request.resource.data.email is string && request.resource.data.email.size() <= 150
+          && request.resource.data.name is string && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 100 && request.resource.data.active is bool
+          && (!exists(/databases/$(database)/documents/remote_sites/$(site)/members/$(uid))
+              || resource.data.role == 'administrator');
+        allow delete: if false;
+      }
+      match /profiles/{id} {
+        allow read: if server(site) || administrator(site);
+        allow create, update: if server(site) && request.resource.data.keys().hasOnly(['profile'])
+          && request.resource.data.profile is string && request.resource.data.profile.size() < 900000;
+        allow delete: if false;
+      }
+      match /requests/{id} {
+        allow read: if server(site) || (administrator(site) && resource.data.ownerUid == request.auth.uid);
+        allow create: if administrator(site) && id.matches('^[0-9a-f]{32}$')
+          && request.resource.data.keys().hasOnly(['ownerUid','status','envelope','createdAt'])
+          && request.resource.data.ownerUid == request.auth.uid && request.resource.data.status == 'Pending'
+          && request.resource.data.envelope is string && request.resource.data.envelope.size() < 850000
+          && request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 40;
+        allow update: if server(site)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','message','revision','processedAt'])
+          && request.resource.data.status in ['Applied','Conflict','Rejected']
+          && request.resource.data.message is string && request.resource.data.message.size() <= 3000;
+        allow delete: if false;
+      }
+    }
+
+    match /cloud_configuration/{id} {
+      allow read, write: if false;
+    }
+    // Existing archives remain accessible only to the designated main-server account.
+    // Do not combine this with an overlapping public/catch-all allow rule.
+    match /{collection}/{document=**} {
+      allow read, create, update: if collection != 'remote_sites' && collection != 'cloud_configuration' && primaryServer();
+      allow delete: if false;
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "firestore": { "rules": "firestore.remote-administration.rules" },
+  "emulators": {
+    "firestore": { "host": "127.0.0.1", "port": 18085 },
+    "hub": { "host": "127.0.0.1", "port": 14400 },
+    "logging": { "host": "127.0.0.1", "port": 14500 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}
