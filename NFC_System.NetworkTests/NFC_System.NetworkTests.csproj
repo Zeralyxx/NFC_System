@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../NFC_System/ServerConnectionConfiguration.cs" Link="Production/ServerConnectionConfiguration.cs"/>
+    <Compile Include="../NFC_System/ServerConnectionDatabase.cs" Link="Production/ServerConnectionDatabase.cs"/>
+    <Compile Include="../NFC_System/ServerDiscovery.cs" Link="Production/ServerDiscovery.cs"/>
+    <Compile Include="../NFC_System/DatabaseService.Network.cs" Link="Production/DatabaseService.Network.cs"/>
+    <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs"/>
+    <Compile Include="../NFC_System/DeviceIdentity.cs" Link="Production/DeviceIdentity.cs"/>
+    <PackageReference Include="MySqlConnector" Version="2.5.0"/>
+  </ItemGroup>
+</Project>

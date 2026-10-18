@@ -56,6 +56,8 @@ public sealed class SystemAuditLog
 public sealed partial class DatabaseService
 {
     public static string ServerIp { get; private set; } = "127.0.0.1";
+    private static string NetworkConfigurationDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NFC_System", "Configuration");
     public static string ConnectionString => $"Server={ServerIp};Port=3306;Database=nfc_system;User ID=root;Password=;ConnectionTimeout=3;";
     public static string BaseConnectionString => $"Server={ServerIp};Port=3306;User ID=root;Password=;ConnectionTimeout=3;";
 
@@ -79,22 +81,19 @@ public sealed partial class DatabaseService
 
     public static void LoadConfig()
     {
-        string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "db_config.txt");
-        if (File.Exists(path))
+        try
         {
-            ServerIp = File.ReadAllText(path).Trim();
+            ActiveConnection = ConnectionStore.Load();
+            ServerIp = ActiveConnection.Host;
+            ConnectionConfigurationError = null;
         }
-        else
+        catch (Exception ex)
         {
-            File.WriteAllText(path, "127.0.0.1");
+            ActiveConnection = ServerConnectionConfiguration.Default;
+            ServerIp = ActiveConnection.Host;
+            ConnectionConfigurationError = ex.Message;
         }
-    }
-
-    public static void SaveConfig(string ip)
-    {
-        string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "db_config.txt");
-        File.WriteAllText(path, ip.Trim());
-        ServerIp = ip.Trim();
+        OfflineCacheService.SetServerCacheReady(!ActiveConnection.CacheRefreshRequired);
     }
 
     private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
@@ -977,6 +976,13 @@ public sealed partial class DatabaseService
 
     public Task<int> PushEventApprovedStudentsToCloudAsync() => PushEventRosterStateAsync(CreateRosterCloudStore());
 
+    public Task<IReadOnlyList<EventRosterCloudReview>> PreviewPublishedEventRosterAsync(
+        IReadOnlyList<EventRosterConflict> expected, long sessionVersion) =>
+        PreviewPublishedEventRosterAsync(expected, sessionVersion, CreateRosterCloudStore());
+
+    public Task<int> AcceptPublishedEventRosterAsync(IReadOnlyList<EventRosterCloudReview> reviews, long sessionVersion) =>
+        AcceptPublishedEventRosterAsync(reviews, sessionVersion, CreateRosterCloudStore());
+
     public async Task<int> PushLogsToCloudAsync()
     {
         int pushedCount = 0;
@@ -1209,8 +1215,10 @@ public sealed partial class DatabaseService
     {
         try
         {
+            if (ActiveConnection.Role == ServerConnectionRole.NotConfigured) return false;
             using var connection = new MySqlConnection(ConnectionString);
             await connection.OpenAsync();
+            if (ActiveConnection.ServerId.Length > 0 && await ReadServerIdentityAsync(connection) != ActiveConnection.ServerId) return false;
             return true;
         }
         catch
@@ -1312,7 +1320,9 @@ public sealed partial class DatabaseService
 
             if (!OfflineCacheService.UpdateStudentCache(students)) return false;
             OfflineCacheService.UpdateEventCache(events, rosters);
-            return !OfflineCacheService.HasPendingLogs();
+            if (OfflineCacheService.HasPendingLogs()) return false;
+            CompleteServerCacheRefresh();
+            return true;
         }
         catch (Exception ex) { throw new InvalidOperationException("Offline cache refresh failed. Device remains unready.", ex); }
     }

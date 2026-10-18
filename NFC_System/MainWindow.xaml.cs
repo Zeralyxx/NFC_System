@@ -51,7 +51,9 @@ namespace NFC_System
             // THE FIX: Subscribe to the global hardware service
             HardwareService.OnUidScanned += HardwareService_OnUidScanned;
 
-            DatabaseService.LoadConfig();
+            SetupConnectionControl.StateChanged += () => DbConfigDialog.IsPrimaryButtonEnabled = !_savingNetwork && !SetupConnectionControl.IsSearching;
+            SettingsConnectionControl.StateChanged += () => SettingsDialog.IsPrimaryButtonEnabled =
+                DeviceIdentity.CanRename && !_savingNetwork && !_savingDeviceName && !SettingsConnectionControl.IsSearching;
 
             if (this.Content is FrameworkElement rootElement)
             {
@@ -63,6 +65,8 @@ namespace NFC_System
         {
             if (_isForceClosing) return;
             args.Cancel = true;
+
+            if (_networkConfigurationOpen || _savingNetwork) return;
 
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
@@ -205,10 +209,25 @@ namespace NFC_System
 
             try
             {
-                if (DatabaseMonitor.IsOnline)
+                if (DatabaseService.ActiveConnection.Role == ServerConnectionRole.NotConfigured &&
+                    !await ShowConnectionSetupAsync(firstSetup: true))
                 {
-                    try { await _database.EnsureSchemaAsync(); } catch { }
+                    LoginLoadingRing.IsActive = false;
+                    LoginLoadingRing.Visibility = Visibility.Collapsed;
+                    LoginStatusText.Text = "Connection setup required. Restart the app to choose this device's role.";
+                    return;
                 }
+
+                if (DatabaseService.ActiveConnection.Role == ServerConnectionRole.MainServer)
+                {
+                    await _database.EnsureSchemaAsync();
+                    await _database.InitializeMainServerIdentityAsync();
+                }
+                else await DatabaseService.ValidateClientConnectionAsync(DatabaseService.ActiveConnection);
+
+                await DatabaseMonitor.RefreshAsync();
+                DatabaseMonitor.StartMonitoring();
+                if (!DatabaseMonitor.IsOnline) throw new InvalidOperationException("The configured main database could not be verified.");
 
                 int staffCount = 0;
                 if (DatabaseMonitor.IsOnline)
@@ -221,7 +240,7 @@ namespace NFC_System
                     }
                 }
 
-                if (staffCount == 0 && DatabaseMonitor.IsOnline)
+                if (staffCount == 0 && DatabaseMonitor.IsOnline && DatabaseService.ActiveConnection.Role == ServerConnectionRole.MainServer)
                 {
                     try
                     {
@@ -257,6 +276,18 @@ namespace NFC_System
                     {
                         System.Diagnostics.Debug.WriteLine($"Cloud Master Sync Failed: {ex.Message}");
                     }
+                }
+
+                if (staffCount == 0 && DatabaseService.ActiveConnection.Role == ServerConnectionRole.Client)
+                    throw new InvalidOperationException("Complete setup on the main server before connecting this device.");
+
+                if (staffCount > 0) await _database.StartServerDiscoveryAsync();
+
+                if (DatabaseService.ActiveConnection.CacheRefreshRequired)
+                {
+                    await _database.UpdateShadowCacheAsync();
+                    if (DatabaseService.ActiveConnection.CacheRefreshRequired)
+                        throw new InvalidOperationException("The new server is connected, but its offline cache could not be refreshed. Keep this device online and retry before scanning.");
                 }
 
                 if (DatabaseMonitor.IsOnline)
@@ -316,19 +347,21 @@ namespace NFC_System
                 LoginLoadingRing.Visibility = Visibility.Collapsed;
                 LoginStatusText.Text = "Database connection failed.";
 
-                DbErrorTextBlock.Text = $"Connection Error: {ex.Message}";
-                ServerIpTextBox.Text = DatabaseService.ServerIp;
-                DbConfigDialog.XamlRoot = this.Content.XamlRoot;
-
-                var result = await DbConfigDialog.ShowAsync();
-
-                if (result == ContentDialogResult.Primary)
+                await DatabaseMonitor.RefreshAsync();
+                if (DatabaseService.ActiveConnection.Role != ServerConnectionRole.NotConfigured) DatabaseMonitor.StartMonitoring();
+                bool connected = await ShowConnectionSetupAsync(
+                    firstSetup: DatabaseService.ActiveConnection.Role == ServerConnectionRole.NotConfigured, error: ex.Message);
+                if (connected)
                 {
-                    DatabaseService.SaveConfig(ServerIpTextBox.Text);
-                    _ = InitializeSystemAsync();
+                    await InitializeSystemAsync();
                 }
                 else
                 {
+                    if (DatabaseService.ActiveConnection.Role == ServerConnectionRole.NotConfigured)
+                    {
+                        LoginStatusText.Text = "Connection setup required. Restart the app to choose this device's role.";
+                        return;
+                    }
                     LoginStatusText.Text = "System Offline. Please tap an authorized offline key.";
                     LoginStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
@@ -392,6 +425,8 @@ namespace NFC_System
                 AppSession.CurrentStaffName = fullName;
                 AppSession.CurrentStaffRoleLabel = "Master Admin";
 
+                await _database.StartServerDiscoveryAsync();
+
                 PlaySuccessPing();
                 ApplyRoleBasedAccess();
             }
@@ -405,6 +440,7 @@ namespace NFC_System
         // THE FIX: Listen to the global hardware manager for NFC taps
         private void HardwareService_OnUidScanned(string uid)
         {
+            if (_networkConfigurationOpen) return;
             if (_isAwaitingAdminAuth)
             {
                 DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
@@ -476,6 +512,7 @@ namespace NFC_System
 
         private async Task ProcessLoginScanAsync(string uid)
         {
+            if (_networkConfigurationOpen || DatabaseService.ActiveConnection.Role == ServerConnectionRole.NotConfigured) return;
             if (_isClosed || _isAuthenticating || !AppSession.CanAcceptStaffLogin) return;
             _isAuthenticating = true;
             try { await ProcessLoginScanCoreAsync(uid); }
@@ -737,8 +774,16 @@ namespace NFC_System
         private async void DashboardSettingsButton_Click(object sender, RoutedEventArgs e)
         {
             LoadSettingsDeviceIdentity();
-            SettingsIpBox.Text = DatabaseService.ServerIp;
             SettingsStatusText.Visibility = Visibility.Collapsed;
+            try { SettingsConnectionControl.Load(DatabaseService.ReadSavedConnection()); }
+            catch (Exception ex)
+            {
+                SettingsConnectionControl.Load(DatabaseService.ActiveConnection);
+                SettingsStatusText.Text = $"Saved connection settings could not be read: {ex.Message}";
+                SettingsStatusText.Visibility = Visibility.Visible;
+            }
+            SettingsConnectionControl.IsEnabled = DeviceIdentity.CanRename;
+            SettingsDialog.IsPrimaryButtonEnabled = DeviceIdentity.CanRename;
 
             try
             {
@@ -759,7 +804,7 @@ namespace NFC_System
                 ContentDialog successDialog = new ContentDialog
                 {
                     Title = "Settings Saved",
-                    Content = "System configuration updated successfully. If you changed the IP address, please click 'Refresh Connection' on the login screen or restart the application.",
+                    Content = "Settings saved. Connection changes take effect after restarting the application. The current database connection has not been switched.",
                     CloseButtonText = "OK",
                     XamlRoot = this.Content.XamlRoot
                 };
@@ -769,30 +814,25 @@ namespace NFC_System
 
         private async void SettingsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
         {
-            if (_savingDeviceName)
+            if (_savingDeviceName || _savingNetwork || SettingsConnectionControl.IsSearching)
             {
                 args.Cancel = true;
                 return;
             }
             var deferral = args.GetDeferral();
+            _savingNetwork = true;
+            SettingsConnectionControl.IsEnabled = false;
             try
             {
-                string newIp = SettingsIpBox.Text.Trim();
-
-                if (string.IsNullOrWhiteSpace(newIp))
-                {
-                    SettingsStatusText.Text = "Please enter a valid IP address.";
-                    SettingsStatusText.Visibility = Visibility.Visible;
-                    args.Cancel = true;
-                    return;
-                }
-
-                DatabaseService.SaveConfig(newIp);
+                DatabaseService.RequireConnectionConfigurationPermission(_deviceSettingsSessionVersion);
+                var validated = await DatabaseService.ValidateClientConnectionAsync(SettingsConnectionControl.Configuration);
+                DatabaseService.RequireConnectionConfigurationPermission(_deviceSettingsSessionVersion);
 
                 if (DatabaseMonitor.IsOnline)
                 {
                     await _database.SetSettingAsync("strict_entry_policy", StrictEntryToggle.IsOn.ToString());
                 }
+                DatabaseService.SaveConnectionConfiguration(validated, _deviceSettingsSessionVersion);
             }
             catch (Exception ex)
             {
@@ -802,6 +842,8 @@ namespace NFC_System
             }
             finally
             {
+                _savingNetwork = false;
+                SettingsConnectionControl.IsEnabled = DeviceIdentity.CanRename;
                 deferral.Complete();
             }
         }

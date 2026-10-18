@@ -2,6 +2,7 @@
     x:Class="NFC_System.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:NFC_System"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -35,9 +36,7 @@
                         <TextBlock Text="Network Configuration" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
                         <TextBlock Text="Set the IPv4 address of the local MySQL server this station connects to." Style="{StaticResource BodyTextStyle}" FontSize="12" TextWrapping="Wrap"/>
 
-                        <TextBox x:Name="ServerIpConfigTextBox"
-                                 Header="MySQL Server IP Address"
-                                 PlaceholderText="e.g., 192.168.1.7 or 127.0.0.1"/>
+                        <local:ServerConnectionControl x:Name="NetworkConnectionControl"/>
 
                         <TextBlock x:Name="ServerIpStatusText"
                                    Text=""

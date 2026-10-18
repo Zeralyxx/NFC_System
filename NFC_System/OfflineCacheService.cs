@@ -61,6 +61,9 @@ public static class OfflineCacheService
 
     private static bool _isStudentMemoryLoaded = false;
     private static bool _isEventMemoryLoaded = false;
+    private static volatile bool _serverCacheReady = true;
+
+    public static void SetServerCacheReady(bool ready) => _serverCacheReady = ready;
 
     static OfflineCacheService()
     {
@@ -314,6 +317,7 @@ public static class OfflineCacheService
 
     public static bool IsAttendanceStorageAvailable()
     {
+        if (!_serverCacheReady) return false;
         try { AttendanceQueue.Snapshot(); return true; }
         catch { return false; }
     }

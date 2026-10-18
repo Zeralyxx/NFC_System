@@ -1,0 +1,11 @@
+# Abstract
+
+This study developed and evaluated a risk-based student verification and event attendance management prototype for Taguig City University. The system integrated Near Field Communication (NFC) identification using an ESP32 and PN532 reader with Personal Identification Number (PIN) authentication and Quick Response (QR) credential validation in a WinUI 3 application, supported by local MySQL storage and Firebase Firestore synchronization. Operators selected Fast, Standard, or High-Security modes, with QR serving as a credential-integrity check.
+
+A quantitative developmental and descriptive-evaluative design used purposive and convenience sampling. ISO/IEC 25010-based four-point surveys involved 70 students, five security personnel, and five faculty/event-organizer/administrator respondents, with a separate group of 70 students evaluating the manual process. Controlled observation involved the same 70 participants across three modes using 20 reusable credential profiles, producing 210 successful entry trials.
+
+Mean internal latency was 11.49, 57.37, and 54.06 milliseconds for Fast, Standard, and High-Security modes, respectively. Recorded Standard PIN and High-Security PIN/QR interaction averaged 2.505 and 5.799 seconds. Observed credential-decision accuracy was 100% (222/222) in the researcher-labelled controlled sample. Overall proposed-system evaluation means were 3.74, 3.63, and 3.81 for students, security personnel, and the administrative group, respectively, interpreted as Highly Satisfactory. Proposed-system student ratings were significantly higher than manual-process ratings (3.742 versus 2.284), Welch t(89.08) = 15.12, p < .001. Mean manual active writing duration was 21.803 seconds; however, differing timing boundaries prevented a matched complete-task speed comparison.
+
+The findings support prototype functionality and favorable perceived quality within the evaluation setting. Broader performance and security testing is needed before institutional deployment, and the observed accuracy does not establish universal resistance to impersonation or credential copying.
+
+**Keywords:** NFC; PIN authentication; QR credential validation; student verification; attendance management.

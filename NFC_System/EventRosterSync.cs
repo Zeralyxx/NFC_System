@@ -24,6 +24,29 @@ internal static class EventRosterSyncRules
     internal static DateTimeOffset ServerTime(string value) => DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
         DateTimeStyles.AssumeUniversal, out var time) ? time : throw new InvalidDataException("Invalid roster cloud revision time.");
 
+    internal static EventRosterCloudReview ReviewPublished(EventRosterConflict expected, RosterCloudRevision remote)
+    {
+        if (!string.Equals(expected.EventId, remote.EventId, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(expected.StudentId, remote.StudentId, StringComparison.OrdinalIgnoreCase) ||
+            expected.CloudChangeId.Length == 0 || expected.CloudChangeId != remote.ChangeId)
+            throw new InvalidOperationException("The published roster changed or is unavailable. Pull again and reopen the conflict review.");
+        _ = ServerTime(remote.UpdateTime);
+        return new(expected, remote.Approved, remote.UpdateTime);
+    }
+
+    internal static RosterSyncState AcceptPublished(RosterSyncState? current, EventRosterCloudReview review, RosterCloudRevision remote)
+    {
+        var expected = review.Conflict;
+        if (ReviewPublished(expected, remote) != review || current == null || !current.Conflict ||
+            !string.Equals(current.EventId, expected.EventId, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(current.StudentId, expected.StudentId, StringComparison.OrdinalIgnoreCase) ||
+            current.ChangeId != expected.ChangeId || current.CloudChangeId != expected.CloudChangeId ||
+            ServerTime(current.CloudUpdateTime) != ServerTime(review.CloudUpdateTime))
+            throw new InvalidOperationException("This roster review changed. Pull again and review the current entries before applying.");
+        return new(current.EventId, current.StudentId, remote.ChangeId, remote.Approved,
+            remote.ChangeId, remote.UpdateTime, false, false);
+    }
+
     internal static RosterSyncState Merge(RosterSyncState? local, RosterCloudRevision remote)
     {
         if (local == null) return new(remote.EventId, remote.StudentId, remote.ChangeId, remote.Approved,

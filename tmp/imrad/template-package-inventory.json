@@ -1,0 +1,58 @@
+{
+  "[Content_Types].xml": {
+    "size": 1547,
+    "sha256": "e54a6012b764a791f9d045ee50a12a3e20b0fd76a7a80347220009c81b3441d6"
+  },
+  "_rels/.rels": {
+    "size": 590,
+    "sha256": "e19238d7a71fa7a2490776252686f70e2de6238c87cd509b5e3a3cc07c2ea4df"
+  },
+  "word/_rels/document.xml.rels": {
+    "size": 1882,
+    "sha256": "2d4b3948a6cfea7f9dd59fa1955a733fa4316bd7afb5f506294d0c29701ffa53"
+  },
+  "word/document.xml": {
+    "size": 42374,
+    "sha256": "19e886793a4223bc9c610e72f3a0cd48c10cc307f4a4d3dd1eb78da01ae5982b"
+  },
+  "word/theme/theme1.xml": {
+    "size": 8393,
+    "sha256": "70a70d84494772c1855ec6c2f9a16e0fc6cc41bdb0ce3743563ed943b63e07b8"
+  },
+  "word/media/image1.jpeg": {
+    "size": 16140,
+    "sha256": "9a8bc62f84b4b39b0e7bec5c48efd87d5c42bc35a7d9c088d290fd3b7b515432"
+  },
+  "word/media/image2.png": {
+    "size": 31522,
+    "sha256": "b900511e1c2b81b09d9a777f65fc9b7d0ce014d126174903c600f800083f485b"
+  },
+  "word/settings.xml": {
+    "size": 3285,
+    "sha256": "196a7c00e6b4f24f6c698d374e4f9e92cca17680f2e842b91cd847eca7d2cb3e"
+  },
+  "word/fontTable.xml": {
+    "size": 2733,
+    "sha256": "5f8fcaf9cbd1a49d1c8fdebf77155d58ac0d330b0eaa38fb902b2d9d9e103a20"
+  },
+  "docProps/core.xml": {
+    "size": 755,
+    "sha256": "fdaae26e13112f0c14f93ffa12d9ec8badb943dc6947974cbff6d287ab5d59e0"
+  },
+  "docProps/app.xml": {
+    "size": 992,
+    "sha256": "f61964c271d698836e10f450a10316cf84b1370f48c3974fb9612011da2cbc11"
+  },
+  "word/styles.xml": {
+    "size": 31427,
+    "sha256": "4dee50291cf8f6e48994cb5ae00ae3985193679cc726ed8704fdf9285c106fbc"
+  },
+  "word/numbering.xml": {
+    "size": 5304,
+    "sha256": "9b370b2dc99d047d652195afb9776bdd82cb89122af622ecaab493103e75cabf"
+  },
+  "word/webSettings.xml": {
+    "size": 894,
+    "sha256": "a935be2dde349160ee390cc5b6a06aa057cfd44feac230f6eff440889f53902f"
+  }
+}

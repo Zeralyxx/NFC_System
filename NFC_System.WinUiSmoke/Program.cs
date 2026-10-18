@@ -79,6 +79,8 @@ public sealed partial class SmokeApplication : Application
             await CheckBrandingAsync(root);
             await CheckGraduationDialogsAsync(root);
             await CheckSettingsLayoutAsync(root);
+            await CheckConnectionSetupLayoutAsync(root);
+            await CheckConnectionControlAsync(root);
             await CheckDirectoryFiltersAsync(root);
             await CheckReportNotesAsync(root);
             await CheckCompletionDialogsAsync(root);
@@ -212,6 +214,7 @@ public sealed partial class SmokeApplication : Application
         var source = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml.txt"));
         var markup = new XElement(source.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "SettingsDialog"));
         markup.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+        markup.SetAttributeValue(XNamespace.Xmlns + "local", "using:NFC_System");
         // Render the real dialog without creating MainWindow or contacting the production database.
         foreach (var attribute in markup.DescendantsAndSelf().Attributes().Where(a =>
             a.Name.LocalName is "Click" or "PrimaryButtonClick" or "Closing").ToArray()) attribute.Remove();
@@ -246,6 +249,119 @@ public sealed partial class SmokeApplication : Application
             }
             finally { dialog.Hide(); await operation; }
         }
+    }
+
+    private async Task CheckConnectionSetupLayoutAsync(Grid root)
+    {
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var source = XDocument.Load(Path.Combine(AppContext.BaseDirectory,"Fixtures","MainWindow.xaml.txt"));
+        var markup = new XElement(source.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "DbConfigDialog"));
+        markup.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+        markup.SetAttributeValue(XNamespace.Xmlns + "local", "using:NFC_System");
+        foreach (var attribute in markup.DescendantsAndSelf().Attributes().Where(a => a.Name.LocalName is "PrimaryButtonClick" or "Closing").ToArray()) attribute.Remove();
+        foreach (var size in new[] { new Windows.Graphics.SizeInt32(640,480),new Windows.Graphics.SizeInt32(1000,800) })
+        {
+            _window!.AppWindow.Resize(size);
+            await Task.Delay(150);
+            var dialog = (ContentDialog)Microsoft.UI.Xaml.Markup.XamlReader.Load(markup.ToString());
+            dialog.XamlRoot = root.XamlRoot;
+            var control = (ServerConnectionControl)dialog.FindName("SetupConnectionControl");
+            string id = Guid.NewGuid().ToString("N");
+            control.DiscoverServers = _ => Task.FromResult<System.Collections.Generic.IReadOnlyList<DiscoveredServer>>(
+                new[] { new DiscoveredServer(id,"Main Campus Server With A Longer Computer Name","192.168.1.8") });
+            control.Load(new(ServerConnectionRole.Client,"192.168.1.8",id));
+            ((TextBlock)dialog.FindName("DbErrorTextBlock")).Text = "The configured main server is unavailable. Check the selected device and retry the connection.";
+            var opened = new TaskCompletionSource<bool>();
+            dialog.Opened += (_,_) => opened.TrySetResult(true);
+            var showing = dialog.ShowAsync();
+            try
+            {
+                await opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                await control.DetectAsync();
+                await Task.Delay(100);
+                var body = (ScrollViewer)dialog.Content;
+                body.UpdateLayout();
+                if (body.ActualWidth <= 0 || body.ActualHeight <= 0 || body.ActualWidth > root.XamlRoot.Size.Width || body.ActualHeight > root.XamlRoot.Size.Height)
+                    throw new Exception("Connection setup body overflows its window.");
+                if (control.Configuration.ServerId != id) throw new Exception("Loading a saved client lost its server identity.");
+                var bitmap = new RenderTargetBitmap(); await bitmap.RenderAsync(body);
+                byte[] pixels = (await bitmap.GetPixelsAsync()).ToArray();
+                if (pixels.Length == 0 || pixels.All(b => b == 0)) throw new Exception("Connection setup dialog is blank.");
+                using var output = File.Create(Path.Combine(AppContext.BaseDirectory,$"Connection-Setup-{size.Width}.png"));
+                var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId,output.AsRandomAccessStream());
+                encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
+                    (uint)bitmap.PixelWidth,(uint)bitmap.PixelHeight,96,96,pixels);
+                await encoder.FlushAsync();
+            }
+            finally { dialog.Hide(); await showing; }
+        }
+    }
+
+    private async Task CheckConnectionControlAsync(Grid root)
+    {
+        string firstId = Guid.NewGuid().ToString("N"), secondId = Guid.NewGuid().ToString("N");
+        foreach (int width in new[] { 320, 640 })
+        {
+            var control = new ServerConnectionControl { Width = width, HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top, RequestedTheme = ElementTheme.Dark };
+            root.Children.Add(control);
+            try
+            {
+                await Task.Delay(100);
+                control.Load(ServerConnectionConfiguration.Default);
+                var role = (ComboBox)control.FindName("RoleBox");
+                var host = (TextBox)control.FindName("HostBox");
+                var servers = (ComboBox)control.FindName("ServersBox");
+                var detect = (Button)control.FindName("DetectButton");
+                int searches = 0;
+                control.DiscoverServers = _ =>
+                {
+                    searches++;
+                    return Task.FromResult<System.Collections.Generic.IReadOnlyList<DiscoveredServer>>(
+                        new[] { new DiscoveredServer(firstId, "Main Campus Server", "192.168.1.8") });
+                };
+                role.SelectedIndex = 1;
+                await Task.Delay(100);
+                if (searches != 1 || control.Configuration.Host != "192.168.1.8" || control.Configuration.ServerId != firstId || control.IsSearching)
+                    throw new Exception($"First-time client selection failed: searches={searches}, host={control.Configuration.Host}, id={control.Configuration.ServerId}, busy={control.IsSearching}.");
+                host.Text = "192.168.1.99";
+                if (control.Configuration.ServerId.Length != 0) throw new Exception("Manual IP edit retained another candidate's identity.");
+                control.DiscoverServers = _ => Task.FromResult<System.Collections.Generic.IReadOnlyList<DiscoveredServer>>(new[] {
+                    new DiscoveredServer(firstId,"Main Campus Server","192.168.1.8"), new DiscoveredServer(secondId,"Other Server","192.168.1.9") });
+                await control.DetectAsync();
+                if (servers.SelectedIndex != -1 || servers.Visibility != Visibility.Visible) throw new Exception("Multiple servers were silently auto-selected.");
+                servers.SelectedIndex = 1;
+                if (control.Configuration.ServerId != secondId || host.Text != "192.168.1.9") throw new Exception("Explicit server selection did not fill the connection.");
+                var selected = control.Configuration;
+                control.DiscoverServers = async token => { await Task.Delay(5000,token); return Array.Empty<DiscoveredServer>(); };
+                var pending = control.DetectAsync();
+                control.CancelDiscovery();
+                await pending;
+                if (control.IsSearching || control.Configuration != selected || !detect.IsEnabled) throw new Exception("Cancelled discovery changed a connection or left controls disabled.");
+                await Task.Delay(100);
+                control.UpdateLayout();
+                foreach (string name in new[] { "RoleBox", "HostBox", "DetectButton", "ServersBox", "ConnectionNote" })
+                {
+                    var element = (FrameworkElement)control.FindName(name);
+                    var bounds = element.TransformToVisual(control).TransformBounds(new Windows.Foundation.Rect(0,0,element.ActualWidth,element.ActualHeight));
+                    if (bounds.X < -1 || bounds.Right > width + 1) throw new Exception($"Connection control {name} overflows at {width}px.");
+                }
+                var bitmap = new RenderTargetBitmap();
+                await bitmap.RenderAsync(control);
+                byte[] pixels = (await bitmap.GetPixelsAsync()).ToArray();
+                if (pixels.Length == 0 || pixels.All(b => b == 0)) throw new Exception("Connection control is blank.");
+                using var output = File.Create(Path.Combine(AppContext.BaseDirectory,$"Server-Connection-{width}.png"));
+                var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId,output.AsRandomAccessStream());
+                encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
+                    (uint)bitmap.PixelWidth,(uint)bitmap.PixelHeight,96,96,pixels);
+                await encoder.FlushAsync();
+                role.SelectedIndex = 0;
+                if (control.Configuration.Host != "127.0.0.1" || detect.IsEnabled || !host.IsReadOnly) throw new Exception("Main Server role permits client discovery or a remote database.");
+            }
+            finally { root.Children.Remove(control); }
+        }
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"server-connection-smoke-result.txt"),
+            "PASS: production connection controls render at 320/640px; client role auto-detects using fake discovery, single/multiple selection, manual IP identity clearing, cancellation and Main Server gating pass. No production network/database access.");
     }
 
     private async Task CheckCompletionDialogsAsync(Grid root)

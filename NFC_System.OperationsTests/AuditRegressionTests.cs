@@ -99,6 +99,39 @@ internal static class AuditRegressionTests
             Assert(result.ChangeId == next.ChangeId && !result.Approved && result.Pending && !result.Conflict && result.CloudChangeId == sent.ChangeId);
             return Task.CompletedTask;
         });
+        await test("Explicit published-roster review accepts approval or revocation without a pending cloud write", () =>
+        {
+            foreach (bool approved in new[] { true, false })
+            {
+                var remote = Remote(approved, "c", 2);
+                var local = new RosterSyncState("event", "student", Id("b"), !approved, remote.ChangeId, remote.UpdateTime, true, true);
+                var expected = new EventRosterConflict(local.EventId, local.StudentId, local.ChangeId, local.CloudChangeId);
+                var review = EventRosterSyncRules.ReviewPublished(expected, remote);
+                var accepted = EventRosterSyncRules.AcceptPublished(local, review, remote);
+                Assert(accepted.Approved == approved && accepted.ChangeId == remote.ChangeId &&
+                    accepted.CloudChangeId == remote.ChangeId && accepted.CloudUpdateTime == remote.UpdateTime && !accepted.Pending && !accepted.Conflict);
+            }
+            return Task.CompletedTask;
+        });
+        await test("Published-roster adoption rejects changed local state, cloud payload, identity and stale reviews", () =>
+        {
+            var remote = Remote(true, "c", 2);
+            var local = new RosterSyncState("event", "student", Id("b"), false, remote.ChangeId, remote.UpdateTime, true, true);
+            var expected = new EventRosterConflict(local.EventId, local.StudentId, local.ChangeId, local.CloudChangeId);
+            var review = EventRosterSyncRules.ReviewPublished(expected, remote);
+            foreach (var changed in new[] { local with { ChangeId = Id("d") }, local with { Conflict = false },
+                local with { CloudChangeId = Id("d") }, local with { CloudUpdateTime = Remote(true, "c", 3).UpdateTime },
+                local with { StudentId = "different" } })
+                Reject(() => EventRosterSyncRules.AcceptPublished(changed, review, remote));
+            Reject(() => EventRosterSyncRules.AcceptPublished(null, review, remote));
+            Reject(() => EventRosterSyncRules.AcceptPublished(local, review, remote with { Approved = false }));
+            Reject(() => EventRosterSyncRules.AcceptPublished(local, review, remote with { UpdateTime = Remote(true, "c", 3).UpdateTime }));
+            Reject(() => EventRosterSyncRules.ReviewPublished(expected, Remote(true, "d", 3)));
+            Reject(() => EventRosterSyncRules.ReviewPublished(expected, remote with { EventId = "different" }));
+            Reject(() => EventRosterSyncRules.ReviewPublished(expected with { CloudChangeId = "" }, remote));
+            Assert(EventRosterSyncRules.Merge(local, remote).Conflict);
+            return Task.CompletedTask;
+        });
         await test("Firestore roster writes use create/update preconditions and retain revocation payload", async () =>
         {
             var sent = new RosterSyncState("event", "student", Id("a"), false, "", "", true, false);

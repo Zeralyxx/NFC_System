@@ -11,8 +11,87 @@ public sealed record EventRosterConflict(string EventId, string StudentId, strin
     public string DisplayLabel => $"Event: {EventId}\nStudent: {StudentId}";
 }
 
+public sealed record EventRosterCloudReview(EventRosterConflict Conflict, bool Approved, string CloudUpdateTime)
+{
+    public string DisplayLabel => $"{(Approved ? "Include" : "Exclude")} | Event: {Conflict.EventId}\nStudent: {Conflict.StudentId}";
+}
+
+public sealed class EventRosterSyncConflictException(int count, int changed) : InvalidOperationException(
+    $"{count} roster conflict(s). Affected attendees remain excluded. Open Event Administration > Roster sync conflicts to review them.")
+{
+    public int Changed { get; } = changed;
+}
+
 public sealed partial class DatabaseService
 {
+    private static void RequirePublishedRosterReview(long sessionVersion)
+    {
+        RequireEventManagement(sessionVersion);
+        if (!AppSession.IsAdmin || AppSession.IsEventOrganizer || AppSession.CurrentStaffRoleLabel is not ("Admin" or "Master Admin"))
+            throw new UnauthorizedAccessException("Sign in as an Administrator or Master Admin to accept a published roster.");
+    }
+
+    internal async Task<IReadOnlyList<EventRosterCloudReview>> PreviewPublishedEventRosterAsync(
+        IReadOnlyList<EventRosterConflict> expected, long sessionVersion, IEventRosterCloudStore store)
+    {
+        RequirePublishedRosterReview(sessionVersion);
+        if (expected.Count == 0) throw new ArgumentException("Select at least one roster conflict.");
+        var remote = (await store.LoadAsync()).ToDictionary(r => EventRosterSyncRules.DocumentId(r.EventId, r.StudentId));
+        var reviews = expected.Select(row => EventRosterSyncRules.ReviewPublished(row,
+            remote.TryGetValue(EventRosterSyncRules.DocumentId(row.EventId, row.StudentId), out var revision)
+                ? revision : throw new InvalidOperationException("A selected published roster entry is missing. Pull again before reviewing."))).ToArray();
+        RequirePublishedRosterReview(sessionVersion);
+        return reviews;
+    }
+
+    internal async Task<int> AcceptPublishedEventRosterAsync(IReadOnlyList<EventRosterCloudReview> reviews,
+        long sessionVersion, IEventRosterCloudStore store)
+    {
+        RequirePublishedRosterReview(sessionVersion);
+        var selected = reviews.OrderBy(r => r.Conflict.EventId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Conflict.StudentId, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (selected.Length == 0 || selected.Select(r => EventRosterSyncRules.DocumentId(r.Conflict.EventId, r.Conflict.StudentId)).Distinct().Count() != selected.Length)
+            throw new ArgumentException("Select distinct roster conflicts before applying.");
+        var device = DeviceIdentity.CaptureCurrent();
+        string actor = AppSession.CurrentStaffName;
+        using var connection = new MySqlConnection(ConnectionString);
+        await connection.OpenAsync();
+        await RequireTransactionalEventTablesAsync(connection);
+        await AcquireRosterSyncLockAsync(connection);
+        try
+        {
+            // Re-read cloud revisions before the transaction; only the exact reviewed snapshot may be accepted.
+            var remote = (await store.LoadAsync()).ToDictionary(r => EventRosterSyncRules.DocumentId(r.EventId, r.StudentId));
+            using var transaction = await connection.BeginTransactionAsync();
+            foreach (var review in selected)
+            {
+                RequirePublishedRosterReview(sessionVersion);
+                var expected = review.Conflict;
+                if (!remote.TryGetValue(EventRosterSyncRules.DocumentId(expected.EventId, expected.StudentId), out var revision))
+                    throw new InvalidOperationException("A selected published roster entry is missing. No selected entries were changed.");
+                if (await ReadEventConfigurationAsync(connection, transaction, expected.EventId, true) == null)
+                    throw new InvalidOperationException("A selected event is missing. Download its event record before accepting the roster.");
+                var current = await LockRosterSyncAsync(connection, transaction, expected.EventId, expected.StudentId);
+                var accepted = EventRosterSyncRules.AcceptPublished(current, review, revision);
+                if (accepted.Approved)
+                {
+                    using var student = new MySqlCommand("SELECT student_id FROM students WHERE student_id=@id FOR UPDATE", connection, transaction);
+                    student.Parameters.AddWithValue("@id", accepted.StudentId);
+                    if (await student.ExecuteScalarAsync() == null)
+                        throw new InvalidOperationException("A selected student is missing. Download the student profile before accepting the roster.");
+                }
+                await SaveRosterSyncAsync(connection, transaction, accepted);
+                await ApplyRosterMembershipAsync(connection, transaction, accepted);
+                await AuditEventChangeAsync(connection, transaction,
+                    $"{actor} accepted published cloud roster revision '{accepted.ChangeId}' for event '{accepted.EventId}', student '{accepted.StudentId}': {(accepted.Approved ? "included" : "excluded")}. Replaced local revision '{current!.ChangeId}'; no cloud roster write requested.", device);
+            }
+            RequirePublishedRosterReview(sessionVersion);
+            await transaction.CommitAsync();
+            return selected.Length;
+        }
+        finally { await ReleaseRosterSyncLockAsync(connection); }
+    }
+
     public async Task<IReadOnlyList<EventRosterConflict>> GetEventRosterConflictsAsync()
     {
         RequireEventManagement(AppSession.LoginVersion);
@@ -171,7 +250,7 @@ public sealed partial class DatabaseService
                 }
                 await transaction.CommitAsync();
             }
-            if (conflicts > 0) throw new InvalidOperationException($"{conflicts} roster conflict(s). Affected attendees remain excluded. Review their roster entries and explicitly add them or confirm exclusion.");
+            if (conflicts > 0) throw new EventRosterSyncConflictException(conflicts, changed);
             return changed;
         }
         finally { await ReleaseRosterSyncLockAsync(connection); }

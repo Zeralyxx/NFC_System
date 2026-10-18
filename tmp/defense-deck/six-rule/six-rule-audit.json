@@ -1,0 +1,622 @@
+[
+  {
+    "slide": 2,
+    "type": "table",
+    "rows": [
+      [
+        "Recommendation",
+        "Status"
+      ],
+      [
+        "01-02 Checklist/visuals",
+        "Included"
+      ],
+      [
+        "03 Raw responses",
+        "Packaging pending"
+      ],
+      [
+        "04 Test evidence",
+        "Selected tests documented"
+      ],
+      [
+        "05 UI appendices",
+        "Updates pending"
+      ]
+    ],
+    "rowCount": 5,
+    "maxWords": 6
+  },
+  {
+    "slide": 2,
+    "type": "narrative",
+    "lines": [
+      "Complete evidence package remains pending."
+    ],
+    "maxWords": 5
+  },
+  {
+    "slide": 3,
+    "type": "table",
+    "rows": [
+      [
+        "Recommendation",
+        "Status"
+      ],
+      [
+        "06-07 Manual baseline",
+        "Included"
+      ],
+      [
+        "08 Respondent counts",
+        "Included"
+      ],
+      [
+        "09-10 Same participants",
+        "Different groups used"
+      ],
+      [
+        "16 Use case",
+        "Mode alignment pending"
+      ],
+      [
+        "17 Survey t-test",
+        "Welch test included"
+      ]
+    ],
+    "rowCount": 6,
+    "maxWords": 6
+  },
+  {
+    "slide": 4,
+    "type": "table",
+    "rows": [
+      [
+        "Recommendation",
+        "Status"
+      ],
+      [
+        "11 Login timestamp",
+        "Display needs verification"
+      ],
+      [
+        "12 Student timestamps",
+        "Implemented"
+      ],
+      [
+        "13 Result retention",
+        "10 seconds"
+      ],
+      [
+        "14 Admin purge",
+        "Local cleanup only"
+      ],
+      [
+        "15 Data destruction",
+        "Cloud retention unresolved"
+      ]
+    ],
+    "rowCount": 6,
+    "maxWords": 6
+  },
+  {
+    "slide": 5,
+    "type": "narrative",
+    "lines": [
+      "Paper attendance separates checks from records.",
+      "Integrate credential checks with attendance records.",
+      "Configure Fast, Standard, and High-Security modes.",
+      "Handle entry, exit, and event eligibility.",
+      "Describe performance and perceived quality.",
+      "Compare manual and system survey ratings."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 6,
+    "type": "table",
+    "rows": [
+      [
+        "Mode",
+        "Credentials"
+      ],
+      [
+        "Fast",
+        "NFC"
+      ],
+      [
+        "Standard",
+        "NFC + PIN"
+      ],
+      [
+        "High-Security",
+        "NFC + PIN + QR"
+      ]
+    ],
+    "rowCount": 4,
+    "maxWords": 6
+  },
+  {
+    "slide": 6,
+    "type": "narrative",
+    "lines": [
+      "Operators select the verification mode.",
+      "QR validates NFC-linked credential consistency."
+    ],
+    "maxWords": 5
+  },
+  {
+    "slide": 7,
+    "type": "narrative",
+    "lines": [
+      "Developmental, descriptive-evaluative research",
+      "ISO/IEC 25010-based survey questionnaires"
+    ],
+    "maxWords": 4
+  },
+  {
+    "slide": 7,
+    "type": "table",
+    "rows": [
+      [
+        "System students",
+        "70"
+      ],
+      [
+        "Manual students",
+        "70, separate group"
+      ],
+      [
+        "Security personnel",
+        "5"
+      ],
+      [
+        "Faculty/organizer/admin",
+        "5"
+      ]
+    ],
+    "rowCount": 4,
+    "maxWords": 5
+  },
+  {
+    "slide": 8,
+    "type": "table",
+    "rows": [
+      [
+        "Batch",
+        "Students",
+        "Rounds per mode"
+      ],
+      [
+        "Aug 12",
+        "40",
+        "20 + 20"
+      ],
+      [
+        "Aug 13",
+        "30",
+        "20 + 10"
+      ]
+    ],
+    "rowCount": 3,
+    "maxWords": 6
+  },
+  {
+    "slide": 8,
+    "type": "narrative",
+    "lines": [
+      "70 participants completed all three modes.",
+      "20 cards reused after reset exits.",
+      "Fixed order: Fast, Standard, High-Security."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 9,
+    "type": "table",
+    "rows": [
+      [
+        "Component",
+        "Role"
+      ],
+      [
+        "ESP32 + PN532",
+        "NFC UID reading"
+      ],
+      [
+        "WinUI 3",
+        "Rules and timestamps"
+      ],
+      [
+        "MySQL",
+        "Local record storage"
+      ],
+      [
+        "Firestore",
+        "Cloud sync and backup"
+      ]
+    ],
+    "rowCount": 5,
+    "maxWords": 6
+  },
+  {
+    "slide": 9,
+    "type": "narrative",
+    "lines": [
+      "Later additions require separate evaluation."
+    ],
+    "maxWords": 5
+  },
+  {
+    "slide": 10,
+    "type": "narrative",
+    "lines": [
+      "Prototype screenshots. Current build in demonstration."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 11,
+    "type": "narrative",
+    "lines": [
+      "Means and respondent-level sample SDs",
+      "Welch independent-samples t-test",
+      "Two-tailed threshold: alpha = 0.05",
+      "H0: Equal overall mean survey ratings.",
+      "H1: Different overall mean survey ratings.",
+      "t = mean difference / SE"
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 12,
+    "type": "table",
+    "rows": [
+      [
+        "Mode",
+        "Entries",
+        "Resets",
+        "Denials",
+        "Total"
+      ],
+      [
+        "Fast",
+        "70",
+        "70",
+        "2",
+        "142"
+      ],
+      [
+        "Standard",
+        "70",
+        "70",
+        "12",
+        "152"
+      ],
+      [
+        "High-Security",
+        "70",
+        "70",
+        "4",
+        "144"
+      ],
+      [
+        "Total",
+        "210",
+        "210",
+        "18",
+        "438"
+      ]
+    ],
+    "rowCount": 5,
+    "maxWords": 5
+  },
+  {
+    "slide": 12,
+    "type": "narrative",
+    "lines": [
+      "16 listed PASS cases, limited scope."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 13,
+    "type": "table",
+    "rows": [
+      [
+        "Mode",
+        "Mean",
+        "SD",
+        "DB"
+      ],
+      [
+        "Fast",
+        "11.49",
+        "2.20",
+        "2.88"
+      ],
+      [
+        "Standard",
+        "57.37",
+        "17.46",
+        "47.95"
+      ],
+      [
+        "High-Security",
+        "54.06",
+        "6.34",
+        "44.90"
+      ]
+    ],
+    "rowCount": 4,
+    "maxWords": 4
+  },
+  {
+    "slide": 13,
+    "type": "narrative",
+    "lines": [
+      "70 successful entries per mode.",
+      "DB timing overlaps internal latency."
+    ],
+    "maxWords": 5
+  },
+  {
+    "slide": 14,
+    "type": "table",
+    "rows": [
+      [
+        "Metric",
+        "Standard",
+        "High"
+      ],
+      [
+        "Mean",
+        "2.505",
+        "5.799"
+      ],
+      [
+        "Median",
+        "2.035",
+        "4.348"
+      ],
+      [
+        "SD",
+        "1.152",
+        "3.878"
+      ],
+      [
+        "Maximum",
+        "6.875",
+        "22.604"
+      ]
+    ],
+    "rowCount": 5,
+    "maxWords": 3
+  },
+  {
+    "slide": 14,
+    "type": "narrative",
+    "lines": [
+      "Fast stage N/A. Each mode: n=70."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 15,
+    "type": "narrative",
+    "lines": [
+      "SD: 4.436 s",
+      "Median: 21.135 s",
+      "Range: 13.21-37.63 s",
+      "70 active-writing observations"
+    ],
+    "maxWords": 3
+  },
+  {
+    "slide": 15,
+    "type": "narrative",
+    "lines": [
+      "Task boundaries differ from system measures."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 16,
+    "type": "table",
+    "rows": [
+      [
+        "Mode",
+        "Gaps",
+        "Mean(s)",
+        "Gaps/min"
+      ],
+      [
+        "Fast",
+        "66",
+        "2.730",
+        "21.98"
+      ],
+      [
+        "Standard",
+        "66",
+        "8.048",
+        "7.46"
+      ],
+      [
+        "High-Security",
+        "66",
+        "12.129",
+        "4.95"
+      ]
+    ],
+    "rowCount": 4,
+    "maxWords": 4
+  },
+  {
+    "slide": 16,
+    "type": "narrative",
+    "lines": [
+      "Four rounds: 19+19+19+9 = 66 gaps.",
+      "Complete-round throughput remains unmeasured."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 17,
+    "type": "table",
+    "rows": [
+      [
+        "Measure",
+        "Rate",
+        "Recorded count"
+      ],
+      [
+        "Correct credential decisions",
+        "100%",
+        "222/222"
+      ],
+      [
+        "Denied/all records",
+        "4.11%",
+        "18/438"
+      ],
+      [
+        "Lockouts/PIN submissions",
+        "1.32%",
+        "2/152"
+      ]
+    ],
+    "rowCount": 4,
+    "maxWords": 5
+  },
+  {
+    "slide": 17,
+    "type": "narrative",
+    "lines": [
+      "Researcher-labelled outcomes under controlled conditions.",
+      "Demonstrations contributed to denials and lockouts."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 18,
+    "type": "narrative",
+    "lines": [
+      "Performance difference: 1.811 rating points.",
+      "Different students. Categories are descriptive comparisons."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 19,
+    "type": "narrative",
+    "lines": [
+      "Highly Satisfactory",
+      "All three groups",
+      "Staff minimum: 3.45",
+      "Performance Efficiency",
+      "Admin: eight categories",
+      "Other groups: five"
+    ],
+    "maxWords": 3
+  },
+  {
+    "slide": 20,
+    "type": "table",
+    "rows": [
+      [
+        "Group",
+        "n",
+        "Mean",
+        "Sample SD"
+      ],
+      [
+        "Manual process",
+        "70",
+        "2.284",
+        "0.753"
+      ],
+      [
+        "Proposed system",
+        "70",
+        "3.742",
+        "0.290"
+      ]
+    ],
+    "rowCount": 3,
+    "maxWords": 5
+  },
+  {
+    "slide": 20,
+    "type": "narrative",
+    "lines": [
+      "t(89.076)=15.124, p<.001"
+    ],
+    "maxWords": 2
+  },
+  {
+    "slide": 20,
+    "type": "narrative",
+    "lines": [
+      "Difference=1.458, 95% CI=[1.267, 1.650]"
+    ],
+    "maxWords": 4
+  },
+  {
+    "slide": 20,
+    "type": "narrative",
+    "lines": [
+      "Reject H0: Overall survey ratings differ."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 21,
+    "type": "narrative",
+    "lines": [
+      "Physical tailgating prevention remains unverified.",
+      "Complete-task processing speed remains unmeasured.",
+      "Shared cards limit individual-identity conclusions.",
+      "Fixed mode order permits practice effects.",
+      "Different survey groups limit causal interpretation.",
+      "Small, non-random samples limit generalization."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 22,
+    "type": "narrative",
+    "lines": [
+      "Prototype integrates credential validation and attendance.",
+      "Configured modes support different verification requirements.",
+      "Controlled decisions matched researcher-labelled expectations.",
+      "Respondents reported favorable perceived system quality.",
+      "Overall student survey ratings differed significantly.",
+      "Broader effectiveness requires further evaluation."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 23,
+    "type": "narrative",
+    "lines": [
+      "Measure equivalent complete tasks and throughput.",
+      "Expand samples across campuses and roles.",
+      "Counterbalance the verification mode order.",
+      "Test credential sharing and outage recovery.",
+      "Evaluate later additions separately.",
+      "Complete evidence, retention, and destruction documentation."
+    ],
+    "maxWords": 6
+  },
+  {
+    "slide": 24,
+    "type": "narrative",
+    "lines": [
+      "Configured verification modes",
+      "Entry/exit timestamps and alerts",
+      "Authorized local cleanup"
+    ],
+    "maxWords": 4
+  }
+]

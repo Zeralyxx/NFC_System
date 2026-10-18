@@ -1,0 +1,26 @@
+{
+  "output": "C:\\Users\\justine mendoza\\source\\repos\\NFC_System\\output\\imrad\\NFC-System-IMRAD.docx",
+  "abstract_word_count": 210,
+  "total_word_count": 3202,
+  "sections": 6,
+  "tables": 4,
+  "preserved_package_parts": [
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "word/theme/theme1.xml",
+    "word/media/image1.jpeg",
+    "word/media/image2.png",
+    "word/fontTable.xml",
+    "docProps/app.xml",
+    "word/numbering.xml",
+    "word/webSettings.xml"
+  ],
+  "changed_package_parts": [
+    "word/document.xml",
+    "word/styles.xml",
+    "word/_rels/document.xml.rels",
+    "word/settings.xml",
+    "docProps/core.xml"
+  ],
+  "reference_unchanged": true
+}

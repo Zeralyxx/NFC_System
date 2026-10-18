@@ -1183,14 +1183,21 @@ namespace NFC_System
                 int pulledStaff = await _database.PullStaffFromCloudAsync();
                 int pulledCourses = await _database.PullCoursesFromCloudAsync();
                 int pulledEvents = await _database.PullEventsFromCloudAsync();
-                int pulledApproved = await _database.PullEventApprovedStudentsFromCloudAsync();
+                int pulledApproved;
+                string? rosterWarning = null;
+                try { pulledApproved = await _database.PullEventApprovedStudentsFromCloudAsync(); }
+                catch (EventRosterSyncConflictException ex)
+                {
+                    pulledApproved = ex.Changed;
+                    rosterWarning = ex.Message;
+                }
                 int restoredAttendance = await _database.RestoreAttendanceBackupIfEmptyAsync();
                 int pulledLogs = await _database.PullLogsFromCloudAsync();
                 int pulledEventLogs = await _database.PullEventAttendanceFromCloudAsync();
 
                 int totalPulled = pulledStudents + pulledStaff + pulledCourses + pulledEvents + pulledApproved + pulledLogs + pulledEventLogs + restoredAttendance;
 
-                if (totalPulled > 0)
+                if (totalPulled > 0 || rosterWarning != null)
                 {
                     var additions = new List<string>();
                     if (pulledStudents > 0) additions.Add($"{pulledStudents} Student(s)");
@@ -1203,20 +1210,27 @@ namespace NFC_System
                     if (restoredAttendance > 0) additions.Add($"{restoredAttendance} Attendance snapshot row(s)");
 
                     string formattedList = "• " + string.Join("\n• ", additions);
-                    string message = $"Download complete. The following new updates were synced locally:\n\n{formattedList}";
+                    string message = totalPulled > 0
+                        ? $"The following updates were applied locally:\n\n{formattedList}"
+                        : "No additional records were applied.";
+                    if (rosterWarning != null)
+                        message += $"\n\nRoster review required:\n{rosterWarning}\n\nGate, alert and event log downloads completed. Conflicting attendees remain excluded. On a receiving device, an Administrator can review and accept the server-published roster in Event Administration > Roster sync conflicts.";
 
-                    StatusTextBlock.Text = $"Download complete. {totalPulled} records pulled.";
-                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
-                    PlaySuccessPing();
+                    StatusTextBlock.Text = rosterWarning == null
+                        ? $"Download complete. {totalPulled} records pulled."
+                        : $"Cloud records downloaded; roster review required. {totalPulled} records applied.";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(rosterWarning == null
+                        ? Windows.UI.Color.FromArgb(255, 52, 211, 153) : Microsoft.UI.Colors.Orange);
+                    if (rosterWarning == null) PlaySuccessPing();
                     await RefreshDashboardAsync();
 
                     try
                     {
-                        await _database.AddAlertAsync(authorizedBy, "ADMIN_ACTION", $"Authorized cloud data download. {totalPulled} record(s) pulled.");
+                        await _database.AddAlertAsync(authorizedBy, "ADMIN_ACTION", $"Authorized cloud data download. {totalPulled} record(s) applied.{(rosterWarning == null ? "" : " Roster conflicts remain excluded pending review; archive downloads completed.")}");
                     }
                     catch { }
 
-                    await ShowSyncResultDialog("Download Successful", message);
+                    await ShowSyncResultDialog(rosterWarning == null ? "Download Successful" : "Downloaded - Roster Review Required", message);
                 }
                 else
                 {

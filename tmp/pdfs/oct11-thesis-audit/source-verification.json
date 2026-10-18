@@ -1,0 +1,896 @@
+{
+  "sources": [
+    {
+      "path": "C:\\Users\\justine mendoza\\source\\repos\\NFC_System\\output\\chapter4\\Survey-Response-Entry-Template.xlsx",
+      "sha256": "5716d35fbb797807e0d16d6685c83817d3d8ecd6d42b3d767246342e7b0e9f2c"
+    },
+    {
+      "path": "C:\\Users\\justine mendoza\\Documents\\METRICS first batch\\UnStudent Weighted Mean - Students (1).pdf",
+      "sha256": "59cbbc65ae0e5d625af1f7f8a87b2f605409de5eaeb1e754a66d798cdb480ee5"
+    },
+    {
+      "path": "C:\\Users\\justine mendoza\\Documents\\METRICS first batch\\METRICS FIRST BATCH.xlsx",
+      "sha256": "e43345017aede2e9fc0a1728169b4ee3d3e8712b379b9fe401535eeb3eaf69c8"
+    },
+    {
+      "path": "C:\\Users\\justine mendoza\\Documents\\METRICS first batch\\Second Batch.xlsx",
+      "sha256": "a3115929c4e65e4334f1f7e01aadd519cb17ca7f184fe0a7fb99197782e464d5"
+    },
+    {
+      "path": "C:\\Users\\justine mendoza\\Documents\\METRICS first batch\\Manual Process Baseline Testing - Sheet1.pdf",
+      "sha256": "5e22d44c7ec6ea4b36363e78254a4ecb36e3ecc980e98177c2f9534445fe04fe"
+    }
+  ],
+  "surveys": {
+    "Manual": {
+      "Functional Suitability": {
+        "n": 70,
+        "mean": 2.4828571428571427,
+        "median": 2.4,
+        "sample_sd": 0.8986255896148067,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "Performance Efficiency": {
+        "n": 70,
+        "mean": 1.9321428571428572,
+        "median": 1.75,
+        "sample_sd": 0.9187276849024477,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "Usability": {
+        "n": 70,
+        "mean": 2.637142857142857,
+        "median": 3.0,
+        "sample_sd": 0.8541749860727005,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "Reliability": {
+        "n": 70,
+        "mean": 2.182857142857143,
+        "median": 1.9,
+        "sample_sd": 0.8524425992952063,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "Security": {
+        "n": 70,
+        "mean": 2.182857142857143,
+        "median": 2.0,
+        "sample_sd": 0.8831713981025999,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "Overall": {
+        "n": 70,
+        "mean": 2.2835714285714284,
+        "median": 2.115,
+        "sample_sd": 0.7526186857422319,
+        "minimum": 1,
+        "maximum": 4
+      }
+    },
+    "System": {
+      "Functional Suitability": {
+        "n": 70,
+        "mean": 3.762857142857143,
+        "median": 4.0,
+        "sample_sd": 0.3181337921863203,
+        "minimum": 3,
+        "maximum": 4
+      },
+      "Performance Efficiency": {
+        "n": 70,
+        "mean": 3.742857142857143,
+        "median": 4.0,
+        "sample_sd": 0.366068588081693,
+        "minimum": 2.75,
+        "maximum": 4
+      },
+      "Usability": {
+        "n": 70,
+        "mean": 3.7399999999999998,
+        "median": 3.8,
+        "sample_sd": 0.3289861456930535,
+        "minimum": 2.8,
+        "maximum": 4
+      },
+      "Reliability": {
+        "n": 70,
+        "mean": 3.7114285714285713,
+        "median": 3.8,
+        "sample_sd": 0.3483055701339492,
+        "minimum": 2.8,
+        "maximum": 4
+      },
+      "Security": {
+        "n": 70,
+        "mean": 3.7514285714285713,
+        "median": 4.0,
+        "sample_sd": 0.3412436152793838,
+        "minimum": 2.8,
+        "maximum": 4
+      },
+      "Overall": {
+        "n": 70,
+        "mean": 3.7417142857142855,
+        "median": 3.8,
+        "sample_sd": 0.2902171672055028,
+        "minimum": 2.92,
+        "maximum": 4
+      }
+    }
+  },
+  "metrics": {
+    "Fast": {
+      "records": 142,
+      "entries": 70,
+      "exits": 70,
+      "denials": 2,
+      "internal_ms": {
+        "n": 70,
+        "mean": 11.490885714285714,
+        "median": 11.30035,
+        "sample_sd": 2.2023246277898663,
+        "minimum": 8.2594,
+        "maximum": 26.3563
+      },
+      "db_ms": {
+        "n": 70,
+        "mean": 2.8796628571428573,
+        "median": 2.64065,
+        "sample_sd": 0.919875383049,
+        "minimum": 0.5415,
+        "maximum": 5.0699
+      },
+      "intervals": 66,
+      "span_s": 180.2,
+      "spacing_s": 2.73030303030303,
+      "interval_rate_per_min": 21.975582685904552,
+      "denied_within": 2
+    },
+    "Standard": {
+      "records": 152,
+      "entries": 70,
+      "exits": 70,
+      "denials": 12,
+      "internal_ms": {
+        "n": 70,
+        "mean": 57.37226428571429,
+        "median": 50.662400000000005,
+        "sample_sd": 17.46024926047682,
+        "minimum": 44.5535,
+        "maximum": 137.4737
+      },
+      "db_ms": {
+        "n": 70,
+        "mean": 47.94753285714285,
+        "median": 42.515950000000004,
+        "sample_sd": 13.466875980864204,
+        "minimum": 37.6276,
+        "maximum": 92.9367
+      },
+      "intervals": 66,
+      "span_s": 531.167,
+      "spacing_s": 8.047984848484848,
+      "interval_rate_per_min": 7.45528242530127,
+      "denied_within": 8,
+      "interaction_s": {
+        "n": 70,
+        "mean": 2.504755872857143,
+        "median": 2.03484645,
+        "sample_sd": 1.1518235603006413,
+        "minimum": 1.429606,
+        "maximum": 6.8751125
+      },
+      "pin_s": {
+        "n": 70,
+        "mean": 2.504755872857143,
+        "median": 2.03484645,
+        "sample_sd": 1.1518235603006413,
+        "minimum": 1.429606,
+        "maximum": 6.8751125
+      }
+    },
+    "HighSecurity": {
+      "records": 144,
+      "entries": 70,
+      "exits": 70,
+      "denials": 4,
+      "internal_ms": {
+        "n": 70,
+        "mean": 54.064548571428574,
+        "median": 52.63745,
+        "sample_sd": 6.343830481673933,
+        "minimum": 49.4429,
+        "maximum": 86.3615
+      },
+      "db_ms": {
+        "n": 70,
+        "mean": 44.90096,
+        "median": 43.11865,
+        "sample_sd": 7.759376200487746,
+        "minimum": 38.9862,
+        "maximum": 81.3218
+      },
+      "intervals": 66,
+      "span_s": 800.508,
+      "spacing_s": 12.128909090909092,
+      "interval_rate_per_min": 4.946858744697117,
+      "denied_within": 3,
+      "interaction_s": {
+        "n": 70,
+        "mean": 5.799329472857143,
+        "median": 4.3483322,
+        "sample_sd": 3.878102323372868,
+        "minimum": 2.5351169,
+        "maximum": 22.604205699999998
+      },
+      "pin_s": {
+        "n": 70,
+        "mean": 2.1621977314285714,
+        "median": 1.92513205,
+        "sample_sd": 0.7622765957435861,
+        "minimum": 1.3699421999999999,
+        "maximum": 5.0037845
+      },
+      "qr_s": {
+        "n": 70,
+        "mean": 3.6371317414285715,
+        "median": 2.24288665,
+        "sample_sd": 3.8256280215134897,
+        "minimum": 0.8056538000000001,
+        "maximum": 20.8441293
+      }
+    }
+  },
+  "welch": {
+    "difference": 1.4581428571428572,
+    "se": 0.09641138716600643,
+    "t": 15.124176718172787,
+    "df": 89.07601788414236,
+    "p": 2.465539037652754e-26,
+    "ci95": [
+      1.2665777370640416,
+      1.6497079772216727
+    ]
+  },
+  "personnel_surveys": [
+    {
+      "group": "Security Personnel",
+      "categories": [
+        {
+          "mean": 3.84,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.45,
+          "sd_range": [
+            0.0,
+            0.7071067811865476
+          ]
+        },
+        {
+          "mean": 3.6,
+          "sd_range": [
+            0.4472135954999579,
+            0.8366600265340756
+          ]
+        },
+        {
+          "mean": 3.48,
+          "sd_range": [
+            0.4472135954999579,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.8,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        }
+      ],
+      "overall_equal_category_mean": 3.634,
+      "items": [
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.2,
+          "median": 3,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3,
+          "median": 3,
+          "sample_sd": 0.7071067811865476,
+          "minimum": 2,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.2,
+          "median": 3,
+          "sample_sd": 0.8366600265340756,
+          "minimum": 2,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.4,
+          "median": 3,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.2,
+          "median": 3,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.4,
+          "median": 3,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        }
+      ]
+    },
+    {
+      "group": "Faculty/Event Organizer/Admin",
+      "categories": [
+        {
+          "mean": 3.8,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.68,
+          "sd_range": [
+            0.0,
+            0.8944271909999159
+          ]
+        },
+        {
+          "mean": 3.75,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.88,
+          "sd_range": [
+            0.0,
+            0.4472135954999579
+          ]
+        },
+        {
+          "mean": 3.76,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.84,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.88,
+          "sd_range": [
+            0.0,
+            0.5477225575051661
+          ]
+        },
+        {
+          "mean": 3.92,
+          "sd_range": [
+            0.0,
+            0.4472135954999579
+          ]
+        }
+      ],
+      "overall_equal_category_mean": 3.8137499999999998,
+      "items": [
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.4,
+          "median": 4,
+          "sample_sd": 0.8944271909999159,
+          "minimum": 2,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.6,
+          "median": 4,
+          "sample_sd": 0.5477225575051661,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 4,
+          "median": 4,
+          "sample_sd": 0.0,
+          "minimum": 4,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        },
+        {
+          "n": 5,
+          "mean": 3.8,
+          "median": 4,
+          "sample_sd": 0.4472135954999579,
+          "minimum": 3,
+          "maximum": 4
+        }
+      ]
+    }
+  ],
+  "denial_codes": {
+    "DENIED [IRREGULAR_EXIT_SEQUENCE]": 1,
+    "DENIED [ANTI_TAILGATING_VIOLATION]": 5,
+    "DENIED [PIN_FAILURE]": 8,
+    "DENIED [PIN_LOCKED]": 2,
+    "DENIED [QR_REPLACED_OR_MISMATCH]": 2
+  },
+  "security_denominators": {
+    "applicable_credential_records": 222,
+    "recorded_pin_submissions": 152,
+    "pin_locked_records": 2,
+    "caveat": "Expected outcome labels and newly-triggered status depend on researcher confirmation, not exports alone."
+  },
+  "manual_writing_s": {
+    "n": 70,
+    "mean": 21.803428571428572,
+    "median": 21.134999999999998,
+    "sample_sd": 4.436062324190157,
+    "minimum": 13.21,
+    "maximum": 37.63,
+    "total": 1526.24,
+    "service_equivalent_per_min": 2.751860782052626
+  }
+}

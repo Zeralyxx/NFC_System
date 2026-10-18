@@ -15,6 +15,8 @@ namespace NFC_System
 
         public static bool IsOnline => _isOnline;
 
+        public static Task RefreshAsync() => CheckConnectionAsync();
+
         public static void StartMonitoring()
         {
             if (_pollTimer != null) return;

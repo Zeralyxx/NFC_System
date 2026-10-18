@@ -43,8 +43,8 @@ namespace NFC_System
         /// <param name="args">Details about the launch request and process.</param>
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            // Start the global offline monitor
-            DatabaseMonitor.StartMonitoring();
+            DatabaseService.LoadConfig();
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => DatabaseService.StopServerDiscovery();
             _window = new MainWindow();
             _window.Activate();
         }

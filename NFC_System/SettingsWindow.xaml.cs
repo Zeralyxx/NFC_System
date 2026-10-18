@@ -13,11 +13,22 @@ namespace NFC_System
     {
         private readonly DatabaseService _database = new();
         private readonly long _loginVersion = AppSession.LoginVersion;
+        private bool _savingConnection;
+        private bool _closed;
 
         public SettingsWindow()
         {
             this.InitializeComponent();
-            ServerIpConfigTextBox.Text = DatabaseService.ServerIp;
+            try { NetworkConnectionControl.Load(DatabaseService.ReadSavedConnection()); }
+            catch (Exception ex)
+            {
+                NetworkConnectionControl.Load(DatabaseService.ActiveConnection);
+                ServerIpStatusText.Text = $"Saved connection settings could not be read: {ex.Message}";
+            }
+            NetworkConnectionControl.IsEnabled = DeviceIdentity.CanRename;
+            SaveButton.IsEnabled = DeviceIdentity.CanRename;
+            NetworkConnectionControl.StateChanged += () => SaveButton.IsEnabled = DeviceIdentity.CanRename && !_savingConnection && !NetworkConnectionControl.IsSearching;
+            Closed += (_, _) => { _closed = true; NetworkConnectionControl.CancelDiscovery(); };
             LoadDeviceIdentity();
 
             // Fetch the saved database values when window opens
@@ -91,22 +102,22 @@ namespace NFC_System
 
         private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            string newIp = ServerIpConfigTextBox.Text.Trim();
-
-            if (string.IsNullOrWhiteSpace(newIp))
-            {
-                ServerIpStatusText.Text = "Please enter a valid IP address.";
-                ServerIpStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 248, 113, 113));
-                return;
-            }
-
+            if (_savingConnection || NetworkConnectionControl.IsSearching) return;
+            _savingConnection = true;
+            SaveButton.IsEnabled = false;
+            CancelButton.IsEnabled = false;
+            NetworkConnectionControl.IsEnabled = false;
             try
             {
-                // Save the local config text file
-                DatabaseService.SaveConfig(newIp);
+                DatabaseService.RequireConnectionConfigurationPermission(_loginVersion);
+                var validated = await DatabaseService.ValidateClientConnectionAsync(NetworkConnectionControl.Configuration);
+                if (_closed) return;
+                DatabaseService.RequireConnectionConfigurationPermission(_loginVersion);
 
                 // Save the exact policy setting to the app_settings MySQL table
-                await _database.SetSettingAsync("strict_entry_policy", StrictEntryToggle.IsOn.ToString());
+                if (DatabaseMonitor.IsOnline) await _database.SetSettingAsync("strict_entry_policy", StrictEntryToggle.IsOn.ToString());
+                if (_closed) return;
+                DatabaseService.SaveConnectionConfiguration(validated, _loginVersion);
 
                 ServerIpStatusText.Text = "Settings saved. Restart the app for network changes to take effect.";
                 ServerIpStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 52, 211, 153));
@@ -115,6 +126,13 @@ namespace NFC_System
             {
                 ServerIpStatusText.Text = $"Failed to save: {ex.Message}";
                 ServerIpStatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 248, 113, 113));
+            }
+            finally
+            {
+                _savingConnection = false;
+                SaveButton.IsEnabled = DeviceIdentity.CanRename && AppSession.LoginVersion == _loginVersion;
+                CancelButton.IsEnabled = true;
+                NetworkConnectionControl.IsEnabled = SaveButton.IsEnabled;
             }
         }
 

@@ -22,6 +22,10 @@
     <Compile Include="../NFC_System/QrCredentialDisplay.cs" Link="Production/QrCredentialDisplay.cs" />
     <Compile Include="../NFC_System/BrandLogo.cs" Link="Production/BrandLogo.cs" />
     <Compile Include="../NFC_System/AppSession.cs" Link="Production/AppSession.cs" />
+    <Compile Include="../NFC_System/ServerConnectionConfiguration.cs" Link="Production/ServerConnectionConfiguration.cs" />
+    <Compile Include="../NFC_System/ServerDiscovery.cs" Link="Production/ServerDiscovery.cs" />
+    <Compile Include="../NFC_System/ServerConnectionControl.xaml.cs" Link="Production/ServerConnectionControl.xaml.cs" />
+    <Page Include="../NFC_System/ServerConnectionControl.xaml" Link="ServerConnectionControl.xaml" />
     <Compile Include="../NFC_System/GraduationClearance.cs" Link="Production/GraduationClearance.cs" />
     <Compile Include="../NFC_System/GraduationDialogs.cs" Link="Production/GraduationDialogs.cs" />
     <Compile Include="../NFC_System/DirectoryRefinementBar.xaml.cs" Link="Production/DirectoryRefinementBar.xaml.cs" />

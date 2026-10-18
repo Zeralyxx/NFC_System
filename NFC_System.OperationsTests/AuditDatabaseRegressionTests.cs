@@ -8,7 +8,7 @@ internal static class AuditDatabaseRegressionTests
     private static void Assert(bool condition) { if (!condition) throw new Exception("Assertion failed"); }
     private static async Task Reject(Func<Task> operation)
     {
-        try { await operation(); } catch (InvalidOperationException) { return; }
+        try { await operation(); } catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected rejection");
     }
 
@@ -97,6 +97,84 @@ internal static class AuditDatabaseRegressionTests
             await Edit(true); await db.PushEventRosterStateAsync(cloud);
             Assert(cloud.Current?.Approved == false && !(await db.GetEventRosterDirectoryAsync(Event)).Single(s => s.StudentId == Student).HasSyncConflict);
         });
+        await test("SQL receiving database accepts reviewed published approvals and revocations without cloud writes or log deletion", async () =>
+        {
+            foreach (bool approved in new[] { true, false })
+            {
+                var cloud = await Reset();
+                await Edit(false);
+                cloud.Force(approved);
+                await Reject(() => db.PullEventRosterStateAsync(cloud));
+                var selected = (await db.GetEventRosterConflictsAsync()).Where(r => r.EventId == Event).ToArray();
+                var review = await db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud);
+                string alerts = await scalar("SELECT COUNT(*) FROM alerts");
+                Assert(await db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion, cloud) == 1);
+                Assert(await Count() == (approved ? "1" : "0") && await Pending() == "0" && cloud.Writes == 0);
+                Assert((await db.GetEventRosterConflictsAsync()).All(r => r.EventId != Event));
+                Assert(int.Parse(await scalar("SELECT COUNT(*) FROM alerts")) == int.Parse(alerts) + 1);
+                Assert(await scalar("SELECT device_name FROM alerts ORDER BY id DESC LIMIT 1") == "Operations test device");
+                Assert(await db.PullEventRosterStateAsync(cloud) == 0);
+                Assert(await db.PushEventRosterStateAsync(cloud) == 0 && cloud.Writes == 0);
+            }
+        });
+        await test("SQL published-roster review rejects later cloud changes and later local edits", async () =>
+        {
+            var cloud = await Reset(); await Edit(false); cloud.Force(true);
+            await Reject(() => db.PullEventRosterStateAsync(cloud));
+            var selected = (await db.GetEventRosterConflictsAsync()).Where(r => r.EventId == Event).ToArray();
+            var review = await db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud);
+            cloud.Force(false);
+            await Reject(() => db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion, cloud));
+            Assert(await Count() == "0" && await Pending() == "1" && cloud.Writes == 0);
+            await Reject(() => db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud));
+            await Reject(() => db.PullEventRosterStateAsync(cloud));
+            selected = (await db.GetEventRosterConflictsAsync()).Where(r => r.EventId == Event).ToArray();
+            review = await db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud);
+            await Edit(true);
+            await Reject(() => db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion, cloud));
+            Assert(await Count() == "0" && await Pending() == "1" && cloud.Writes == 0);
+        });
+        await test("SQL accepting a published batch rolls back every selected entry if a later student is missing", async () =>
+        {
+            var cloud = await Reset(); await Edit(false); cloud.Force(true);
+            await Reject(() => db.PullEventRosterStateAsync(cloud));
+            string other = Student + "-z";
+            await sql($"INSERT INTO students(student_id,full_name,status) VALUES('{other}','Second roster test','Active'); " +
+                $"INSERT INTO event_roster_sync SELECT event_id,'{other}',change_id,approved,cloud_change_id,cloud_update_time,pending,conflict FROM event_roster_sync WHERE event_id='{Event}' AND student_id='{Student}'");
+            cloud.Additional = new[] { cloud.Current! with { StudentId = other } };
+            try
+            {
+                var selected = (await db.GetEventRosterConflictsAsync()).Where(r => r.EventId == Event).ToArray();
+                var review = await db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud);
+                await sql($"DELETE FROM students WHERE student_id='{other}'");
+                string alerts = await scalar("SELECT COUNT(*) FROM alerts");
+                await Reject(() => db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion, cloud));
+                Assert(await Count() == "0" && await Pending() == "1" && cloud.Writes == 0);
+                Assert((await db.GetEventRosterConflictsAsync()).Count(r => r.EventId == Event) == 2);
+                Assert(await scalar("SELECT COUNT(*) FROM alerts") == alerts);
+            }
+            finally { await sql($"DELETE FROM event_roster_sync WHERE event_id='{Event}' AND student_id='{other}'; DELETE FROM students WHERE student_id='{other}'"); }
+        });
+        await test("SQL published-roster adoption requires an unchanged administrator session", async () =>
+        {
+            var cloud = await Reset(); await Edit(false); cloud.Force(true);
+            await Reject(() => db.PullEventRosterStateAsync(cloud));
+            var selected = (await db.GetEventRosterConflictsAsync()).Where(r => r.EventId == Event).ToArray();
+            var review = await db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud);
+            await Reject(() => db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion - 1, cloud));
+            AppSession.IsAdmin = false; AppSession.IsEventOrganizer = true;
+            try
+            {
+                await Reject(() => db.PreviewPublishedEventRosterAsync(selected, AppSession.LoginVersion, cloud));
+                await Reject(() => db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion, cloud));
+            }
+            finally { AppSession.IsAdmin = true; AppSession.IsEventOrganizer = false; }
+            string role = AppSession.CurrentStaffRoleLabel;
+            AppSession.CurrentStaffRoleLabel = "Unknown";
+            try { await Reject(() => db.AcceptPublishedEventRosterAsync(review, AppSession.LoginVersion, cloud)); }
+            finally { AppSession.CurrentStaffRoleLabel = role; }
+            Assert(await Count() == "0" && await Pending() == "1" && cloud.Writes == 0);
+        });
         await test("SQL compare-and-swap race cannot overwrite concurrent revocation", async () =>
         {
             var cloud = await Reset(); await Edit(false);
@@ -177,6 +255,7 @@ internal static class AuditDatabaseRegressionTests
     {
         private int sequence;
         public RosterCloudRevision? Current { get; private set; }
+        public IReadOnlyList<RosterCloudRevision> Additional = Array.Empty<RosterCloudRevision>();
         public bool FailReads, FailWrites, LoseAcknowledgment;
         public int Writes, LegacyReads;
         public Func<Task>? BeforeWrite;
@@ -186,7 +265,7 @@ internal static class AuditDatabaseRegressionTests
         public Task<IReadOnlyList<RosterCloudRevision>> LoadAsync()
         {
             if (FailReads) throw new HttpRequestException("Forced unavailable cloud");
-            return Task.FromResult<IReadOnlyList<RosterCloudRevision>>(Current == null ? Array.Empty<RosterCloudRevision>() : new[] { Current });
+            return Task.FromResult<IReadOnlyList<RosterCloudRevision>>((Current == null ? Array.Empty<RosterCloudRevision>() : new[] { Current }).Concat(Additional).ToArray());
         }
         public Task<IReadOnlyList<(string EventId, string StudentId)>> LoadLegacyAsync()
         {
