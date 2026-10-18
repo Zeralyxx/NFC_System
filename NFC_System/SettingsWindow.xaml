@@ -47,6 +47,7 @@
                 </Border>
 
                 <StackPanel Grid.Row="2" Spacing="12" Margin="0,24,0,0">
+                    <local:StudentSyncControl/>
                     <TextBlock Text="Device Identity" Style="{StaticResource CardTitleStyle}" FontSize="18"/>
                     <TextBox x:Name="DeviceNameTextBox" Header="Device name" MaxLength="100"/>
                     <TextBox x:Name="DeviceIdTextBox" Header="Permanent device ID" IsReadOnly="True"/>

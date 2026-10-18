@@ -51,6 +51,7 @@ await ReportingTests.RunAsync(Test);
 await EventCompletionTests.RunAsync(Test);
 await SystemCapacityTests.RunAsync(Test);
 await PinSecurityTests.RunAsync(Test);
+await StudentSyncTests.RunAsync(Test);
 if (args.Contains("--mysql"))
 {
     await DatabaseTests.RunAsync(Test);
@@ -58,6 +59,7 @@ if (args.Contains("--mysql"))
     await EventCompletionTests.RunDatabaseAsync(Test);
     await SystemCapacityTests.RunDatabaseAsync(Test);
     await PinSecurityTests.RunDatabaseAsync(Test);
+    await StudentSyncTests.RunDatabaseAsync(Test);
 }
 else Console.WriteLine("SQL integration tests skipped; use --mysql with the disposable server on port 23306.");
 Console.WriteLine($"{passed} passed; {failed} failed.");

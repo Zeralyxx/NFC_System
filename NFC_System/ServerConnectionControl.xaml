@@ -14,6 +14,7 @@
         <ComboBox x:Name="RoleBox" Style="{StaticResource ServerComboBoxStyle}" Header="This device" HorizontalAlignment="Stretch" SelectionChanged="RoleBox_SelectionChanged">
             <ComboBoxItem Content="Main Server" Tag="MainServer"/>
             <ComboBoxItem Content="Connect to Main Server" Tag="Client"/>
+            <ComboBoxItem Content="Administration Device (Local)" Tag="Administration"/>
         </ComboBox>
         <TextBox x:Name="HostBox" Header="MySQL Server IP Address" Background="#22232A" Foreground="#FFFFFF" BorderBrush="#52525B" PlaceholderText="192.168.1.7" TextChanged="HostBox_TextChanged"/>
         <Grid ColumnSpacing="8">

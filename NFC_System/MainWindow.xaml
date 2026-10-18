@@ -445,6 +445,7 @@
 
                     <TextBlock Text="Network Configuration" FontWeight="SemiBold" FontSize="16"/>
                     <local:ServerConnectionControl x:Name="SettingsConnectionControl"/>
+                    <local:StudentSyncControl x:Name="SettingsStudentSyncControl"/>
 
                     <TextBlock Text="Security Policies" FontWeight="SemiBold" FontSize="16" Margin="0,12,0,0"/>
                     <TextBlock Text="Strict 'No ID, No Entry' Policy" FontSize="14" FontWeight="SemiBold"/>

@@ -74,7 +74,7 @@ public sealed partial class MainWindow
     private void SettingsDialog_Closing(ContentDialog sender, ContentDialogClosingEventArgs args)
     {
         // Keep this dialog alive until the durable rename and its audit attempt finish.
-        if (_savingDeviceName || _savingNetwork) args.Cancel = true;
+        if (_savingDeviceName || _savingNetwork || SettingsStudentSyncControl.IsBusy) args.Cancel = true;
         if (!args.Cancel) SettingsConnectionControl.CancelDiscovery();
     }
 }

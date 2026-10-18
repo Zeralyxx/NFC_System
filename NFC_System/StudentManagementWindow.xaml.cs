@@ -924,6 +924,7 @@ namespace NFC_System
                 }
                 else if (_pendingAction == AdminActionType.DeleteIndividual)
                 {
+                    if (StudentSyncService.IsAdministration) throw new InvalidOperationException("Delete profiles on the main server. Remote profile sync does not transfer deletions.");
                     if (StudentListView.SelectedItem is StudentRecord selected)
                     {
                         using var connection = new MySqlConnection(DatabaseService.ConnectionString);
@@ -996,6 +997,8 @@ namespace NFC_System
                         string changesString = changes.Count > 0 ? string.Join(", ", changes) : "No specific fields altered (forced save)";
                         string logMessage = $"Edited profile for {updated.FullName} ({updated.StudentId}). Changes: {changesString}.";
 
+                        if (StudentSyncService.IsAdministration && originalId != updated.StudentId)
+                            throw new InvalidOperationException("Change student IDs on the main server only. Remote profile sync keeps each student's existing ID.");
                         await _database.UpdateStudentWithClearanceAsync(originalId, updated, string.IsNullOrWhiteSpace(pin) ? null : pin,
                             adminName, _pendingStatusPreview);
                         await _database.AddAlertAsync(adminName, "ADMIN_OVERRIDE", logMessage);

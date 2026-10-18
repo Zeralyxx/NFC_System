@@ -32,5 +32,7 @@
     <Compile Include="../NFC_System/DatabaseService.Events.cs" Link="Production/DatabaseService.Events.cs" />
     <Compile Include="../NFC_System/DatabaseService.StudentImport.cs" Link="Production/DatabaseService.StudentImport.cs" />
     <Compile Include="../NFC_System/PinHasher.cs" Link="Production/PinHasher.cs" />
+    <Compile Include="../NFC_System/StudentProfileSync.cs" Link="Production/StudentProfileSync.cs" />
+    <Compile Include="../NFC_System/DatabaseService.StudentSync.cs" Link="Production/DatabaseService.StudentSync.cs" />
   </ItemGroup>
 </Project>

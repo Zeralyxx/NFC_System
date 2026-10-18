@@ -89,6 +89,7 @@ await Test("Invalid role, version, IP, loopback client and malformed identities 
     foreach (var invalid in new[] {
         ServerConnectionConfiguration.Default,
         new ServerConnectionConfiguration(ServerConnectionRole.MainServer,"192.168.1.5"),
+        new ServerConnectionConfiguration(ServerConnectionRole.Administration,"192.168.1.5"),
         new ServerConnectionConfiguration(ServerConnectionRole.Client,"127.0.0.1",id),
         new ServerConnectionConfiguration(ServerConnectionRole.Client,"0.0.0.0",id),
         new ServerConnectionConfiguration(ServerConnectionRole.Client,"255.255.255.255",id),
@@ -97,6 +98,7 @@ await Test("Invalid role, version, IP, loopback client and malformed identities 
         new ServerConnectionConfiguration(ServerConnectionRole.Client,"192.168.1.5","bad"),
         new ServerConnectionConfiguration(ServerConnectionRole.Client,"192.168.1.5",id,2) }) Reject(() => invalid.Validate());
     var current = new ServerConnectionConfiguration(ServerConnectionRole.Client,"192.168.1.5",id);
+    Assert(new ServerConnectionConfiguration(ServerConnectionRole.Administration,"127.0.0.1").Validate().Role == ServerConnectionRole.Administration);
     Assert(current.TargetsSameDatabase(current with { Host = "192.168.1.6" }));
     Assert(!current.TargetsSameDatabase(current with { ServerId = otherId }));
     Assert(!current.TargetsSameDatabase(current with { ServerId = "" }));

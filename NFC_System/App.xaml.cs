@@ -45,6 +45,7 @@ namespace NFC_System
         {
             DatabaseService.LoadConfig();
             AppDomain.CurrentDomain.ProcessExit += (_, _) => DatabaseService.StopServerDiscovery();
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => StudentSyncService.Stop();
             _window = new MainWindow();
             _window.Activate();
         }

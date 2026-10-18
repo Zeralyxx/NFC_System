@@ -99,6 +99,7 @@ public sealed partial class DatabaseService
     private const string FIREBASE_PROJECT_ID = "nfc-system-d6ec2";
     private const string FIREBASE_API_KEY = "AIzaSyCRz3BVZaLO7lA5nlKDlj187su5piFhdRo";
     private static readonly HttpClient _httpClient = new HttpClient();
+    internal static StudentSyncCloud CreateStudentSyncCloud(StudentSyncOptions options) => new(options, FIREBASE_PROJECT_ID, FIREBASE_API_KEY);
 
     public async Task EnsureSchemaAsync()
     {
@@ -306,6 +307,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PullStudentsFromCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return await StudentSyncService.DownloadAsync();
         string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/students?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
@@ -395,6 +397,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PushStudentsToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return await StudentSyncService.UploadAsync();
         int pushedCount = 0;
 
         try
@@ -463,6 +466,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PullLogsFromCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         int updatedCount = 0;
         string[] logTables = { "fast_mode_logs", "standard_mode_logs", "high_security_mode_logs" };
 
@@ -608,6 +612,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PullEventAttendanceFromCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/event_attendance?pageSize=2000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
         try
@@ -669,6 +674,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PullStaffFromCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/staff?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
@@ -717,6 +723,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PushStaffToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         int pushedCount = 0;
 
         try
@@ -762,6 +769,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PullCoursesFromCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/courses?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
@@ -801,6 +809,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PushCoursesToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         int pushedCount = 0;
 
         try
@@ -844,6 +853,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PullEventsFromCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         string url = $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/events?pageSize=1000&key={FIREBASE_API_KEY}";
         int updatedCount = 0;
 
@@ -921,6 +931,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PushEventsToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         int pushedCount = 0;
 
         try
@@ -972,9 +983,9 @@ public sealed partial class DatabaseService
     private static IEventRosterCloudStore CreateRosterCloudStore() => new FirestoreEventRosterStore(_httpClient,
         $"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents", FIREBASE_API_KEY);
 
-    public Task<int> PullEventApprovedStudentsFromCloudAsync() => PullEventRosterStateAsync(CreateRosterCloudStore());
+    public Task<int> PullEventApprovedStudentsFromCloudAsync() => StudentSyncService.IsAdministration ? Task.FromResult(0) : PullEventRosterStateAsync(CreateRosterCloudStore());
 
-    public Task<int> PushEventApprovedStudentsToCloudAsync() => PushEventRosterStateAsync(CreateRosterCloudStore());
+    public Task<int> PushEventApprovedStudentsToCloudAsync() => StudentSyncService.IsAdministration ? Task.FromResult(0) : PushEventRosterStateAsync(CreateRosterCloudStore());
 
     public Task<IReadOnlyList<EventRosterCloudReview>> PreviewPublishedEventRosterAsync(
         IReadOnlyList<EventRosterConflict> expected, long sessionVersion) =>
@@ -985,6 +996,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PushLogsToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         int pushedCount = 0;
         try
         {
@@ -1106,6 +1118,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PushEventAttendanceToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         int pushedCount = 0;
         try
         {
@@ -1790,9 +1803,11 @@ public sealed partial class DatabaseService
         ValidateIssuedQr(student);
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
+        await EnsureStudentSyncSchemaAsync(connection);
+        using var transaction = await connection.BeginTransactionAsync();
 
         bool idExists;
-        using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection))
+        using (var checkCmd = new MySqlCommand("SELECT COUNT(*) FROM students WHERE student_id = @id", connection, transaction))
         {
             checkCmd.Parameters.AddWithValue("@id", student.StudentId);
             idExists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
@@ -1800,8 +1815,12 @@ public sealed partial class DatabaseService
         if (idExists)
             throw new InvalidOperationException($"Student ID '{student.StudentId}' is already registered.");
 
-        if (await NfcUidBelongsToAnotherStudentAsync(connection, student.NfcUid, student.StudentId))
-            throw new InvalidOperationException("This NFC card is already linked to another student.");
+        using (var card = new MySqlCommand("SELECT COUNT(*) FROM students WHERE nfc_uid=@uid AND nfc_uid<>''", connection, transaction))
+        {
+            card.Parameters.AddWithValue("@uid", student.NfcUid);
+            if (Convert.ToInt32(await card.ExecuteScalarAsync()) > 0)
+                throw new InvalidOperationException("This NFC card is already linked to another student.");
+        }
 
         string? salt = null;
         string? hash = null;
@@ -1818,11 +1837,12 @@ public sealed partial class DatabaseService
     VALUES
     (@student_id, @full_name, @email, @course, @year_level, @section_name, @status, @nfc_uid, @pin_salt, @pin_hash, @qr_credential, 'OUTSIDE', 0, FALSE, @photo_data, @is_temporary);";
 
-        using var command = new MySqlCommand(sql, connection);
+        using var command = new MySqlCommand(sql, connection, transaction);
         AddStudentParameters(command, student, salt, hash);
         AppSession.RequireQrIssuancePermission();
         await command.ExecuteNonQueryAsync();
-
+        await MarkNewSyncProfileAsync(connection, transaction, student.StudentId);
+        await transaction.CommitAsync();
         await AddAlertAsync(student.StudentId, "ADMIN_ACTION", $"Registered new student profile for {student.FullName}.");
     }
 
@@ -2643,6 +2663,7 @@ public sealed partial class DatabaseService
 
     public async Task<int> PurgeInactiveStudentsAsync()
     {
+        if (StudentSyncService.IsAdministration) throw new InvalidOperationException("Purge profiles on the main server. Remote profile sync does not transfer deletions.");
         using var connection = new MySqlConnection(ConnectionString);
         await connection.OpenAsync();
 

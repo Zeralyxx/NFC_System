@@ -35,6 +35,7 @@ public sealed partial class DatabaseService
             if (Convert.ToInt32(await engine.ExecuteScalarAsync()) != 3)
                 throw new InvalidOperationException("Student import requires InnoDB students, courses, and alerts tables for an all-or-nothing save.");
         }
+        await EnsureStudentSyncSchemaAsync(connection);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
         var (ids, courses) = await ReadImportReferenceAsync(connection, transaction);
         var preview = SpreadsheetService.PreviewProfiles(document, ids, courses);
@@ -58,6 +59,7 @@ public sealed partial class DatabaseService
             insert.Parameters.AddWithValue("@section", profile.Section);
             insert.Parameters.AddWithValue("@status", SpreadsheetService.PendingEnrollmentStatus);
             await insert.ExecuteNonQueryAsync();
+            await MarkNewSyncProfileAsync(connection, transaction, profile.StudentId);
         }
         using (var audit = new MySqlCommand("INSERT INTO alerts (student_id, alert_type, message, device_id, device_name) VALUES (NULL, 'ADMIN_ACTION', @message, @device, @deviceName)", connection, transaction))
         {

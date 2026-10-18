@@ -28,7 +28,7 @@ public sealed partial class ServerConnectionControl : UserControl
     {
         CancelDiscovery();
         _loading = true;
-        _roleIndex = configuration.Role == ServerConnectionRole.MainServer ? 0 : configuration.Role == ServerConnectionRole.Client ? 1 : -1;
+        _roleIndex = configuration.Role == ServerConnectionRole.MainServer ? 0 : configuration.Role == ServerConnectionRole.Client ? 1 : configuration.Role == ServerConnectionRole.Administration ? 2 : -1;
         RoleBox.SelectedIndex = _roleIndex;
         _identityHost = configuration.Host;
         HostBox.Text = configuration.Host;
@@ -43,6 +43,7 @@ public sealed partial class ServerConnectionControl : UserControl
     {
         0 => ServerConnectionRole.MainServer,
         1 => ServerConnectionRole.Client,
+        2 => ServerConnectionRole.Administration,
         _ => ServerConnectionRole.NotConfigured
     }, HostBox.Text.Trim(), HostBox.Text.Trim() == _identityHost ? _serverId : "");
 
@@ -55,7 +56,7 @@ public sealed partial class ServerConnectionControl : UserControl
         _roleIndex = RoleBox.SelectedIndex;
         CancelDiscovery();
         _serverId = "";
-        if (RoleBox.SelectedIndex == 0) HostBox.Text = "127.0.0.1";
+        if (RoleBox.SelectedIndex is 0 or 2) HostBox.Text = "127.0.0.1";
         else if (HostBox.Text == "127.0.0.1") HostBox.Text = "";
         UpdateRole();
         if (RoleBox.SelectedIndex == 1) await DetectAsync();
@@ -68,7 +69,7 @@ public sealed partial class ServerConnectionControl : UserControl
         DetectButton.IsEnabled = client && !IsSearching;
         ConnectionNote.Text = RoleBox.SelectedIndex == 0
             ? "The main server app must remain open for automatic detection."
-            : "";
+            : RoleBox.SelectedIndex == 2 ? "Local student administration only. Connect Student Profile Sync in Settings after restarting." : "";
         StateChanged?.Invoke();
     }
 

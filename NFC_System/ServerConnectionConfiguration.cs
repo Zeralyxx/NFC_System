@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace NFC_System;
 
-public enum ServerConnectionRole { NotConfigured, MainServer, Client }
+public enum ServerConnectionRole { NotConfigured, MainServer, Client, Administration }
 
 public sealed record ServerConnectionConfiguration(ServerConnectionRole Role, string Host, string ServerId = "", int Version = 1,
     bool CacheRefreshRequired = false)
@@ -16,12 +16,12 @@ public sealed record ServerConnectionConfiguration(ServerConnectionRole Role, st
     public ServerConnectionConfiguration Validate()
     {
         if (Version != 1 || !Enum.IsDefined(Role) || Role == ServerConnectionRole.NotConfigured)
-            throw new InvalidDataException("Choose Main Server or Connect to Main Server.");
+            throw new InvalidDataException("Choose this device's role.");
         if (!IPAddress.TryParse(Host.Trim(), out var address) || address.AddressFamily != AddressFamily.InterNetwork ||
             address.Equals(IPAddress.Any) || address.Equals(IPAddress.Broadcast) || address.GetAddressBytes()[0] >= 224)
             throw new InvalidDataException("Enter a valid IPv4 server address.");
-        if (Role == ServerConnectionRole.MainServer && !IPAddress.IsLoopback(address))
-            throw new InvalidDataException("The Main Server role must use its own local database (127.0.0.1).");
+        if (Role is ServerConnectionRole.MainServer or ServerConnectionRole.Administration && !IPAddress.IsLoopback(address))
+            throw new InvalidDataException("Main Server and Administration devices must use their own local database (127.0.0.1).");
         if (Role == ServerConnectionRole.Client && IPAddress.IsLoopback(address))
             throw new InvalidDataException("A connecting device must use the main server's network address, not 127.0.0.1.");
         if (ServerId.Length > 0 && !Guid.TryParseExact(ServerId, "N", out _))

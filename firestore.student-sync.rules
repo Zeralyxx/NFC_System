@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /studentSyncServers/{serverId} {
+      function signedIn() { return request.auth != null; }
+      function setup() { return get(/databases/$(database)/documents/studentSyncServers/$(serverId)).data; }
+      function owner() { return signedIn() && request.auth.uid == setup().ownerUid; }
+      function admin() { return signedIn() && request.auth.uid in setup().adminUids; }
+      allow get: if owner() || admin();
+      allow list, create, update, delete: if false;
+
+      match /profiles/{id} {
+        allow read: if owner() || admin();
+        allow create, update: if owner()
+          && request.resource.data.keys().hasOnly(['profileJson', 'fingerprint'])
+          && request.resource.data.profileJson is string
+          && request.resource.data.profileJson.size() <= 900000
+          && request.resource.data.fingerprint is string
+          && request.resource.data.fingerprint.size() == 64;
+        allow delete: if owner();
+      }
+      match /requests/{id} {
+        allow get: if owner() || (admin() &&
+          (!exists(/databases/$(database)/documents/studentSyncServers/$(serverId)/requests/$(id))
+          || resource.data.authorUid == request.auth.uid));
+        allow list: if owner() || (admin() && resource.data.authorUid == request.auth.uid);
+        allow create: if admin() && id.matches('^[0-9a-f]{32}$')
+          && request.resource.data.keys().hasAll(['authorUid','expectedFingerprint','profileJson','resetPin','status','detail','resultFingerprint'])
+          && request.resource.data.keys().hasOnly(['authorUid','expectedFingerprint','profileJson','resetPin','status','detail','resultFingerprint'])
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.expectedFingerprint is string
+          && request.resource.data.expectedFingerprint.size() in [0,64]
+          && request.resource.data.profileJson is string
+          && request.resource.data.profileJson.size() <= 900000
+          && request.resource.data.resetPin is bool
+          && request.resource.data.status == 'Pending'
+          && request.resource.data.detail == ''
+          && request.resource.data.resultFingerprint == '';
+        allow update: if owner()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','detail','resultFingerprint'])
+          && request.resource.data.status in ['Applied','Rejected','Needs Review']
+          && request.resource.data.detail is string && request.resource.data.detail.size() <= 2000
+          && request.resource.data.resultFingerprint is string
+          && request.resource.data.resultFingerprint.size() in [0,64];
+        allow delete: if owner();
+      }
+    }
+  }
+}

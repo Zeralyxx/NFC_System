@@ -17,6 +17,7 @@ public sealed partial class DatabaseService
 
     public async Task<string> PushAttendanceBackupToCloudAsync()
     {
+        if (StudentSyncService.IsAdministration) return "Skipped on administration device";
         var snapshot = await CaptureAttendanceBackupAsync();
         return await CreateAttendanceBackupStore().UploadAsync(snapshot);
     }
@@ -62,6 +63,7 @@ public sealed partial class DatabaseService
     // Called by the existing administrator-authorized download workflow, never by heartbeat recovery.
     public async Task<int> RestoreAttendanceBackupIfEmptyAsync()
     {
+        if (StudentSyncService.IsAdministration) return 0;
         using (var connection = new MySqlConnection(ConnectionString))
         {
             await connection.OpenAsync();

@@ -218,10 +218,11 @@ namespace NFC_System
                     return;
                 }
 
-                if (DatabaseService.ActiveConnection.Role == ServerConnectionRole.MainServer)
+                if (DatabaseService.ActiveConnection.Role is ServerConnectionRole.MainServer or ServerConnectionRole.Administration)
                 {
                     await _database.EnsureSchemaAsync();
-                    await _database.InitializeMainServerIdentityAsync();
+                    if (DatabaseService.ActiveConnection.Role == ServerConnectionRole.MainServer)
+                        await _database.InitializeMainServerIdentityAsync();
                 }
                 else await DatabaseService.ValidateClientConnectionAsync(DatabaseService.ActiveConnection);
 
@@ -282,6 +283,7 @@ namespace NFC_System
                     throw new InvalidOperationException("Complete setup on the main server before connecting this device.");
 
                 if (staffCount > 0) await _database.StartServerDiscoveryAsync();
+                StudentSyncService.Start();
 
                 if (DatabaseService.ActiveConnection.CacheRefreshRequired)
                 {
@@ -706,10 +708,25 @@ namespace NFC_System
 
                 SecurityAdminCard.SetValue(Grid.RowProperty, 0);
                 SecurityAdminCard.SetValue(Grid.ColumnProperty, 2);
+                SecurityAdminCard.Visibility = Visibility.Collapsed;
+                RegistrationCard.SetValue(Grid.RowProperty, 0);
+                RegistrationCard.SetValue(Grid.ColumnProperty, 0);
+                StudentDirectoryCard.SetValue(Grid.RowProperty, 0);
+                StudentDirectoryCard.SetValue(Grid.ColumnProperty, 1);
 
                 EventAttendanceCard.Visibility = Visibility.Visible;
                 VerificationCard.Visibility = Visibility.Visible;
                 SecurityAdminCard.Visibility = Visibility.Visible;
+            }
+            if (StudentSyncService.IsAdministration)
+            {
+                EventAttendanceCard.Visibility = Visibility.Collapsed;
+                VerificationCard.Visibility = Visibility.Collapsed;
+                EventReportsCard.Visibility = Visibility.Collapsed;
+                StudentDirectoryCard.SetValue(Grid.RowProperty, 0);
+                StudentDirectoryCard.SetValue(Grid.ColumnProperty, 1);
+                SecurityAdminCard.SetValue(Grid.RowProperty, 0);
+                SecurityAdminCard.SetValue(Grid.ColumnProperty, 2);
             }
         }
 
@@ -749,12 +766,14 @@ namespace NFC_System
 
         private void Verification_Click(object sender, RoutedEventArgs e)
         {
+            if (StudentSyncService.IsAdministration) return;
             new VerificationWindow().Activate();
             this.Close();
         }
 
         private void EventAttendance_Click(object sender, RoutedEventArgs e)
         {
+            if (StudentSyncService.IsAdministration) return;
             new EventAttendanceWindow().Activate();
             this.Close();
         }
