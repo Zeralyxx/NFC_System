@@ -34,26 +34,70 @@ not impose expiry; credential replacement and trusted-key removal control validi
 
 ## Provisioning
 
-Do this on the dedicated enrollment Windows account, not a public kiosk account:
+### Admin/Master Admin device: create the signing key
+
+Run this once in PowerShell on the Windows account that will issue student QR
+credentials. Do not run certificate generation on Personnel/kiosk devices. If this
+PowerShell session blocks scripts, allow this session only, then run the script:
 
 ```powershell
-.\Deployment\New-QrSigningCertificate.ps1 -OutputDirectory C:\NfcQrProvisioning\initial
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\Deployment\New-QrSigningCertificate.ps1 -OutputDirectory "$env:USERPROFILE\NfcQrProvisioning\initial"
 ```
 
-The script creates a non-exportable private signing key in CurrentUser/My and emits
-two JSON files containing public certificates. It does not modify the application's
-configuration or student database. On the enrollment machine, an administrator
-installs `issuer-trust.json` as `%ProgramData%\NFC_System\QrKeys\trust.json`.
-On kiosks, install `kiosk-trust.json` at that path. Do not install a private signing
-certificate on kiosks. Both use the same application, so Windows account separation
-is required if enrollment and kiosk operation share a physical computer.
+The script creates a non-exportable private signing key in this Windows account's
+certificate store and writes `issuer-trust.json` and `kiosk-trust.json` under
+`%USERPROFILE%\NfcQrProvisioning\initial`. It does not modify the app configuration
+or student database. Install the issuer configuration on this Admin device:
 
-Protect the QrKeys directory and trust.json against writes by kiosk users: SYSTEM
-and Administrators need full access, the runtime account needs read access only.
-Protect the parent directory against replacement as well. Trust-list integrity is
-part of the security boundary. The app never automatically creates a signing key
-or trusts a key supplied by a QR. Missing/broken trust configuration rejects QR;
-missing signing configuration blocks issuance and leaves the database unchanged.
+```powershell
+New-Item -ItemType Directory -Path "$env:ProgramData\NFC_System\QrKeys" -Force
+Copy-Item -LiteralPath "$env:USERPROFILE\NfcQrProvisioning\initial\issuer-trust.json" `
+  -Destination "$env:ProgramData\NFC_System\QrKeys\trust.json"
+```
+
+Keep this Admin account and its private key restricted to authorized QR issuance.
+Do not copy the private key or `issuer-trust.json` to Personnel/kiosk devices.
+
+### Personnel/kiosk devices: install public verification keys
+
+Transfer the `kiosk-trust.json` created on the Admin device to each Personnel/kiosk
+device using an approved method, such as a controlled USB drive. The transfer is a
+separate step; running the install command on another device cannot retrieve the file
+from the Admin device. This file contains public certificates only, so it can verify
+signatures but cannot issue QR credentials.
+
+On each Personnel/kiosk device, change the source path below to the location where
+you placed the transferred file. For example, if it is on drive `E:` as
+`E:\kiosk-trust.json`:
+
+```powershell
+New-Item -ItemType Directory -Path "$env:ProgramData\NFC_System\QrKeys" -Force
+Copy-Item -LiteralPath "E:\kiosk-trust.json" `
+  -Destination "$env:ProgramData\NFC_System\QrKeys\trust.json"
+Test-Path "$env:ProgramData\NFC_System\QrKeys\trust.json"
+```
+
+Expected result: `True`. Repeat the transfer and installation on every device that
+verifies QR credentials. Do not generate a different certificate on those devices:
+their trust file must contain the public certificate that matches the QR issuer's
+signing key. If a trust file already exists, preserve its trusted certificates and
+merge during key rotation rather than replacing it blindly.
+
+If a scan still reports an invalid credential, check the gate log's failure reason.
+`QR_UNKNOWN_KEY` means the installed trust file does not contain the QR's signing
+key. `NOT_REGISTERED` means the student is missing from that device's current
+database/cache. `QR_REPLACED_OR_MISMATCH` means the device has a different stored QR
+credential for that student.
+
+Protect the `QrKeys` directory and `trust.json` from modification by Personnel/kiosk
+users: SYSTEM and Administrators need full access, while the app's runtime account
+needs read access. Protect the parent directory against replacement as well. Trust
+list integrity is part of the security boundary. The app never automatically creates
+a signing key or trusts a key supplied by a QR. Missing/broken trust configuration
+rejects QR; missing signing configuration blocks issuance and leaves the database
+unchanged. If enrollment and kiosk operation share one physical computer, use
+separate Windows accounts with different trust configurations.
 
 For rotation, use a fresh output directory and pass `-ExistingTrustFile` with the
 current trust.json. Distribute the expanded public trust list to all kiosks before
