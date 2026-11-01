@@ -153,7 +153,7 @@
                             <Border Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
                                     <TextBlock Text="Database Synchronization" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                    <TextBlock Text="Sync local gate terminal records with the online master database." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Upload records for cloud backup. Use recovery/backfill only when intentionally restoring data; devices sharing one MySQL database do not need a cloud pull." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
 
                                     <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
@@ -161,7 +161,7 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Button x:Name="UploadDataButton" Grid.Column="0" Content="Upload Data (Push)" Click="UploadDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
-                                        <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Get New Data (Pull)" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
+                                        <Button x:Name="GetNewDataButton" Grid.Column="1" Content="Cloud Recovery / Backfill" Click="GetNewDataButton_Click" Height="40" CornerRadius="{StaticResource ButtonCornerRadius}" HorizontalAlignment="Stretch" Background="#1AFFFFFF" BorderBrush="#30FFFFFF" BorderThickness="1"/>
                                     </Grid>
 
                                     <ProgressBar x:Name="SyncProgressBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{StaticResource PrimaryAccentBrush}"/>
@@ -222,8 +222,8 @@
                             <!-- System Maintenance (Data Purge) -->
                             <Border x:Name="MaintenancePanel" Padding="24" CornerRadius="{StaticResource CardCornerRadius}" Background="{StaticResource CardBackgroundBrush}" BorderBrush="#15FFFFFF" BorderThickness="1">
                                 <StackPanel Spacing="16">
-                                    <TextBlock Text="Local Storage Cleanup" Style="{StaticResource CardTitleStyle}" Margin="0"/>
-                                    <TextBlock Text="Your cloud backup retains the complete audit history. Remove only cloud-backed records from this device to keep local storage responsive." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Shared Database Log Cleanup" Style="{StaticResource CardTitleStyle}" Margin="0"/>
+                                    <TextBlock Text="Remove older, cloud-backed log records from the shared MySQL database. This affects every connected device; the cloud backup remains unchanged." Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" TextWrapping="Wrap"/>
 
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="CLOUD BACKUP" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" FontWeight="SemiBold"/>
@@ -242,10 +242,10 @@
                                                 <ComboBoxItem Content="5 years" Tag="1825"/>
                                                 <ComboBoxItem Content="10 years" Tag="3650"/>
                                             </ComboBox>
-                                            <Button x:Name="PurgeLogsButton" Grid.Column="1" Content="Clean Local Storage" Click="PurgeLogsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#D97706" Foreground="White" BorderThickness="0" Width="158"/>
+                                            <Button x:Name="PurgeLogsButton" Grid.Column="1" Content="Purge Shared Logs" Click="PurgeLogsButton_Click" Height="32" CornerRadius="{StaticResource ButtonCornerRadius}" Background="#D97706" Foreground="White" BorderThickness="0" Width="158"/>
                                         </Grid>
-                                        <TextBlock x:Name="LocalCleanupPreviewText" Text="Checking eligible cloud-backed records..." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
-                                        <TextBlock x:Name="LastCleanupText" Text="No local cleanup has been recorded." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="LocalCleanupPreviewText" Text="Checking records eligible for shared-database cleanup..." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="LastCleanupText" Text="No shared-database cleanup has been recorded." Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
                                     </StackPanel>
 
                                     <Grid ColumnSpacing="12">

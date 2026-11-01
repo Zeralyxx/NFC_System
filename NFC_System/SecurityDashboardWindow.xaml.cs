@@ -43,6 +43,9 @@ namespace NFC_System
 
         private bool _isForceClosing = false;
         private readonly DispatcherTimer _searchDebounceTimer = new();
+        private readonly DispatcherTimer _autoRefreshTimer = new();
+        private bool _isAutoRefreshing = false;
+        private DateTime _lastLatestLogTime = DateTime.MinValue;
 
         // Asynchronous Dialog Queuing Engine
         private bool _isDialogOpen = false;
@@ -91,10 +94,16 @@ namespace NFC_System
 
             HardwareService.OnUidScanned += HardwareService_OnUidScanned;
 
+
             _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(500);
             _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+            _autoRefreshTimer.Interval = TimeSpan.FromSeconds(3);
+            _autoRefreshTimer.Tick += AutoRefreshTimer_Tick;
+            _autoRefreshTimer.Start();
+
 
             _ = InitializeAsync();
+
         }
 
         private void HardwareService_OnUidScanned(string uid)
@@ -357,6 +366,8 @@ namespace NFC_System
 
         private void Window_Closed(object sender, WindowEventArgs args)
         {
+            _autoRefreshTimer.Stop();
+            _searchDebounceTimer.Stop();
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
             HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
         }
@@ -446,7 +457,7 @@ namespace NFC_System
                 {
                     CloudBackupStatusText.Text = isOnline
                         ? "Cloud backup: connected"
-                        : "Cloud backup: unavailable - local cleanup is paused";
+                        : "Cloud backup: unavailable - shared-database cleanup is paused";
                     CloudBackupStatusText.Foreground = new SolidColorBrush(isOnline
                         ? Windows.UI.Color.FromArgb(255, 52, 211, 153)
                         : Windows.UI.Color.FromArgb(255, 248, 113, 113));
@@ -454,20 +465,54 @@ namespace NFC_System
             });
         }
 
-        private async Task RefreshDashboardAsync()
+        private async void AutoRefreshTimer_Tick(object? sender, object e)
         {
+            if (_isAutoRefreshing || !DatabaseMonitor.IsOnline) return;
+            await RefreshDashboardAsync(isSilentAutoRefresh: true);
+        }
+
+        private async Task RefreshDashboardAsync(bool isSilentAutoRefresh = false)
+        {
+            if (_isAutoRefreshing) return;
+            _isAutoRefreshing = true;
+
             try
             {
                 string? statusFilter = AppSession.CurrentStaffRoleLabel == "Personnel" ? "Denied / Flagged" : null;
 
                 var recentLogs = await _database.GetMasterAuditLogsAsync(30, null, null, statusFilter, null);
-                RecentActivityListView.ItemsSource = recentLogs;
+
+                if (recentLogs != null)
+                {
+                    DateTime newestTimestamp = recentLogs.FirstOrDefault()?.Timestamp ?? DateTime.MinValue;
+                    int currentCount = (RecentActivityListView.ItemsSource as IReadOnlyList<SystemAuditLog>)?.Count ?? -1;
+
+                    // Only re-bind the UI if new records arrived or this was a manual refresh
+                    if (!isSilentAutoRefresh || newestTimestamp != _lastLatestLogTime || recentLogs.Count != currentCount)
+                    {
+                        _lastLatestLogTime = newestTimestamp;
+                        RecentActivityListView.ItemsSource = recentLogs;
+
+                        // If the Master Explorer popup is currently open, refresh it too
+                        if (_isDialogOpen && PopupLogsListView != null && !_searchDebounceTimer.IsEnabled)
+                        {
+                            await ApplyServerSidePopupFiltersAsync();
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Could not refresh dashboard: {ex.Message}";
-                StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
-                PlayErrorAlert();
+                if (!isSilentAutoRefresh)
+                {
+                    StatusTextBlock.Text = $"Could not refresh dashboard: {ex.Message}";
+                    StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
+                    PlayErrorAlert();
+                }
+            }
+            finally
+            {
+                _isAutoRefreshing = false;
             }
         }
 
@@ -502,17 +547,17 @@ namespace NFC_System
             {
                 int eligibleRecords = await _database.GetPurgeableLogCountAsync(days);
                 LocalCleanupPreviewText.Text = eligibleRecords == 0
-                    ? "No cloud-backed records are eligible for local cleanup."
-                    : $"{eligibleRecords:N0} cloud-backed record(s) are eligible for local cleanup.";
+                    ? "No cloud-backed records are eligible for shared-database cleanup."
+                    : $"{eligibleRecords:N0} cloud-backed record(s) are eligible for shared-database cleanup.";
 
                 string lastCleanup = await _database.GetSettingAsync("last_local_log_cleanup", "");
                 LastCleanupText.Text = string.IsNullOrWhiteSpace(lastCleanup)
-                    ? "No local cleanup has been recorded."
-                    : $"Last local cleanup: {lastCleanup}";
+                    ? "No shared-database cleanup has been recorded."
+                    : $"Last shared-database cleanup: {lastCleanup}";
             }
             catch (Exception ex)
             {
-                LocalCleanupPreviewText.Text = $"Unable to check local cleanup status: {ex.Message}";
+                LocalCleanupPreviewText.Text = $"Unable to check shared-database cleanup status: {ex.Message}";
             }
         }
 
@@ -630,16 +675,16 @@ namespace NFC_System
 
             if (eligibleRecords == 0)
             {
-                StatusTextBlock.Text = $"No cloud-synced audit records older than {retentionLabel} are eligible for local cleanup.";
+                StatusTextBlock.Text = $"No cloud-synced audit records older than {retentionLabel} are eligible for shared-database cleanup.";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 96, 165, 250));
                 return;
             }
 
             ContentDialog confirmDialog = new ContentDialog
             {
-                Title = "Confirm Local Cleanup",
-                Content = $"{eligibleRecords} audit record(s) older than {retentionLabel} are eligible for local cleanup.\n\nOnly records already confirmed in the cloud backup will be deleted from this device. The cloud history will not be changed.",
-                PrimaryButtonText = "Clean Local Storage",
+                Title = "Confirm Shared-Database Cleanup",
+                Content = $"{eligibleRecords} audit record(s) older than {retentionLabel} are eligible for removal from the shared MySQL database. All devices connected to this database will be affected. Only records already confirmed in the cloud backup will be deleted; cloud history will remain unchanged.",
+                PrimaryButtonText = "Purge Shared Logs",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close
             };
@@ -722,7 +767,7 @@ namespace NFC_System
             {
                 int deleted = await _database.PurgeOldLogsAsync(_pendingPurgeDays);
 
-                StatusTextBlock.Text = $"Log Purge Complete: {deleted} old record(s) permanently deleted.";
+                StatusTextBlock.Text = $"Shared-database log cleanup complete: {deleted} old record(s) removed. Cloud history is unchanged.";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 52, 211, 153));
                 PlaySuccessPing();
 
@@ -735,7 +780,7 @@ namespace NFC_System
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Log purge failed: {ex.Message}";
+                StatusTextBlock.Text = $"Shared-database cleanup failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
             }
@@ -1131,9 +1176,9 @@ namespace NFC_System
         {
             ContentDialog confirmDialog = new ContentDialog
             {
-                Title = "Confirm Download",
-                Content = "This will download cloud profiles, events, rosters, and logs. If attendance tables are empty, it will also restore the latest completed attendance snapshot. Existing attendance will not be overwritten. Stop other attendance devices before a disaster restore. Continue?",
-                PrimaryButtonText = "Yes, Download",
+                Title = "Confirm Cloud Recovery / Backfill",
+                Content = "This will import cloud profiles, events, rosters, and archived logs into the connected MySQL database. It can re-add logs previously removed by shared-database cleanup. If attendance tables are empty, it will also restore the latest completed attendance snapshot; existing attendance will not be overwritten. Devices already sharing this database do not need this action. Stop other attendance devices before a disaster restore. Continue?",
+                PrimaryButtonText = "Recover / Backfill",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close
             };
@@ -1153,7 +1198,7 @@ namespace NFC_System
                 AdminPinBox.Visibility = Visibility.Visible;
                 AdminPinBox.Password = "";
                 AuthStatusText.Visibility = Visibility.Collapsed;
-                AdminAuthDescriptionText.Text = "To confirm this data download, an Administrator must enter their 4-digit PIN and tap their NFC card.";
+                AdminAuthDescriptionText.Text = "To authorize cloud recovery/backfill, an Administrator must enter their 4-digit PIN and tap their NFC card.";
                 AdminAuthTapPromptText.Text = "Awaiting Administrator NFC identification card & PIN...";
 
                 _isAwaitingAdminAuth = true;
@@ -1163,7 +1208,7 @@ namespace NFC_System
                 {
                     _isAwaitingAdminAuth = false;
                     _pendingAdminAction = "";
-                    StatusTextBlock.Text = "Download cancelled.";
+                    StatusTextBlock.Text = "Cloud recovery/backfill cancelled.";
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
                 }
             }
@@ -1174,7 +1219,7 @@ namespace NFC_System
             GetNewDataButton.IsEnabled = false;
             UploadDataButton.IsEnabled = false;
             SyncProgressBar.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = "Downloading latest records and logs from cloud database...";
+            StatusTextBlock.Text = "Recovering records and archived logs from cloud...";
             StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
 
             try
@@ -1217,8 +1262,8 @@ namespace NFC_System
                         message += $"\n\nRoster review required:\n{rosterWarning}\n\nGate, alert and event log downloads completed. Conflicting attendees remain excluded. On a receiving device, an Administrator can review and accept the server-published roster in Event Administration > Roster sync conflicts.";
 
                     StatusTextBlock.Text = rosterWarning == null
-                        ? $"Download complete. {totalPulled} records pulled."
-                        : $"Cloud records downloaded; roster review required. {totalPulled} records applied.";
+                        ? $"Cloud recovery/backfill complete. {totalPulled} records applied."
+                        : $"Cloud recovery/backfill complete; roster review required. {totalPulled} records applied.";
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(rosterWarning == null
                         ? Windows.UI.Color.FromArgb(255, 52, 211, 153) : Microsoft.UI.Colors.Orange);
                     if (rosterWarning == null) PlaySuccessPing();
@@ -1226,25 +1271,25 @@ namespace NFC_System
 
                     try
                     {
-                        await _database.AddAlertAsync(authorizedBy, "ADMIN_ACTION", $"Authorized cloud data download. {totalPulled} record(s) applied.{(rosterWarning == null ? "" : " Roster conflicts remain excluded pending review; archive downloads completed.")}");
+                        await _database.AddAlertAsync(authorizedBy, "ADMIN_ACTION", $"Authorized cloud recovery/backfill. {totalPulled} record(s) applied.{(rosterWarning == null ? "" : " Roster conflicts remain excluded pending review; archive downloads completed.")}");
                     }
                     catch { }
 
-                    await ShowSyncResultDialog(rosterWarning == null ? "Download Successful" : "Downloaded - Roster Review Required", message);
+                    await ShowSyncResultDialog(rosterWarning == null ? "Cloud Recovery Complete" : "Recovered - Roster Review Required", message);
                 }
                 else
                 {
-                    StatusTextBlock.Text = "System is already up to date. No new cloud records found.";
+                    StatusTextBlock.Text = "No additional cloud records were available to recover or backfill.";
                     StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
                 }
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"Download failed: {ex.Message}";
+                StatusTextBlock.Text = $"Cloud recovery/backfill failed: {ex.Message}";
                 StatusTextBlock.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 248, 113, 113));
                 PlayErrorAlert();
 
-                await ShowSyncResultDialog("Download Failed", $"An error occurred while pulling from the cloud:\n\n{ex.Message}");
+                await ShowSyncResultDialog("Cloud Recovery Failed", $"An error occurred while recovering/backfilling from the cloud:\n\n{ex.Message}");
             }
             finally
             {

@@ -18,6 +18,8 @@ public static class AppSession
     public static bool IsEventOrganizer { get; set; }
     public static string CurrentStaffName { get; set; } = "";
     public static string CurrentStaffRoleLabel { get; set; } = "";
+    public static DateTime? LoginTimestamp { get; set; }
+
     public static bool IsKioskRunning { get; set; }
 
     internal static bool TrySignIn(string? role, string? fullName, long expectedVersion)
@@ -37,6 +39,7 @@ public static class AppSession
                 _ => "Personnel"
             };
             CurrentStaffName = fullName ?? CurrentStaffRoleLabel;
+            LoginTimestamp = DateTime.Now; // <--- Track Time In
             _isLoggedIn = true;
             _loginVersion++;
             return true;

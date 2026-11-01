@@ -6,7 +6,6 @@ using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using WinRT.Interop;
@@ -52,13 +51,22 @@ namespace NFC_System
         private EventDropdownItem? _currentSelectedEvent = null;
         private List<VerificationLogRecord> _univMasterLogs = new();
 
-        // THE FIX: State variables for Exit Interceptor and Serial Port
-        private SerialPort? _serialPort;
-        private string _currentPort = "COM3";
+        // State variables for Exit Interceptor
         private bool _isForceClosing = false;
         private bool _isAwaitingAdminAuth = false;
         private string _pendingAdminAction = "";
         private string _pendingAdminSeverity = "";
+
+        // Auto-Refresh Polling State
+        private readonly DispatcherTimer _autoRefreshTimer = new();
+        private bool _isAutoRefreshing = false;
+        private DateTime _lastUnivLogTimestamp = DateTime.MinValue;
+        private int _lastUnivLogCount = -1;
+        private int _lastTotalScansToday = -1;
+        private int _lastInsideCount = -1;
+        private int _lastDeniedToday = -1;
+        private DateTime _lastEventLogTimestamp = DateTime.MinValue;
+        private int _lastEventLogCount = -1;
 
         public EventReportsWindow()
         {
@@ -67,13 +75,184 @@ namespace NFC_System
             UpdateOfflineBanner(DatabaseMonitor.IsOnline);
             MaximizeWindow();
 
+            // Subscribe to the global hardware manager
+            HardwareService.OnUidScanned += HardwareService_OnUidScanned;
+
             IntPtr hWnd = WindowNative.GetWindowHandle(this);
             WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
             AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
             appWindow.Closing += AppWindow_Closing;
             this.Closed += Window_Closed;
 
+            // Start 3-second silent polling for live incoming scans
+            _autoRefreshTimer.Interval = TimeSpan.FromSeconds(3);
+            _autoRefreshTimer.Tick += AutoRefreshTimer_Tick;
+            _autoRefreshTimer.Start();
+
             _ = InitializeAsync();
+        }
+
+        // ====================================================================
+        // SHARED HARDWARE SERVICE EVENT HANDLER
+        // ====================================================================
+        private void HardwareService_OnUidScanned(string uid)
+        {
+            if (_isAwaitingAdminAuth)
+            {
+                DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
+                return;
+            }
+
+            if (AppSession.IsKioskRunning) return;
+        }
+
+        // ====================================================================
+        // SILENT AUTO-REFRESH POLLING ENGINE
+        // ====================================================================
+        private async void AutoRefreshTimer_Tick(object? sender, object e)
+        {
+            if (_isAutoRefreshing || _refreshingReports || _reportsClosed || !DatabaseMonitor.IsOnline)
+                return;
+
+            await SilentAutoRefreshAsync();
+        }
+
+        private async Task SilentAutoRefreshAsync()
+        {
+            if (_isAutoRefreshing || _refreshingReports || _reportsClosed) return;
+            _isAutoRefreshing = true;
+
+            try
+            {
+                // 1. Refresh University / Campus Metrics & Ledger (if not restricted to Event Organizer)
+                if (!AppSession.IsEventOrganizer)
+                {
+                    var metrics = await _database.GetUniversityMetricsAsync();
+                    DateTime? selectedDate = UnivPopupDatePicker?.Date?.Date;
+                    var latestLedger = await _database.GetGeneralLedgerAsync(selectedDate);
+
+                    if (_reportsClosed) return;
+
+                    DateTime newestUnivTime = latestLedger.FirstOrDefault()?.RawTimestamp ?? DateTime.MinValue;
+                    bool metricsChanged = metrics.TotalScansToday != _lastTotalScansToday ||
+                                          metrics.CurrentlyInside != _lastInsideCount ||
+                                          metrics.DeniedToday != _lastDeniedToday;
+                    bool ledgerChanged = newestUnivTime != _lastUnivLogTimestamp ||
+                                         latestLedger.Count != _lastUnivLogCount;
+
+                    if (metricsChanged || ledgerChanged)
+                    {
+                        _lastTotalScansToday = metrics.TotalScansToday;
+                        _lastInsideCount = metrics.CurrentlyInside;
+                        _lastDeniedToday = metrics.DeniedToday;
+                        _lastUnivLogTimestamp = newestUnivTime;
+                        _lastUnivLogCount = latestLedger.Count;
+
+                        UnivTotalScansText.Text = metrics.TotalScansToday.ToString("N0");
+                        UnivInsideText.Text = metrics.CurrentlyInside.ToString("N0");
+                        UnivDeniedText.Text = metrics.DeniedToday.ToString("N0");
+
+                        DailyEntriesItemsControl.ItemsSource = await _database.GetDailyEntryStatsAsync();
+
+                        var alertExtremes = await _database.GetSecurityAlertExtremesAsync();
+                        HighAlertDateText.Text = alertExtremes.HighDayLabel;
+                        HighAlertCountText.Text = alertExtremes.HighCount.ToString();
+                        LowAlertDateText.Text = alertExtremes.LowDayLabel;
+                        LowAlertCountText.Text = alertExtremes.LowCount.ToString();
+
+                        HistoricalThreatsListView.ItemsSource = await _database.GetDailySecurityAlertsAsync();
+                        DailyTrafficListView.ItemsSource = await _database.GetDailyTrafficSummariesAsync();
+
+                        _univMasterLogs = latestLedger.ToList();
+                        RefreshPopupFilterOptionsSafely();
+                        ApplyUnivPopupFilters();
+
+                        ReportingStatus.Title = $"Database reports live-updated {DateTime.Now:T}";
+                    }
+                }
+
+                // 2. Refresh Active Event Report (if an event is currently selected)
+                if (_currentSelectedEvent != null && !_reportsClosed)
+                {
+                    await SilentRefreshSelectedEventAsync(_currentSelectedEvent);
+                }
+            }
+            catch
+            {
+                // Silently ignore transient polling errors so the operator's screen isn't disrupted
+            }
+            finally
+            {
+                _isAutoRefreshing = false;
+            }
+        }
+
+        private async Task SilentRefreshSelectedEventAsync(EventDropdownItem selectedWrapper)
+        {
+            EventRecord selectedEvent = selectedWrapper.Event;
+            var logs = await _database.GetEventAttendanceLogsAsync(selectedEvent.EventId);
+            if (_reportsClosed) return;
+
+            DateTime newestEventTime = logs.FirstOrDefault()?.RawTimestamp ?? DateTime.MinValue;
+            if (newestEventTime == _lastEventLogTimestamp && logs.Count == _lastEventLogCount)
+                return; // No new event scans; skip UI rebuild
+
+            _lastEventLogTimestamp = newestEventTime;
+            _lastEventLogCount = logs.Count;
+
+            var approvedList = selectedEvent.IsRestricted
+                ? await _database.GetEventAttendeesAsync(selectedEvent.EventId)
+                : Array.Empty<StudentRecord>();
+
+            if (_reportsClosed) return;
+
+            _eventMasterLogs = logs.ToList();
+            _eventSummary = ReportingAnalytics.SummarizeEvent(logs);
+            int totalEntered = _eventSummary.Arrivals.Count;
+            int lastPresent = _eventSummary.LastPresent;
+
+            AttendedCountText.Text = totalEntered.ToString();
+
+            if (totalEntered > 0)
+            {
+                double retention = ((double)lastPresent / totalEntered) * 100;
+                RetentionRateText.Text = $"{retention:F1}%";
+                RetentionSubText.Text = $"{lastPresent} of {totalEntered} attendees last recorded as PRESENT. Completion is not established by scan logs.";
+
+                var arrivalsOnly = _eventSummary.Arrivals;
+
+                CourseBreakdownItemsControl.ItemsSource = arrivalsOnly
+                    .GroupBy(l => string.IsNullOrWhiteSpace(l.Course) ? "Unregistered Course" : l.Course)
+                    .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
+                    .OrderByDescending(x => int.Parse(x.Value)).ToList();
+
+                SectionBreakdownItemsControl.ItemsSource = arrivalsOnly
+                    .GroupBy(l => $"{(string.IsNullOrWhiteSpace(l.Course) ? "Unassigned course" : l.Course)} / {(string.IsNullOrWhiteSpace(l.Section) ? "Unassigned" : l.Section)}")
+                    .Select(g => new StatItem { Label = g.Key, Value = g.Count().ToString(), SubValue = $"{(g.Count() * 100.0 / totalEntered):F1}%" })
+                    .OrderByDescending(x => int.Parse(x.Value)).Take(5).ToList();
+
+                AuthModesItemsControl.ItemsSource = arrivalsOnly
+                    .GroupBy(l => string.IsNullOrWhiteSpace(l.Mode) ? "Unknown" : l.Mode)
+                    .Select(g => new StatItem { Label = g.Key + " Mode", Value = g.Count().ToString() })
+                    .OrderByDescending(x => int.Parse(x.Value)).ToList();
+            }
+
+            if (selectedEvent.IsRestricted)
+            {
+                int expected = approvedList.Select(s => s.StudentId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                ExpectedCountText.Text = $"{expected} students on current roster";
+                TurnoutRateText.Text = expected > 0
+                    ? $"{_eventSummary.Turnout(approvedList.Select(s => s.StudentId))!.Value:F1}%"
+                    : "N/A";
+            }
+
+            // Re-apply current filters and update dropdown options without resetting selections
+            RefreshPopupFilterOptionsSafely();
+            ApplyLedgerFilters();
+            ApplyEventPopupFilters();
+
+            EventReportNote.Text = $"{logs.Count:N0} retained scan rows; {totalEntered:N0} unique arrivals. Live-updated {DateTime.Now:T}.";
+            ExportButton.IsEnabled = logs.Count > 0;
         }
 
         // ====================================================================
@@ -84,7 +263,6 @@ namespace NFC_System
             if (_isForceClosing) return;
             args.Cancel = true;
 
-            // 1. MASTER ADMINISTRATOR FLOW (Bypass Authorization)
             if (AppSession.CurrentStaffRoleLabel == "Master Admin")
             {
                 ContentDialog masterDialog = new ContentDialog
@@ -101,7 +279,6 @@ namespace NFC_System
                 if (result == ContentDialogResult.Primary) await PerformCloudPushAndExit();
                 else if (result == ContentDialogResult.Secondary) ForceExit();
             }
-            // 2. STANDARD ADMINISTRATOR FLOW (High Severity - Needs PIN + Tap)
             else if (AppSession.IsAdmin)
             {
                 ContentDialog adminDialog = new ContentDialog
@@ -140,7 +317,6 @@ namespace NFC_System
                     ForceExit();
                 }
             }
-            // 3. ORGANIZER & GUARD FLOW (Read-Only/Low Severity Restriction)
             else
             {
                 ContentDialog restrictedDialog = new ContentDialog
@@ -188,43 +364,9 @@ namespace NFC_System
                 try { _ = _database.AddAlertAsync(AppSession.CurrentStaffName, "STAFF_LOGOUT", $"{AppSession.CurrentStaffName} closed the application."); } catch { }
             }
 
+            HardwareService.Disconnect();
             _isForceClosing = true;
             Application.Current.Exit();
-        }
-
-        // ====================================================================
-        // SERIAL PORT & AUTHORIZATION HANDLING
-        // ====================================================================
-        private void TryConnectSerial(string portName)
-        {
-            if (_serialPort != null && _serialPort.IsOpen) return;
-
-            try
-            {
-                _serialPort = new SerialPort(portName, 115200);
-                _serialPort.NewLine = "\n";
-                _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-            }
-            catch { }
-        }
-
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
-                string line = _serialPort.ReadLine().Trim();
-                if (!line.StartsWith("UID=")) return;
-
-                string uid = line.Substring(4).Trim();
-
-                if (_isAwaitingAdminAuth)
-                {
-                    DispatcherQueue.TryEnqueue(async () => await HandleAdminAuthScanAsync(uid));
-                }
-            }
-            catch { }
         }
 
         private async Task HandleAdminAuthScanAsync(string uid)
@@ -286,28 +428,14 @@ namespace NFC_System
             }
         }
 
-        private void CloseSerialPort()
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    _serialPort.DataReceived -= SerialPort_DataReceived;
-                    _serialPort.Close();
-                    _serialPort.Dispose();
-                    _serialPort = null;
-                }
-            }
-            catch { }
-        }
-
         private void Window_Closed(object sender, WindowEventArgs args)
         {
             _reportsClosed = true;
+            _autoRefreshTimer.Stop();
             ++_eventLoadVersion;
             ++_campusLoadVersion;
             DatabaseMonitor.ConnectionStatusChanged -= UpdateOfflineBanner;
-            CloseSerialPort();
+            HardwareService.OnUidScanned -= HardwareService_OnUidScanned;
         }
 
         private void PlaySuccessPing()
@@ -375,10 +503,7 @@ namespace NFC_System
                 if (DatabaseMonitor.IsOnline)
                 {
                     await _database.EnsureSchemaAsync();
-                    try { _currentPort = await _database.GetSettingAsync("nfc_com_port", "COM3"); } catch { }
                 }
-
-                TryConnectSerial(_currentPort);
 
                 IReadOnlyList<EventRecord> allEvents = new List<EventRecord>();
                 IReadOnlyList<EventRecord> activeEvents = new List<EventRecord>();
@@ -412,6 +537,10 @@ namespace NFC_System
                     if (DatabaseMonitor.IsOnline)
                     {
                         var metrics = await _database.GetUniversityMetricsAsync();
+                        _lastTotalScansToday = metrics.TotalScansToday;
+                        _lastInsideCount = metrics.CurrentlyInside;
+                        _lastDeniedToday = metrics.DeniedToday;
+
                         UnivTotalScansText.Text = metrics.TotalScansToday.ToString("N0");
                         UnivInsideText.Text = metrics.CurrentlyInside.ToString("N0");
                         UnivDeniedText.Text = metrics.DeniedToday.ToString("N0");
@@ -433,6 +562,9 @@ namespace NFC_System
                         UnivPopupDatePicker.Date = null;
                         _updatingCampusFilters = false;
                         if (!await LoadCampusLedgerAsync(null)) throw new InvalidOperationException("Campus ledger could not be loaded. Refresh to retry.");
+
+                        _lastUnivLogTimestamp = _univMasterLogs.FirstOrDefault()?.RawTimestamp ?? DateTime.MinValue;
+                        _lastUnivLogCount = _univMasterLogs.Count;
                     }
                 }
                 if (_reportsClosed) return;
@@ -607,6 +739,9 @@ namespace NFC_System
                 var approvedList = selectedEvent.IsRestricted ? await _database.GetEventAttendeesAsync(selectedEvent.EventId) : Array.Empty<StudentRecord>();
                 if (version != _eventLoadVersion || _reportsClosed) return;
                 _eventMasterLogs = logs.ToList();
+                _lastEventLogTimestamp = logs.FirstOrDefault()?.RawTimestamp ?? DateTime.MinValue;
+                _lastEventLogCount = logs.Count;
+
                 _eventSummary = ReportingAnalytics.SummarizeEvent(logs);
                 int totalEntered = _eventSummary.Arrivals.Count;
                 int lastPresent = _eventSummary.LastPresent;
@@ -724,7 +859,7 @@ namespace NFC_System
             ApplyLedgerFilters();
         }
 
-        private void ClearFilters_Click(object sender, RoutedEventArgs e)
+        private void ClearFilters_Click(object? sender, RoutedEventArgs? e)
         {
             if (FilterTimeComboBox == null || FilterStatusComboBox == null) return;
 
@@ -802,8 +937,6 @@ namespace NFC_System
 
             var finalData = viewModels;
             AttendanceListView.ItemsSource = finalData;
-
-            // The explorer maintains its own filter scope.
         }
 
         private async void OpenUnivExplorer_Click(object sender, RoutedEventArgs e)
@@ -871,7 +1004,7 @@ namespace NFC_System
             if (!_updatingCampusFilters) await LoadCampusLedgerAsync(sender.Date?.Date);
         }
 
-        private void UnivPopupClear_Click(object sender, RoutedEventArgs e)
+        private void UnivPopupClear_Click(object? sender, RoutedEventArgs? e)
         {
             if (UnivPopupSearchBox != null) UnivPopupSearchBox.Text = "";
             if (UnivPopupDatePicker != null) UnivPopupDatePicker.Date = null;
@@ -992,7 +1125,7 @@ namespace NFC_System
         }
         private void EventPopupDatePicker_DateChanged(CalendarDatePicker sender, CalendarDatePickerDateChangedEventArgs args) => ApplyEventPopupFilters();
 
-        private void EventPopupClear_Click(object sender, RoutedEventArgs e)
+        private void EventPopupClear_Click(object? sender, RoutedEventArgs? e)
         {
             if (EventPopupSearchBox != null) EventPopupSearchBox.Text = string.Empty;
             if (EventPopupDatePicker != null) EventPopupDatePicker.Date = null;
@@ -1125,7 +1258,6 @@ namespace NFC_System
         {
             try
             {
-                // Export the same filtered records as the traffic explorer, without a second unfiltered query.
                 ApplyUnivPopupFilters();
                 var logs = (UnivPopupListView.ItemsSource as IEnumerable<VerificationLogRecord>)?.ToList() ?? _univMasterLogs.ToList();
                 if (logs.Count == 0) throw new InvalidOperationException("There are no campus traffic records matching the current filters.");
@@ -1136,6 +1268,91 @@ namespace NFC_System
             catch (Exception ex) { await ShowExportResultAsync("Export not completed", ex.Message); }
         }
 
+        private void RefreshPopupFilterOptionsSafely()
+        {
+            _updatingCampusFilters = true;
+            try
+            {
+                // 1. University Explorer Popup Filters
+                if (UnivPopupCourseFilter != null && UnivPopupSectionFilter != null)
+                {
+                    string selectedCourse = UnivPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+                    string selectedSection = UnivPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
+
+                    var courses = _univMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+                    courses.Insert(0, "All Courses");
+                    UnivPopupCourseFilter.ItemsSource = courses;
+                    UnivPopupCourseFilter.SelectedItem = courses.Contains(selectedCourse) ? selectedCourse : "All Courses";
+
+                    var sectionQuery = _univMasterLogs.AsEnumerable();
+                    string activeCourse = UnivPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+                    if (activeCourse != "All Courses")
+                        sectionQuery = sectionQuery.Where(l => l.Course == activeCourse);
+
+                    var sections = sectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                    sections.Insert(0, "All Sections");
+                    UnivPopupSectionFilter.ItemsSource = sections;
+                    UnivPopupSectionFilter.SelectedItem = sections.Contains(selectedSection) ? selectedSection : "All Sections";
+                }
+
+                // 2. Main Event View Filters
+                if (FilterCourseComboBox != null && FilterSectionComboBox != null)
+                {
+                    string selectedMainCourse = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
+                    string selectedMainSection = FilterSectionComboBox.SelectedItem?.ToString() ?? "All Sections";
+
+                    var mainCourses = _eventMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+                    mainCourses.Insert(0, "All Courses");
+                    FilterCourseComboBox.SelectionChanged -= Filter_SelectionChanged;
+                    FilterCourseComboBox.ItemsSource = mainCourses;
+                    FilterCourseComboBox.SelectedItem = mainCourses.Contains(selectedMainCourse) ? selectedMainCourse : "All Courses";
+                    FilterCourseComboBox.SelectionChanged += Filter_SelectionChanged;
+
+                    var mainSectionQuery = _eventMasterLogs.AsEnumerable();
+                    string activeMainCourse = FilterCourseComboBox.SelectedItem?.ToString() ?? "All Courses";
+                    if (activeMainCourse != "All Courses")
+                        mainSectionQuery = mainSectionQuery.Where(l => l.Course == activeMainCourse);
+
+                    var mainSections = mainSectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                    mainSections.Insert(0, "All Sections");
+                    FilterSectionComboBox.SelectionChanged -= Filter_SelectionChanged;
+                    FilterSectionComboBox.ItemsSource = mainSections;
+                    FilterSectionComboBox.SelectedItem = mainSections.Contains(selectedMainSection) ? selectedMainSection : "All Sections";
+                    FilterSectionComboBox.SelectionChanged += Filter_SelectionChanged;
+                }
+
+                // 3. Event Explorer Popup Filters
+                if (EventPopupCourseFilter != null && EventPopupSectionFilter != null)
+                {
+                    string selectedEventCourse = EventPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+                    string selectedEventSection = EventPopupSectionFilter.SelectedItem?.ToString() ?? "All Sections";
+
+                    var eventCourses = _eventMasterLogs.Select(l => l.Course).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().OrderBy(c => c).ToList();
+                    eventCourses.Insert(0, "All Courses");
+                    EventPopupCourseFilter.SelectionChanged -= EventPopupFilter_Changed;
+                    EventPopupCourseFilter.ItemsSource = eventCourses;
+                    EventPopupCourseFilter.SelectedItem = eventCourses.Contains(selectedEventCourse) ? selectedEventCourse : "All Courses";
+                    EventPopupCourseFilter.SelectionChanged += EventPopupFilter_Changed;
+
+                    var eventSectionQuery = _eventMasterLogs.AsEnumerable();
+                    string activeEventCourse = EventPopupCourseFilter.SelectedItem?.ToString() ?? "All Courses";
+                    if (activeEventCourse != "All Courses")
+                        eventSectionQuery = eventSectionQuery.Where(l => l.Course == activeEventCourse);
+
+                    var eventSections = eventSectionQuery.Select(l => l.Section).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().OrderBy(s => s).ToList();
+                    eventSections.Insert(0, "All Sections");
+                    EventPopupSectionFilter.SelectionChanged -= EventPopupFilter_Changed;
+                    EventPopupSectionFilter.ItemsSource = eventSections;
+                    EventPopupSectionFilter.SelectedItem = eventSections.Contains(selectedEventSection) ? selectedEventSection : "All Sections";
+                    EventPopupSectionFilter.SelectionChanged += EventPopupFilter_Changed;
+                }
+            }
+            finally
+            {
+                _updatingCampusFilters = false;
+            }
+        }
+
         private async Task ShowExportResultAsync(string title, string message)
         {
             await new ContentDialog { Title = title, Content = message, CloseButtonText = "OK", XamlRoot = Content.XamlRoot }.ShowAsync();
@@ -1143,7 +1360,6 @@ namespace NFC_System
 
         private void DashboardButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
             var dashboard = new MainWindow();
             dashboard.Activate();
             this.Close();
@@ -1151,7 +1367,6 @@ namespace NFC_System
 
         private void ManageEventsButton_Click(object sender, RoutedEventArgs e)
         {
-            CloseSerialPort();
             var adminWin = new EventManagementWindow();
             adminWin.Activate();
             this.Close();
